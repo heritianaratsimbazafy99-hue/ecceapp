@@ -443,6 +443,28 @@ main {
   padding: 28px;
 }
 
+.account-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.account-chip p,
+.form-error {
+  color: var(--muted);
+}
+
+.button-small {
+  min-height: 40px;
+  padding: 0 14px;
+}
+
 .page-shell {
   display: grid;
   gap: 22px;
@@ -597,6 +619,11 @@ main {
   gap: 16px;
 }
 
+.form-error {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 .auth-form label {
   display: grid;
   gap: 8px;
@@ -657,7 +684,8 @@ main {
   .site-header,
   .site-nav,
   .hero-preview,
-  .platform-topbar {
+  .platform-topbar,
+  .account-chip {
     flex-direction: column;
     align-items: flex-start;
   }

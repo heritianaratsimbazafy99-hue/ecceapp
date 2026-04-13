@@ -1,10 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
+import { SignInForm } from "@/app/auth/sign-in/form";
 import { Badge } from "@/components/ui/badge";
+import { getCurrentUserContext, getRouteForRole } from "@/lib/auth";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
-export default function SignInPage() {
+export default async function SignInPage() {
   const supabaseReady = isSupabaseConfigured();
+  const { user, role } = await getCurrentUserContext();
+
+  if (user) {
+    redirect(getRouteForRole(role));
+  }
 
   return (
     <main className="auth-page">
@@ -20,20 +28,7 @@ export default function SignInPage() {
           </p>
         </div>
 
-        <form className="auth-form">
-          <label>
-            Email
-            <input placeholder="coach@ecce.school" type="email" />
-          </label>
-          <label>
-            Mot de passe
-            <input placeholder="••••••••" type="password" />
-          </label>
-
-          <button className="button" type="button">
-            Continuer
-          </button>
-        </form>
+        <SignInForm />
 
         <div className="auth-footnote">
           <span>Rôles prévus</span>

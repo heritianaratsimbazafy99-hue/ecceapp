@@ -12,7 +12,15 @@ const navigation = [
   { href: "/admin", label: "Pilotage admin" }
 ];
 
-export function PlatformSidebar() {
+type PlatformSidebarProps = {
+  role?: string | null;
+  userName?: string | null;
+};
+
+export function PlatformSidebar({
+  role = "coach",
+  userName = "Utilisateur ECCE"
+}: PlatformSidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -43,8 +51,11 @@ export function PlatformSidebar() {
 
       <div className="sidebar-footnote">
         <span className="eyebrow">Rôle actif</span>
-        <strong>Coach</strong>
-        <p>Le système final permettra de basculer entre les vues selon les permissions.</p>
+        <strong>{role}</strong>
+        <p>
+          Connecté en tant que {userName}. Le système bascule déjà vers une vue adaptée
+          au rôle lorsqu&apos;il est connu.
+        </p>
       </div>
     </aside>
   );
