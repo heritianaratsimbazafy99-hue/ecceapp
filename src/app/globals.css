@@ -621,6 +621,12 @@ main {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 236, 221, 0.88));
 }
 
+.panel-subtle {
+  border: 1px dashed rgba(16, 24, 32, 0.12);
+  background: rgba(16, 24, 32, 0.03);
+  box-shadow: none;
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;

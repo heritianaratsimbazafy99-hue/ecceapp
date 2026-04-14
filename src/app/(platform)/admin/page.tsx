@@ -1,4 +1,10 @@
-import { CreateContentForm, CreateUserForm, AssignRoleForm } from "@/app/(platform)/admin/forms";
+import {
+  AssignRoleForm,
+  CreateAssignmentForm,
+  CreateContentForm,
+  CreateQuizForm,
+  CreateUserForm
+} from "@/app/(platform)/admin/forms";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +24,17 @@ function roleTone(role: string) {
 }
 
 export default async function AdminPage() {
-  const { metrics, users, userOptions, contents } = await getAdminPageData();
+  const {
+    metrics,
+    users,
+    userOptions,
+    cohortOptions,
+    contents,
+    contentOptions,
+    quizzes,
+    quizOptions,
+    assignments
+  } = await getAdminPageData();
 
   return (
     <div className="page-shell">
@@ -57,6 +73,29 @@ export default async function AdminPage() {
           <p>Premier back-office branché sur `content_items` pour alimenter la bibliothèque réelle.</p>
         </div>
         <CreateContentForm />
+      </section>
+
+      <section className="admin-grid">
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Créer un quiz</h3>
+            <p>Création réelle dans `quizzes`, avec première question optionnelle.</p>
+          </div>
+          <CreateQuizForm contentOptions={contentOptions} />
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Créer une assignation</h3>
+            <p>Définis une deadline pour un contenu ou un quiz vers un utilisateur ou une cohorte.</p>
+          </div>
+          <CreateAssignmentForm
+            cohortOptions={cohortOptions}
+            contentOptions={contentOptions}
+            quizOptions={quizOptions}
+            userOptions={userOptions}
+          />
+        </div>
       </section>
 
       <section className="content-grid">
@@ -133,6 +172,72 @@ export default async function AdminPage() {
             <div className="empty-state">
               <strong>Aucun contenu n&apos;a encore été créé.</strong>
               <p>Utilise le formulaire ci-dessus pour alimenter la bibliothèque ECCE.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="content-grid">
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Quiz enregistrés</h3>
+            <p>Base réelle des quizzes ECCE, prête pour les prochaines interfaces de passage et correction.</p>
+          </div>
+
+          {quizzes.length ? (
+            <div className="stack-list">
+              {quizzes.map((quiz) => (
+                <article className="list-row list-row-stretch" key={quiz.id}>
+                  <div>
+                    <strong>{quiz.title}</strong>
+                    <p>
+                      {quiz.kind} · {quiz.attempts_allowed ?? 1} tentative(s)
+                      {quiz.time_limit_minutes ? ` · ${quiz.time_limit_minutes} min` : ""}
+                    </p>
+                  </div>
+                  <Badge tone={quiz.status === "published" ? "success" : "neutral"}>
+                    {quiz.status ?? "draft"}
+                  </Badge>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun quiz créé.</strong>
+              <p>Crée ton premier quiz pour l’utiliser ensuite dans les deadlines.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Deadlines et assignations</h3>
+            <p>Vue réelle des assignations déjà programmées dans la plateforme.</p>
+          </div>
+
+          {assignments.length ? (
+            <div className="stack-list">
+              {assignments.map((assignment) => (
+                <article className="list-row list-row-stretch" key={assignment.id}>
+                  <div>
+                    <strong>{assignment.title}</strong>
+                    <p>
+                      {assignment.type} · {assignment.asset}
+                    </p>
+                    <p>
+                      cible : {assignment.target} · échéance : {assignment.due}
+                    </p>
+                  </div>
+                  <Badge tone={assignment.type === "quiz" ? "warning" : "accent"}>
+                    {assignment.type}
+                  </Badge>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucune assignation active.</strong>
+              <p>Crée une deadline pour commencer à alimenter le dashboard coaché.</p>
             </div>
           )}
         </div>

@@ -22,6 +22,7 @@ const VALID_CONTENT_TYPES = [
   "template"
 ] as const;
 const VALID_PUBLICATION_STATUS = ["draft", "scheduled", "published", "archived"] as const;
+const VALID_QUIZ_KIND = ["qcm", "quiz", "assessment"] as const;
 
 function ok(success: string): AdminActionState {
   return { success };
@@ -199,4 +200,155 @@ export async function createContentAction(
   revalidatePath("/dashboard");
 
   return ok(`Contenu "${title}" créé.`);
+}
+
+export async function createQuizAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const attemptsAllowed = Number(String(formData.get("attempts_allowed") ?? "").trim() || 1);
+  const timeLimitMinutes = Number(String(formData.get("time_limit_minutes") ?? "").trim() || 0);
+  const passingScore = Number(String(formData.get("passing_score") ?? "").trim() || 0);
+  const contentItemId = String(formData.get("content_item_id") ?? "").trim();
+
+  const questionPrompt = String(formData.get("question_prompt") ?? "").trim();
+  const helperText = String(formData.get("helper_text") ?? "").trim();
+  const choicesText = String(formData.get("choices_text") ?? "").trim();
+  const correctChoiceIndex = Number(String(formData.get("correct_choice_index") ?? "").trim() || 0);
+  const points = Number(String(formData.get("points") ?? "").trim() || 1);
+
+  if (!title || !VALID_QUIZ_KIND.includes(kind as (typeof VALID_QUIZ_KIND)[number])) {
+    return fail("Le titre et le type de quiz sont obligatoires.");
+  }
+
+  if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
+    return fail("Le statut du quiz n'est pas valide.");
+  }
+
+  const quizInsert = await admin
+    .from("quizzes")
+    .insert({
+      organization_id: organizationId,
+      title,
+      description: description || null,
+      kind,
+      status,
+      attempts_allowed: attemptsAllowed > 0 ? attemptsAllowed : 1,
+      time_limit_minutes: timeLimitMinutes > 0 ? timeLimitMinutes : null,
+      passing_score: passingScore > 0 ? passingScore : null,
+      content_item_id: contentItemId || null,
+      created_by: context.user.id
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (quizInsert.error || !quizInsert.data) {
+    return fail(quizInsert.error?.message ?? "Impossible de créer le quiz.");
+  }
+
+  if (questionPrompt) {
+    const choices = choicesText
+      .split("\n")
+      .map((choice) => choice.trim())
+      .filter(Boolean);
+
+    const questionInsert = await admin
+      .from("quiz_questions")
+      .insert({
+        quiz_id: quizInsert.data.id,
+        prompt: questionPrompt,
+        helper_text: helperText || null,
+        question_type: choices.length ? "single_choice" : "text",
+        position: 0,
+        points: points > 0 ? points : 1
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (questionInsert.error || !questionInsert.data) {
+      return fail(questionInsert.error?.message ?? "Le quiz a été créé, mais pas la première question.");
+    }
+
+    if (choices.length) {
+      const choicesInsert = await admin.from("quiz_question_choices").insert(
+        choices.map((choice, index) => ({
+          question_id: questionInsert.data.id,
+          label: choice,
+          is_correct: correctChoiceIndex > 0 ? index + 1 === correctChoiceIndex : index === 0,
+          position: index
+        }))
+      );
+
+      if (choicesInsert.error) {
+        return fail(
+          choicesInsert.error.message || "Le quiz a été créé, mais les choix de réponse ont échoué."
+        );
+      }
+    }
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+
+  return ok(`Quiz "${title}" créé.`);
+}
+
+export async function createAssignmentAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const title = String(formData.get("title") ?? "").trim();
+  const assignedUserId = String(formData.get("assigned_user_id") ?? "").trim();
+  const cohortId = String(formData.get("cohort_id") ?? "").trim();
+  const contentItemId = String(formData.get("content_item_id") ?? "").trim();
+  const quizId = String(formData.get("quiz_id") ?? "").trim();
+  const dueAtInput = String(formData.get("due_at") ?? "").trim();
+
+  if (!title) {
+    return fail("Le titre de l'assignation est obligatoire.");
+  }
+
+  if (!assignedUserId && !cohortId) {
+    return fail("Choisis au moins un utilisateur ou une cohorte.");
+  }
+
+  if (!contentItemId && !quizId) {
+    return fail("Sélectionne un contenu ou un quiz à assigner.");
+  }
+
+  const dueAt = dueAtInput ? new Date(dueAtInput).toISOString() : null;
+
+  const { error } = await admin.from("learning_assignments").insert({
+    organization_id: organizationId,
+    title,
+    assigned_user_id: assignedUserId || null,
+    cohort_id: cohortId || null,
+    content_item_id: contentItemId || null,
+    quiz_id: quizId || null,
+    due_at: dueAt,
+    published_at: new Date().toISOString(),
+    created_by: context.user.id
+  });
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  revalidatePath("/coach");
+
+  return ok(`Assignation "${title}" créée.`);
 }

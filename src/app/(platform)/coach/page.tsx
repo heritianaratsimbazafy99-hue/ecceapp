@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { getCoachPageData } from "@/lib/platform-data";
 
 export default async function CoachPage() {
-  const { metrics, roster, sessions } = await getCoachPageData();
+  const { metrics, roster, sessions, deadlines } = await getCoachPageData();
 
   return (
     <div className="page-shell">
@@ -82,6 +82,32 @@ export default async function CoachPage() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Deadlines à surveiller</h3>
+          <p>Les deadlines créées dans l&apos;admin remontent ici pour donner de la visibilité au coach.</p>
+        </div>
+
+        {deadlines.length ? (
+          <div className="stack-list">
+            {deadlines.map((deadline) => (
+              <article className="list-row list-row-stretch" key={deadline.id}>
+                <div>
+                  <strong>{deadline.title}</strong>
+                  <p>{deadline.due}</p>
+                </div>
+                <Badge tone="warning">{deadline.targetCount} cible(s)</Badge>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Aucune deadline active.</strong>
+            <p>Crée une assignation avec échéance depuis l&apos;admin pour l&apos;afficher ici.</p>
+          </div>
+        )}
       </section>
     </div>
   );
