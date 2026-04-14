@@ -4,6 +4,7 @@ import {
   ReviewSubmissionForm,
   ScheduleCoachingSessionForm
 } from "@/app/(platform)/coach/forms";
+import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,8 @@ export default async function CoachPage() {
     recentQuizResults,
     reviewQueue,
     coachOptions,
-    coacheeOptions
+    coacheeOptions,
+    messagingWorkspace
   } = await getCoachPageData();
 
   return (
@@ -166,6 +168,21 @@ export default async function CoachPage() {
           </div>
         )}
       </section>
+
+      {messagingWorkspace ? (
+        <RealtimeConversationHub
+          composerPlaceholder="Partage un retour, une relance ou une consigne actionnable."
+          contacts={messagingWorkspace.contacts}
+          conversations={messagingWorkspace.conversations}
+          description="Messagerie coach/coachee branchée sur Supabase Realtime pour accompagner sans friction."
+          emptyBody="Choisis un coaché puis envoie ton premier message pour démarrer un suivi direct."
+          emptyTitle="Aucune conversation lancée."
+          initialConversationId={messagingWorkspace.initialConversationId}
+          initialMessages={messagingWorkspace.initialMessages}
+          title="Messagerie coach"
+          userId={context.user.id}
+        />
+      ) : null}
 
       <section className="panel">
         <div className="panel-header">

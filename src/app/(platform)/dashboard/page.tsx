@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
 import { LiveNotificationFeed } from "@/components/notifications/realtime-notification-center";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
@@ -14,6 +15,7 @@ export default async function DashboardPage() {
     notifications,
     upcomingSessions,
     badges,
+    messagingWorkspace,
     recentContents,
     recentAttempts
   } =
@@ -146,6 +148,21 @@ export default async function DashboardPage() {
           )}
         </div>
       </section>
+
+      {messagingWorkspace ? (
+        <RealtimeConversationHub
+          composerPlaceholder="Pose une question, demande un feedback ou confirme ta prochaine action."
+          contacts={messagingWorkspace.contacts}
+          conversations={messagingWorkspace.conversations}
+          description="Ton espace d'échange direct avec les coachs ECCE, mis à jour en temps réel."
+          emptyBody="Choisis un coach pour démarrer un échange en direct depuis ton dashboard."
+          emptyTitle="Pas encore de conversation."
+          initialConversationId={messagingWorkspace.initialConversationId}
+          initialMessages={messagingWorkspace.initialMessages}
+          title="Messagerie coach"
+          userId={context.user.id}
+        />
+      ) : null}
 
       <section className="panel">
         <div className="panel-header">

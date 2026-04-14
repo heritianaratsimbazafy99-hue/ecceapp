@@ -135,6 +135,23 @@ type UserBadgeRow = {
     | null;
 };
 
+type ConversationRow = {
+  id: string;
+  coach_id: string;
+  coachee_id: string;
+  updated_at: string;
+};
+
+type MessageRow = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  recipient_id: string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+};
+
 const SUBMISSION_BUCKET = "submission-files";
 
 function formatDate(dateString: string | null) {
@@ -156,6 +173,14 @@ function uniqueById<T extends { id: string }>(items: T[]) {
   return Array.from(new Map(items.map((item) => [item.id, item])).values());
 }
 
+function formatMessagePreview(value: string | null) {
+  if (!value) {
+    return "Aucun message pour l'instant.";
+  }
+
+  return value.length > 96 ? `${value.slice(0, 93)}...` : value;
+}
+
 async function getSignedSubmissionUrl(storagePath: string | null, admin = createSupabaseAdminClient()) {
   if (!storagePath) {
     return null;
@@ -163,6 +188,101 @@ async function getSignedSubmissionUrl(storagePath: string | null, admin = create
 
   const { data } = await admin.storage.from(SUBMISSION_BUCKET).createSignedUrl(storagePath, 60 * 60);
   return data?.signedUrl ?? null;
+}
+
+async function getMessagingWorkspace(params: {
+  organizationId: string;
+  userId: string;
+  viewerRole: "coach" | "coachee";
+  contactOptions: Array<{ id: string; label: string }>;
+}) {
+  const admin = createSupabaseAdminClient();
+
+  let conversationQuery = admin
+    .from("coach_conversations")
+    .select("id, coach_id, coachee_id, updated_at")
+    .eq("organization_id", params.organizationId)
+    .order("updated_at", { ascending: false });
+
+  conversationQuery =
+    params.viewerRole === "coach"
+      ? conversationQuery.eq("coach_id", params.userId)
+      : conversationQuery.eq("coachee_id", params.userId);
+
+  const conversationsResult = await conversationQuery.limit(12);
+  const conversationRows = (conversationsResult.data ?? []) as ConversationRow[];
+  const conversationIds = conversationRows.map((conversation) => conversation.id);
+
+  const messageRows = conversationIds.length
+    ? ((await admin
+        .from("coach_messages")
+        .select("id, conversation_id, sender_id, recipient_id, body, created_at, read_at")
+        .in("conversation_id", conversationIds)
+        .order("created_at", { ascending: false })
+        .limit(120)).data ?? []) as MessageRow[]
+    : [];
+
+  const lastMessageByConversationId = new Map<string, MessageRow>();
+  const unreadCountByConversationId = new Map<string, number>();
+
+  for (const message of messageRows) {
+    if (!lastMessageByConversationId.has(message.conversation_id)) {
+      lastMessageByConversationId.set(message.conversation_id, message);
+    }
+
+    if (message.recipient_id === params.userId && !message.read_at) {
+      unreadCountByConversationId.set(
+        message.conversation_id,
+        (unreadCountByConversationId.get(message.conversation_id) ?? 0) + 1
+      );
+    }
+  }
+
+  const contactMap = new Map(params.contactOptions.map((contact) => [contact.id, contact.label]));
+  const conversations = conversationRows.map((conversation) => {
+    const counterpartId =
+      params.viewerRole === "coach" ? conversation.coachee_id : conversation.coach_id;
+    const lastMessage = lastMessageByConversationId.get(conversation.id);
+
+    return {
+      id: conversation.id,
+      counterpartId,
+      counterpartName: contactMap.get(counterpartId) ?? "Participant ECCE",
+      lastMessagePreview: formatMessagePreview(lastMessage?.body ?? null),
+      lastMessageAt: lastMessage?.created_at ?? conversation.updated_at,
+      unreadCount: unreadCountByConversationId.get(conversation.id) ?? 0
+    };
+  });
+
+  const initialConversationId = conversations[0]?.id ?? null;
+  const initialMessages = initialConversationId
+    ? (
+        (
+          await admin
+            .from("coach_messages")
+            .select("id, conversation_id, sender_id, recipient_id, body, created_at, read_at")
+            .eq("conversation_id", initialConversationId)
+            .order("created_at", { ascending: true })
+            .limit(60)
+        ).data ?? []
+      ).map((message) => ({
+        id: message.id,
+        conversationId: message.conversation_id,
+        senderId: message.sender_id,
+        recipientId: message.recipient_id,
+        body: message.body,
+        createdAt: message.created_at,
+        readAt: message.read_at,
+        mine: message.sender_id === params.userId
+      }))
+    : [];
+
+  return {
+    contacts: params.contactOptions,
+    conversations,
+    initialConversationId,
+    initialMessages
+  };
 }
 
 export async function getAdminPageData() {
@@ -547,6 +667,29 @@ export async function getCoachPageData() {
     })
   );
 
+  const coachOptions = uniqueById(
+    allProfiles
+      .filter((profile) => coachIds.has(profile.id) || profile.id === context.user.id)
+      .map((profile) => ({
+        id: profile.id,
+        label: formatUserName(profile)
+      }))
+  );
+
+  const coacheeOptions = profiles.map((profile) => ({
+    id: profile.id,
+    label: formatUserName(profile)
+  }));
+
+  const messagingWorkspace = context.roles.includes("coach")
+    ? await getMessagingWorkspace({
+        organizationId,
+        userId: context.user.id,
+        viewerRole: "coach",
+        contactOptions: coacheeOptions
+      })
+    : null;
+
   return {
     context,
     metrics: [
@@ -571,22 +714,13 @@ export async function getCoachPageData() {
         delta: `${String(contentsResult.count ?? 0)} contenus publiés`
       }
     ],
-    coachOptions: uniqueById(
-      allProfiles
-        .filter((profile) => coachIds.has(profile.id) || profile.id === context.user.id)
-        .map((profile) => ({
-          id: profile.id,
-          label: formatUserName(profile)
-        }))
-    ),
-    coacheeOptions: profiles.map((profile) => ({
-      id: profile.id,
-      label: formatUserName(profile)
-    })),
+    coachOptions,
+    coacheeOptions,
     roster,
     deadlines: dueAssignments,
     recentQuizResults,
     reviewQueue,
+    messagingWorkspace,
     sessions: roster
       .filter((item) => item.upcomingSession)
       .slice(0, 6)
@@ -786,6 +920,47 @@ export async function getDashboardPageData() {
     videoLink: session.video_link
   }));
 
+  const coachContacts = context.roles.includes("coachee")
+    ? await (async () => {
+        const coachRoleRows = (
+          await admin
+            .from("user_roles")
+            .select("user_id")
+            .eq("organization_id", organizationId)
+            .eq("role", "coach")
+        ).data ?? [];
+
+        const coachIds = Array.from(new Set(coachRoleRows.map((item) => item.user_id)));
+
+        if (!coachIds.length) {
+          return [];
+        }
+
+        const coachProfiles = (
+          await admin
+            .from("profiles")
+            .select("id, first_name, last_name")
+            .eq("organization_id", organizationId)
+            .in("id", coachIds)
+            .order("first_name", { ascending: true })
+        ).data ?? [];
+
+        return coachProfiles.map((profile) => ({
+          id: profile.id,
+          label: `${profile.first_name} ${profile.last_name}`.trim()
+        }));
+      })()
+    : [];
+
+  const messagingWorkspace = context.roles.includes("coachee")
+    ? await getMessagingWorkspace({
+        organizationId,
+        userId,
+        viewerRole: "coachee",
+        contactOptions: coachContacts
+      })
+    : null;
+
   return {
     context,
     metrics: [
@@ -826,6 +1001,7 @@ export async function getDashboardPageData() {
     notifications,
     upcomingSessions,
     badges,
+    messagingWorkspace,
     recentContents: publishedContents,
     recentAttempts: attempts.map((attempt) => ({
       id: attempt.id,

@@ -1043,6 +1043,185 @@ main {
   gap: 10px;
 }
 
+.panel-messaging {
+  overflow: hidden;
+}
+
+.message-live-banner {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 18px;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  color: #0f172a;
+  animation: notification-pulse 0.45s ease;
+}
+
+.conversation-shell {
+  display: grid;
+  grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.conversation-sidebar {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.conversation-sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.conversation-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.conversation-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.conversation-list-item:hover,
+.conversation-list-item:focus-visible,
+.conversation-list-item.is-active {
+  border-color: rgba(14, 165, 233, 0.3);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.conversation-list-item p {
+  margin: 0.3rem 0 0;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.conversation-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.45rem;
+  min-width: 62px;
+}
+
+.conversation-meta small {
+  color: rgba(15, 23, 42, 0.52);
+}
+
+.conversation-unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.7rem;
+  height: 1.7rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.conversation-panel {
+  display: grid;
+  gap: 1rem;
+  min-height: 540px;
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(246, 250, 255, 0.95) 100%);
+}
+
+.conversation-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.conversation-panel-head p {
+  margin: 0.3rem 0 0;
+  color: rgba(15, 23, 42, 0.64);
+}
+
+.conversation-messages {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+  min-height: 280px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.message-bubble {
+  max-width: min(78%, 560px);
+  padding: 0.95rem 1rem;
+  border-radius: 20px 20px 20px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06);
+}
+
+.message-bubble.is-mine {
+  justify-self: end;
+  background: linear-gradient(135deg, #0f766e 0%, #0ea5e9 100%);
+  border-color: transparent;
+  color: white;
+  border-radius: 20px 20px 6px 20px;
+}
+
+.message-bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.message-bubble small {
+  display: block;
+  margin-top: 0.55rem;
+  color: rgba(15, 23, 42, 0.56);
+}
+
+.message-bubble.is-mine small {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.conversation-composer {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.conversation-composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.form-helper {
+  color: rgba(15, 23, 42, 0.58);
+  font-size: 0.95rem;
+}
+
+.empty-state-compact {
+  min-height: 0;
+  padding: 1.1rem;
+}
+
 @media (max-width: 1080px) {
   .hero,
   .platform-layout {
@@ -1060,6 +1239,14 @@ main {
   .platform-sidebar {
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .conversation-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .conversation-panel {
+    min-height: 0;
   }
 }
 
@@ -1125,5 +1312,19 @@ main {
 
   .table-actions {
     justify-content: flex-start;
+  }
+
+  .conversation-list-item {
+    padding: 0.85rem 0.9rem;
+  }
+
+  .message-bubble,
+  .message-bubble.is-mine {
+    max-width: 100%;
+  }
+
+  .conversation-composer-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
