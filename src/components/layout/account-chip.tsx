@@ -1,12 +1,14 @@
+import { NotificationBell } from "@/components/notifications/realtime-notification-center";
 import { signOutAction } from "@/app/auth/actions";
 
 type AccountChipProps = {
   email: string;
   role: string;
   name: string;
+  userId: string;
 };
 
-export function AccountChip({ email, role, name }: AccountChipProps) {
+export function AccountChip({ email, role, name, userId }: AccountChipProps) {
   return (
     <div className="account-chip">
       <div>
@@ -16,11 +18,15 @@ export function AccountChip({ email, role, name }: AccountChipProps) {
         </p>
       </div>
 
-      <form action={signOutAction}>
-        <button className="button button-secondary button-small" type="submit">
-          Déconnexion
-        </button>
-      </form>
+      <div className="account-chip-actions">
+        <NotificationBell userId={userId} />
+
+        <form action={signOutAction}>
+          <button className="button button-secondary button-small" type="submit">
+            Déconnexion
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

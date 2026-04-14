@@ -1,12 +1,22 @@
 import Link from "next/link";
 
+import { LiveNotificationFeed } from "@/components/notifications/realtime-notification-center";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getDashboardPageData } from "@/lib/platform-data";
 
 export default async function DashboardPage() {
-  const { metrics, assignments, notifications, upcomingSessions, badges, recentContents, recentAttempts } =
+  const {
+    context,
+    metrics,
+    assignments,
+    notifications,
+    upcomingSessions,
+    badges,
+    recentContents,
+    recentAttempts
+  } =
     await getDashboardPageData();
 
   return (
@@ -64,32 +74,13 @@ export default async function DashboardPage() {
         <div className="panel">
           <div className="panel-header">
             <h3>Notifications récentes</h3>
-            <p>Lecture en direct de la table `notifications`.</p>
+            <p>Lecture en direct de la table `notifications` via Supabase Realtime.</p>
           </div>
 
-          {notifications.length ? (
-            <div className="stack-list">
-              {notifications.map((item) => (
-                <article className="message-card" key={item.id}>
-                  <span className="message-dot" />
-                  <div>
-                    <strong>{item.title}</strong>
-                    <p>{item.body || "Notification système ECCE"}</p>
-                    {item.deeplink ? (
-                      <Link className="inline-link" href={item.deeplink}>
-                        Ouvrir
-                      </Link>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <strong>Aucune notification.</strong>
-              <p>Les alertes de deadline et de feedback s&apos;afficheront ici.</p>
-            </div>
-          )}
+          <LiveNotificationFeed
+            initialNotifications={notifications}
+            userId={context.user.id}
+          />
         </div>
       </section>
 

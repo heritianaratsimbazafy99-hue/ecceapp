@@ -29,6 +29,7 @@ export default async function PlatformLayout({
           email={user.email ?? "email inconnu"}
           name={displayName}
           role={role ?? "sans rôle"}
+          userId={user.id}
         />
         {children}
       </section>
