@@ -1,10 +1,26 @@
+import Link from "next/link";
+
+import {
+  ReviewSubmissionForm,
+  ScheduleCoachingSessionForm
+} from "@/app/(platform)/coach/forms";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getCoachPageData } from "@/lib/platform-data";
 
 export default async function CoachPage() {
-  const { metrics, roster, sessions, deadlines, recentQuizResults } = await getCoachPageData();
+  const {
+    context,
+    metrics,
+    roster,
+    sessions,
+    deadlines,
+    recentQuizResults,
+    reviewQueue,
+    coachOptions,
+    coacheeOptions
+  } = await getCoachPageData();
 
   return (
     <div className="page-shell">
@@ -17,6 +33,19 @@ export default async function CoachPage() {
         {metrics.map((metric) => (
           <MetricCard key={metric.label} {...metric} />
         ))}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Planifier une séance</h3>
+          <p>Crée un créneau de coaching et notifie automatiquement le coaché concerné.</p>
+        </div>
+
+        <ScheduleCoachingSessionForm
+          allowCoachSelection={context.role === "admin"}
+          coachOptions={coachOptions}
+          coacheeOptions={coacheeOptions}
+        />
       </section>
 
       <section className="content-grid">
@@ -134,6 +163,64 @@ export default async function CoachPage() {
           <div className="empty-state">
             <strong>Aucun résultat quiz remonté pour le moment.</strong>
             <p>Dès qu&apos;un coaché soumettra un quiz, tu verras ici son score.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Soumissions a relire</h3>
+          <p>Le coach peut relire, noter et envoyer un feedback sans quitter ce cockpit.</p>
+        </div>
+
+        {reviewQueue.length ? (
+          <div className="stack-list">
+            {reviewQueue.map((submission) => (
+              <article className="panel panel-subtle" key={submission.id}>
+                <div className="panel-header">
+                  <h3>{submission.learner}</h3>
+                  <p>
+                    {submission.contentTitle} · {submission.submittedAt}
+                  </p>
+                </div>
+
+                <div className="stack-list">
+                  <div className="list-row list-row-stretch">
+                    <div>
+                      <strong>{submission.title}</strong>
+                      {submission.notes ? <p>{submission.notes}</p> : null}
+                    </div>
+                    <div className="table-actions">
+                      <Badge tone={submission.status === "reviewed" ? "success" : "warning"}>
+                        {submission.status}
+                      </Badge>
+                      {submission.fileUrl ? (
+                        <Link className="button button-secondary button-small" href={submission.fileUrl} target="_blank">
+                          Télécharger
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {submission.review ? (
+                    <div className="coach-review-summary">
+                      <strong>Dernier feedback</strong>
+                      <p>
+                        {submission.review.feedback}
+                        {submission.review.grade !== null ? ` · note ${submission.review.grade}/100` : ""}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <ReviewSubmissionForm submissionId={submission.id} />
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Aucune soumission en attente.</strong>
+            <p>Dès qu&apos;un coaché déposera un rendu, tu pourras le corriger ici.</p>
           </div>
         )}
       </section>

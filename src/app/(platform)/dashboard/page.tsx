@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { getDashboardPageData } from "@/lib/platform-data";
 
 export default async function DashboardPage() {
-  const { metrics, assignments, notifications, recentContents, recentAttempts } =
+  const { metrics, assignments, notifications, upcomingSessions, badges, recentContents, recentAttempts } =
     await getDashboardPageData();
 
   return (
@@ -39,13 +39,14 @@ export default async function DashboardPage() {
                   </div>
                   <div className="table-actions">
                     <Badge tone={item.type === "quiz" ? "warning" : "accent"}>{item.type}</Badge>
+                    <Badge tone={item.status === "reviewed" ? "success" : "neutral"}>{item.status}</Badge>
                     {item.type === "quiz" && item.targetId ? (
-                      <Link className="button button-secondary button-small" href={`/quiz/${item.targetId}`}>
+                      <Link className="button button-secondary button-small" href={`/quiz/${item.targetId}?assignment=${item.id}`}>
                         Ouvrir
                       </Link>
                     ) : (
-                      <Link className="button button-secondary button-small" href="/library">
-                        Voir
+                      <Link className="button button-secondary button-small" href={`/assignments/${item.targetId}`}>
+                        Rendre
                       </Link>
                     )}
                   </div>
@@ -74,6 +75,11 @@ export default async function DashboardPage() {
                   <div>
                     <strong>{item.title}</strong>
                     <p>{item.body || "Notification système ECCE"}</p>
+                    {item.deeplink ? (
+                      <Link className="inline-link" href={item.deeplink}>
+                        Ouvrir
+                      </Link>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -82,6 +88,69 @@ export default async function DashboardPage() {
             <div className="empty-state">
               <strong>Aucune notification.</strong>
               <p>Les alertes de deadline et de feedback s&apos;afficheront ici.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="content-grid">
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Mes sessions à venir</h3>
+            <p>Les séances planifiées par le coach remontent ici avec leur lien visio.</p>
+          </div>
+
+          {upcomingSessions.length ? (
+            <div className="stack-list">
+              {upcomingSessions.map((session) => (
+                <article className="list-row list-row-stretch" key={session.id}>
+                  <div>
+                    <strong>Séance de coaching</strong>
+                    <p>{session.date}</p>
+                  </div>
+                  {session.videoLink ? (
+                    <Link className="button button-secondary button-small" href={session.videoLink} target="_blank">
+                      Rejoindre
+                    </Link>
+                  ) : (
+                    <Badge tone="neutral">lien à venir</Badge>
+                  )}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucune séance planifiée.</strong>
+              <p>Quand ton coach ajoutera une session, elle apparaîtra ici automatiquement.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="panel panel-highlight">
+          <div className="panel-header">
+            <h3>Mes badges</h3>
+            <p>Les jalons débloqués s&apos;affichent ici pour valoriser ta progression.</p>
+          </div>
+
+          {badges.length ? (
+            <div className="stack-list">
+              {badges.map((badge) => (
+                <article className="badge-card" key={badge.id}>
+                  <div className="badge-card-icon" aria-hidden="true">
+                    {badge.icon === "spark" ? "*" : "+"}
+                  </div>
+                  <div>
+                    <strong>{badge.title}</strong>
+                    <p>{badge.description}</p>
+                    <small>{badge.awardedAt}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun badge débloqué.</strong>
+              <p>Complète un quiz validé pour commencer à enrichir ton palmarès ECCE.</p>
             </div>
           )}
         </div>

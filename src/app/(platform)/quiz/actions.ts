@@ -2,6 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  awardQuizBadge,
+  createNotifications,
+  getOrganizationStaffIds
+} from "@/lib/platform-events";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -9,6 +14,7 @@ export type QuizActionState = {
   error?: string;
   success?: string;
   score?: string;
+  badgeTitle?: string;
 };
 
 export async function submitQuizAttemptAction(
@@ -20,6 +26,7 @@ export async function submitQuizAttemptAction(
   const organizationId = context.profile.organization_id;
 
   const quizId = String(formData.get("quiz_id") ?? "").trim();
+  const assignmentId = String(formData.get("assignment_id") ?? "").trim();
 
   if (!quizId) {
     return { error: "Quiz introuvable." };
@@ -33,6 +40,7 @@ export async function submitQuizAttemptAction(
         title,
         status,
         attempts_allowed,
+        passing_score,
         quiz_questions (
           id,
           prompt,
@@ -54,6 +62,7 @@ export async function submitQuizAttemptAction(
       title: string;
       status: string;
       attempts_allowed: number;
+      passing_score: number | null;
       quiz_questions: Array<{
         id: string;
         prompt: string;
@@ -93,6 +102,7 @@ export async function submitQuizAttemptAction(
     .insert({
       quiz_id: quizId,
       user_id: context.user.id,
+      assignment_id: assignmentId || null,
       attempt_number: attemptNumber,
       status: "submitted",
       started_at: new Date().toISOString(),
@@ -163,12 +173,56 @@ export async function submitQuizAttemptAction(
     return { error: updateError.message };
   }
 
+  const staffIds = await getOrganizationStaffIds(organizationId);
+  await createNotifications([
+    {
+      organizationId,
+      recipientId: context.user.id,
+      actorId: context.user.id,
+      title: "Quiz complété",
+      body: `Ton score pour "${quiz.title}" est de ${score}%.`,
+      deeplink: `/quiz/${quizId}`
+    },
+    ...staffIds
+      .filter((recipientId) => recipientId !== context.user.id)
+      .map((recipientId) => ({
+        organizationId,
+        recipientId,
+        actorId: context.user.id,
+        title: "Nouveau résultat quiz",
+        body: `${quiz.title} vient d'être soumis avec un score de ${score}%.`,
+        deeplink: "/coach"
+      }))
+  ]);
+
+  const badgeTitle = await awardQuizBadge({
+    organizationId,
+    userId: context.user.id,
+    quizAttemptId: attempt.id,
+    score,
+    passingScore: quiz.passing_score
+  });
+
+  if (badgeTitle) {
+    await createNotifications([
+      {
+        organizationId,
+        recipientId: context.user.id,
+        actorId: context.user.id,
+        title: "Nouveau badge débloqué",
+        body: `Tu viens d'obtenir le badge "${badgeTitle}".`,
+        deeplink: "/dashboard"
+      }
+    ]);
+  }
+
   revalidatePath(`/quiz/${quizId}`);
   revalidatePath("/dashboard");
   revalidatePath("/coach");
 
   return {
     success: `Quiz "${quiz.title}" soumis avec succès.`,
-    score: `${score}%`
+    score: `${score}%`,
+    badgeTitle: badgeTitle ?? undefined
   };
 }

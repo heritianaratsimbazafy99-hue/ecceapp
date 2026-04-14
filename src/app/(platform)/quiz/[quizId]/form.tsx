@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 
+import { CelebrationBurst } from "@/components/feedback/celebration-burst";
 import {
   submitQuizAttemptAction,
   type QuizActionState
@@ -25,12 +26,31 @@ type QuizFormProps = {
 
 const initialState: QuizActionState = {};
 
-export function QuizTakeForm({ quizId, questions }: QuizFormProps) {
+export function QuizTakeForm({
+  quizId,
+  assignmentId,
+  questions
+}: QuizFormProps & {
+  assignmentId?: string | null;
+}) {
   const [state, formAction, pending] = useActionState(submitQuizAttemptAction, initialState);
 
   return (
     <form action={formAction} className="admin-form">
       <input name="quiz_id" type="hidden" value={quizId} />
+      {assignmentId ? <input name="assignment_id" type="hidden" value={assignmentId} /> : null}
+
+      <CelebrationBurst
+        active={Boolean(state.success)}
+        triggerKey={`${state.success ?? ""}-${state.score ?? ""}-${state.badgeTitle ?? ""}`}
+        body={
+          state.badgeTitle
+            ? `Badge débloqué: ${state.badgeTitle}.`
+            : "Ton résultat vient d'être enregistré dans ECCE."
+        }
+        title={state.badgeTitle ? "Bravo, nouveau badge !" : "Quiz validé"}
+        tone={state.badgeTitle ? "badge" : "success"}
+      />
 
       <div className="stack-list">
         {questions.map((question, index) => (

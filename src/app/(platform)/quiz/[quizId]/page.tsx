@@ -7,11 +7,14 @@ import { getQuizPageData } from "@/lib/platform-data";
 import { QuizTakeForm } from "./form";
 
 export default async function QuizPage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ quizId: string }>;
+  searchParams: Promise<{ assignment?: string }>;
 }) {
   const { quizId } = await params;
+  const { assignment } = await searchParams;
   const { quiz, attempts } = await getQuizPageData(quizId);
 
   if (!quiz) {
@@ -80,6 +83,7 @@ export default async function QuizPage({
         </div>
 
         <QuizTakeForm
+          assignmentId={assignment ?? null}
           quizId={quiz.id}
           questions={(quiz.quiz_questions ?? []).map((question) => ({
             id: question.id,

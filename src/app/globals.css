@@ -769,6 +769,121 @@ main {
   font-weight: 700;
 }
 
+.admin-form-compact {
+  gap: 14px;
+}
+
+.inline-link {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.panel-highlight {
+  background: linear-gradient(180deg, rgba(255, 248, 227, 0.95), rgba(255, 255, 255, 0.9));
+}
+
+.coach-review-summary {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(16, 24, 32, 0.05);
+}
+
+.badge-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 18px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 243, 214, 0.95));
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.badge-card-icon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: radial-gradient(circle at top, rgba(255, 214, 102, 0.95), rgba(247, 138, 73, 0.92));
+  color: #20150d;
+  font-size: 1.4rem;
+  font-weight: 800;
+  box-shadow: 0 18px 40px rgba(247, 138, 73, 0.2);
+}
+
+.celebration-burst {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(231, 247, 237, 0.98), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(84, 159, 112, 0.2);
+}
+
+.celebration-burst.is-badge {
+  background: linear-gradient(135deg, rgba(255, 245, 218, 0.98), rgba(255, 255, 255, 0.96));
+  border-color: rgba(247, 138, 73, 0.28);
+}
+
+.celebration-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 6px;
+}
+
+.celebration-copy strong {
+  font-size: 1rem;
+}
+
+.celebration-copy p {
+  margin: 0;
+  color: rgba(16, 24, 32, 0.74);
+}
+
+.celebration-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.celebration-piece {
+  position: absolute;
+  top: -10px;
+  width: 10px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(247, 138, 73, 1), rgba(255, 214, 102, 1));
+  animation: celebration-fall 1400ms ease-in infinite;
+}
+
+.celebration-piece:nth-child(3n) {
+  background: linear-gradient(180deg, rgba(84, 159, 112, 1), rgba(168, 225, 195, 1));
+}
+
+.celebration-piece:nth-child(4n) {
+  background: linear-gradient(180deg, rgba(53, 104, 151, 1), rgba(126, 171, 214, 1));
+}
+
+@keyframes celebration-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -12px, 0) rotate(0deg);
+  }
+
+  15% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--piece-drift), 180px, 0) rotate(240deg);
+  }
+}
+
 .empty-state {
   padding: 20px;
   border-radius: 20px;
@@ -843,6 +958,10 @@ main {
   .list-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .badge-card {
+    grid-template-columns: 1fr;
   }
 
   .list-row-meta {

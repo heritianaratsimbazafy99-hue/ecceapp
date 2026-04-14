@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireRole, type AppRole } from "@/lib/auth";
+import { createNotifications, getAssignmentRecipientIds } from "@/lib/platform-events";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
@@ -330,7 +331,9 @@ export async function createAssignmentAction(
 
   const dueAt = dueAtInput ? new Date(dueAtInput).toISOString() : null;
 
-  const { error } = await admin.from("learning_assignments").insert({
+  const assignmentInsert = await admin
+    .from("learning_assignments")
+    .insert({
     organization_id: organizationId,
     title,
     assigned_user_id: assignedUserId || null,
@@ -340,11 +343,31 @@ export async function createAssignmentAction(
     due_at: dueAt,
     published_at: new Date().toISOString(),
     created_by: context.user.id
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (assignmentInsert.error || !assignmentInsert.data) {
+    return fail(assignmentInsert.error?.message ?? "Impossible de créer l'assignation.");
+  }
+
+  const recipientIds = await getAssignmentRecipientIds(organizationId, {
+    assigned_user_id: assignedUserId || null,
+    cohort_id: cohortId || null
   });
 
-  if (error) {
-    return fail(error.message);
-  }
+  await createNotifications(
+    recipientIds.map((recipientId) => ({
+      organizationId,
+      recipientId,
+      actorId: context.user.id,
+      title: "Nouvelle assignation ECCE",
+      body: dueAt
+        ? `${title} a été programmé avec une échéance au ${new Date(dueAt).toLocaleString("fr-FR")}.`
+        : `${title} a été ajouté à ton parcours.`,
+      deeplink: quizId ? `/quiz/${quizId}?assignment=${assignmentInsert.data.id}` : `/assignments/${assignmentInsert.data.id}`
+    }))
+  );
 
   revalidatePath("/admin");
   revalidatePath("/dashboard");
