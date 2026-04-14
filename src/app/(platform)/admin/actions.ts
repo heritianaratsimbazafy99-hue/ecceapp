@@ -140,6 +140,90 @@ export async function assignRoleAction(
   return ok(`Rôle ${role} attribué.`);
 }
 
+export async function assignCoacheeToCohortAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const coacheeId = String(formData.get("coachee_id") ?? "").trim();
+  const cohortId = String(formData.get("cohort_id") ?? "").trim();
+
+  if (!coacheeId || !cohortId) {
+    return fail("Sélectionne un coaché et une cohorte.");
+  }
+
+  const [coacheeRoleResult, cohortResult, profileResult] = await Promise.all([
+    admin
+      .from("user_roles")
+      .select("user_id")
+      .eq("organization_id", organizationId)
+      .eq("user_id", coacheeId)
+      .eq("role", "coachee")
+      .maybeSingle<{ user_id: string }>(),
+    admin
+      .from("cohorts")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("id", cohortId)
+      .maybeSingle<{ id: string; name: string }>(),
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name")
+      .eq("organization_id", organizationId)
+      .eq("id", coacheeId)
+      .maybeSingle<{ id: string; first_name: string; last_name: string }>()
+  ]);
+
+  if (coacheeRoleResult.error || !coacheeRoleResult.data) {
+    return fail("Ce profil n'a pas le rôle coaché.");
+  }
+
+  if (cohortResult.error || !cohortResult.data) {
+    return fail("Cohorte introuvable.");
+  }
+
+  if (profileResult.error || !profileResult.data) {
+    return fail("Coaché introuvable.");
+  }
+
+  const { error } = await admin.from("cohort_members").upsert(
+    {
+      cohort_id: cohortId,
+      user_id: coacheeId
+    },
+    {
+      onConflict: "cohort_id,user_id",
+      ignoreDuplicates: true
+    }
+  );
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  await createNotifications([
+    {
+      organizationId,
+      recipientId: coacheeId,
+      actorId: context.user.id,
+      title: "Nouvelle cohorte ECCE",
+      body: `Tu as été ajouté(e) à la cohorte ${cohortResult.data.name}.`,
+      deeplink: "/dashboard"
+    }
+  ]);
+
+  revalidatePath("/admin");
+  revalidatePath("/coach");
+  revalidatePath("/dashboard");
+
+  return ok(
+    `${profileResult.data.first_name} ${profileResult.data.last_name} a été ajouté(e) à la cohorte ${cohortResult.data.name}.`
+  );
+}
+
 export async function createContentAction(
   _prevState: AdminActionState,
   formData: FormData

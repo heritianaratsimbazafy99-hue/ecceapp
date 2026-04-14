@@ -25,6 +25,7 @@ export default async function CoachPage() {
     textReviewQueue,
     reviewQueue,
     coachOptions,
+    cohortOptions,
     coacheeOptions,
     messagingWorkspace
   } = await getCoachPageData();
@@ -134,6 +135,7 @@ export default async function CoachPage() {
         <ScheduleCoachingSessionForm
           allowCoachSelection={context.role === "admin"}
           coachOptions={coachOptions}
+          cohortOptions={cohortOptions}
           coacheeOptions={coacheeOptions}
         />
       </section>
@@ -196,10 +198,13 @@ export default async function CoachPage() {
           {sessions.length ? (
             <div className="stack-list">
               {sessions.map((session) => (
-                <article className="list-row" key={`${session.name}-${session.date}`}>
+                <article className="list-row" key={session.id}>
                   <div>
                     <strong>{session.name}</strong>
-                    <p>{session.date}</p>
+                    <p>
+                      {session.date}
+                      {session.cohort ? ` · ${session.cohort}` : ""}
+                    </p>
                   </div>
                 </article>
               ))}

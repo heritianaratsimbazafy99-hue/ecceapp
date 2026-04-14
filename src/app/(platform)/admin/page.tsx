@@ -1,5 +1,6 @@
 import {
   AddQuizQuestionForm,
+  AssignCoacheeToCohortForm,
   AssignRoleForm,
   CreateAssignmentForm,
   CreateContentForm,
@@ -34,6 +35,8 @@ export default async function AdminPage() {
     attentionLearners,
     users,
     userOptions,
+    coacheeOptions,
+    coacheeCohorts,
     cohortOptions,
     contents,
     contentOptions,
@@ -158,6 +161,52 @@ export default async function AdminPage() {
             <p>Ajoute un rôle complémentaire à un utilisateur déjà créé.</p>
           </div>
           <AssignRoleForm userOptions={userOptions} />
+        </div>
+      </section>
+
+      <section className="admin-grid">
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Affecter à une cohorte</h3>
+            <p>Ajoute un coaché à une cohorte existante pour piloter les parcours et les séances groupées.</p>
+          </div>
+          <AssignCoacheeToCohortForm coacheeOptions={coacheeOptions} cohortOptions={cohortOptions} />
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Coachés par cohorte</h3>
+            <p>Vue rapide des rattachements actuels, utile avant les assignations et la planification.</p>
+          </div>
+
+          {coacheeCohorts.length ? (
+            <div className="stack-list">
+              {coacheeCohorts.map((learner) => (
+                <article className="list-row list-row-stretch" key={learner.id}>
+                  <div>
+                    <strong>{learner.name}</strong>
+                    <p>{learner.status}</p>
+                  </div>
+                  <div className="tag-row">
+                    {learner.cohorts.length ? (
+                      learner.cohorts.map((cohort) => (
+                        <Badge key={`${learner.id}-${cohort}`} tone="accent">
+                          {cohort}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge tone="neutral">Sans cohorte</Badge>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun coaché à rattacher pour l&apos;instant.</strong>
+              <p>Crée un utilisateur avec le rôle `coachee`, puis affecte-le à une cohorte ici.</p>
+            </div>
+          )}
         </div>
       </section>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
@@ -42,14 +42,23 @@ function ActionFeedback({ state }: { state: CoachActionState }) {
 
 export function ScheduleCoachingSessionForm({
   coacheeOptions,
+  cohortOptions,
   coachOptions,
   allowCoachSelection
 }: {
-  coacheeOptions: Array<{ id: string; label: string }>;
+  coacheeOptions: Array<{ id: string; label: string; cohortIds: string[]; cohortLabels: string[] }>;
+  cohortOptions: Array<{ id: string; label: string; memberCount: number }>;
   coachOptions: Array<{ id: string; label: string }>;
   allowCoachSelection: boolean;
 }) {
   const [state, formAction] = useActionState(scheduleCoachingSessionAction, initialState);
+  const [selectedCohortId, setSelectedCohortId] = useState("");
+  const [selectedCoacheeId, setSelectedCoacheeId] = useState("");
+
+  const filteredCoacheeOptions = selectedCohortId
+    ? coacheeOptions.filter((option) => option.cohortIds.includes(selectedCohortId))
+    : coacheeOptions;
+  const selectedCohort = cohortOptions.find((option) => option.id === selectedCohortId) ?? null;
 
   return (
     <form action={formAction} className="admin-form">
@@ -70,12 +79,45 @@ export function ScheduleCoachingSessionForm({
           </label>
         ) : null}
         <label>
+          Cohorte
+          <select
+            name="cohort_id"
+            onChange={(event) => {
+              const nextCohortId = event.target.value;
+              setSelectedCohortId(nextCohortId);
+
+              if (selectedCoacheeId && nextCohortId) {
+                const belongsToCohort = coacheeOptions.some(
+                  (option) => option.id === selectedCoacheeId && option.cohortIds.includes(nextCohortId)
+                );
+
+                if (!belongsToCohort) {
+                  setSelectedCoacheeId("");
+                }
+              }
+            }}
+            value={selectedCohortId}
+          >
+            <option value="">Aucune cohorte spécifique</option>
+            {cohortOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label} · {option.memberCount} coaché(s)
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Coaché
-          <select defaultValue="" name="coachee_id" required>
-            <option disabled value="">
-              Choisir un coaché
+          <select
+            name="coachee_id"
+            onChange={(event) => setSelectedCoacheeId(event.target.value)}
+            required={!selectedCohortId}
+            value={selectedCoacheeId}
+          >
+            <option value="">
+              {selectedCohortId ? "Toute la cohorte sélectionnée" : "Choisir un coaché"}
             </option>
-            {coacheeOptions.map((option) => (
+            {filteredCoacheeOptions.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.label}
               </option>
@@ -95,6 +137,14 @@ export function ScheduleCoachingSessionForm({
           <input name="video_link" placeholder="https://meet.google.com/..." type="url" />
         </label>
       </div>
+
+      <p className="form-hint">
+        {selectedCohort
+          ? filteredCoacheeOptions.length
+            ? `Cohorte active : ${selectedCohort.label}. Laisse le coaché vide pour créer une séance pour chaque membre de cette cohorte.`
+            : `La cohorte ${selectedCohort.label} ne contient encore aucun coaché.`
+          : "Tu peux planifier pour un coaché précis ou choisir une cohorte pour générer les séances du groupe."}
+      </p>
 
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Planifier la séance" pendingLabel="Planification..." />

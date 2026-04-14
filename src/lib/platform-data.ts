@@ -862,6 +862,9 @@ export async function getAdminPageData() {
     status: profile.status,
     roles: (profile.user_roles ?? []).map((item) => item.role)
   }));
+  const coacheeProfiles = profiles.filter((profile) =>
+    (profile.user_roles ?? []).some((item) => item.role === "coachee")
+  );
   const coacheeIds = profiles
     .filter((profile) => (profile.user_roles ?? []).some((item) => item.role === "coachee"))
     .map((profile) => profile.id);
@@ -972,6 +975,16 @@ export async function getAdminPageData() {
     userOptions: users.map((user) => ({
       id: user.id,
       label: `${user.name} · ${user.email}`
+    })),
+    coacheeOptions: coacheeProfiles.map((profile) => ({
+      id: profile.id,
+      label: `${formatUserName(profile)} · ${emailByUserId.get(profile.id) ?? "email indisponible"}`
+    })),
+    coacheeCohorts: coacheeProfiles.map((profile) => ({
+      id: profile.id,
+      name: formatUserName(profile),
+      status: profile.status,
+      cohorts: cohortNamesByUserId.get(profile.id) ?? []
     })),
     cohortOptions: cohorts.map((cohort) => ({
       id: cohort.id,
@@ -1088,7 +1101,7 @@ export async function getCoachPageData() {
       (() => {
         let query = admin
           .from("coaching_sessions")
-          .select("id, starts_at, status, coachee_id")
+          .select("id, starts_at, status, coachee_id, cohort_id")
           .eq("organization_id", organizationId)
           .gte("starts_at", new Date().toISOString())
           .order("starts_at", { ascending: true });
@@ -1210,6 +1223,7 @@ export async function getCoachPageData() {
     starts_at: string;
     status: string;
     coachee_id: string;
+    cohort_id: string | null;
   }>;
 
   const roster = profiles.slice(0, 8).map((profile) => ({
@@ -1390,9 +1404,24 @@ export async function getCoachPageData() {
       }))
   );
 
+  const cohortCountById = cohortMembers.reduce((map, item) => {
+    map.set(item.cohort_id, (map.get(item.cohort_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+
+  const cohortOptions = (cohortRows ?? [])
+    .map((cohort) => ({
+      id: cohort.id,
+      label: cohort.name,
+      memberCount: cohortCountById.get(cohort.id) ?? 0
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label, "fr"));
+
   const coacheeOptions = profiles.map((profile) => ({
     id: profile.id,
-    label: formatUserName(profile)
+    label: formatUserName(profile),
+    cohortIds: cohortMembers.filter((item) => item.user_id === profile.id).map((item) => item.cohort_id),
+    cohortLabels: cohortNamesByUserId.get(profile.id) ?? []
   }));
 
   const messagingWorkspace = context.roles.includes("coach")
@@ -1434,6 +1463,7 @@ export async function getCoachPageData() {
     ),
     attentionLearners,
     coachOptions,
+    cohortOptions,
     coacheeOptions,
     roster,
     deadlines: dueAssignments,
@@ -1441,13 +1471,14 @@ export async function getCoachPageData() {
     textReviewQueue,
     reviewQueue,
     messagingWorkspace,
-    sessions: roster
-      .filter((item) => item.upcomingSession)
-      .slice(0, 6)
-      .map((item) => ({
-        name: item.name,
-        date: formatDate(item.upcomingSession)
-      }))
+    sessions: sessions.map((session) => ({
+      id: session.id,
+      name: profileById.get(session.coachee_id)
+        ? formatUserName(profileById.get(session.coachee_id)!)
+        : "Coaché inconnu",
+      date: formatDate(session.starts_at),
+      cohort: session.cohort_id ? (cohortNameById.get(session.cohort_id) ?? null) : null
+    }))
   };
 }
 

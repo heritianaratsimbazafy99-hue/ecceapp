@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 
 import {
   addQuizQuestionAction,
+  assignCoacheeToCohortAction,
   assignRoleAction,
   createAssignmentAction,
   createContentAction,
@@ -135,6 +136,52 @@ export function AssignRoleForm({ userOptions }: { userOptions: UserOption[] }) {
 
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Attribuer le rôle" pendingLabel="Attribution..." />
+    </form>
+  );
+}
+
+export function AssignCoacheeToCohortForm({
+  coacheeOptions,
+  cohortOptions
+}: {
+  coacheeOptions: UserOption[];
+  cohortOptions: CohortOption[];
+}) {
+  const [state, formAction] = useActionState(assignCoacheeToCohortAction, initialState);
+
+  return (
+    <form action={formAction} className="admin-form">
+      <div className="form-grid form-grid-compact">
+        <label>
+          Coaché
+          <select defaultValue="" name="coachee_id" required>
+            <option disabled value="">
+              Choisir un coaché
+            </option>
+            {coacheeOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Cohorte
+          <select defaultValue="" name="cohort_id" required>
+            <option disabled value="">
+              Choisir une cohorte
+            </option>
+            {cohortOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <ActionFeedback state={state} />
+      <SubmitButton idleLabel="Ajouter à la cohorte" pendingLabel="Ajout..." />
     </form>
   );
 }

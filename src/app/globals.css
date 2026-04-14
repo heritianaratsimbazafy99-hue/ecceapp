@@ -323,6 +323,7 @@ main {
 .metric-card,
 .collection-card,
 .auth-card {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface-strong);
@@ -671,7 +672,7 @@ main {
 }
 
 .form-grid-compact {
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
 }
 
 .form-grid-span {
@@ -845,6 +846,7 @@ main {
 .auth-form label {
   display: grid;
   gap: 8px;
+  min-width: 0;
   font-weight: 700;
 }
 
@@ -852,6 +854,8 @@ main {
 .admin-form select,
 .admin-form textarea,
 .auth-form input {
+  width: 100%;
+  min-width: 0;
   min-height: 54px;
   padding: 0 16px;
   border: 1px solid rgba(16, 24, 32, 0.12);
@@ -911,6 +915,13 @@ main {
   color: var(--sage);
   font-size: 0.95rem;
   font-weight: 700;
+}
+
+.form-hint {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.5;
 }
 
 .admin-form-compact {

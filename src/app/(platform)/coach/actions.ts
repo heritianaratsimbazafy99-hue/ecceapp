@@ -28,55 +28,148 @@ export async function scheduleCoachingSessionAction(
   const organizationId = context.profile.organization_id;
 
   const coacheeId = String(formData.get("coachee_id") ?? "").trim();
+  const cohortId = String(formData.get("cohort_id") ?? "").trim();
   const startsAtInput = String(formData.get("starts_at") ?? "").trim();
   const endsAtInput = String(formData.get("ends_at") ?? "").trim();
   const videoLink = String(formData.get("video_link") ?? "").trim();
   const coachIdInput = String(formData.get("coach_id") ?? "").trim();
 
-  if (!coacheeId || !startsAtInput) {
-    return fail("Le coaché et la date de session sont obligatoires.");
+  if (!startsAtInput) {
+    return fail("La date de session est obligatoire.");
+  }
+
+  if (!coacheeId && !cohortId) {
+    return fail("Sélectionne un coaché ou une cohorte.");
   }
 
   const coachId = context.role === "admin" && coachIdInput ? coachIdInput : context.user.id;
-  const startsAt = new Date(startsAtInput).toISOString();
-  const endsAt = endsAtInput ? new Date(endsAtInput).toISOString() : null;
+  const startsAtDate = new Date(startsAtInput);
+
+  if (Number.isNaN(startsAtDate.getTime())) {
+    return fail("La date de début n'est pas valide.");
+  }
+
+  const endsAtDate = endsAtInput ? new Date(endsAtInput) : null;
+
+  if (endsAtDate && Number.isNaN(endsAtDate.getTime())) {
+    return fail("La date de fin n'est pas valide.");
+  }
+
+  const startsAt = startsAtDate.toISOString();
+  const endsAt = endsAtDate ? endsAtDate.toISOString() : null;
 
   if (endsAt && new Date(endsAt) <= new Date(startsAt)) {
     return fail("La fin de session doit etre posterieure au debut.");
   }
 
+  let cohortName: string | null = null;
+  let targetCoacheeIds = coacheeId ? [coacheeId] : [];
+
+  if (cohortId) {
+    const cohortResult = await admin
+      .from("cohorts")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("id", cohortId)
+      .maybeSingle<{ id: string; name: string }>();
+
+    if (cohortResult.error || !cohortResult.data) {
+      return fail("Cohorte introuvable.");
+    }
+
+    cohortName = cohortResult.data.name;
+
+    const cohortMembersResult = await admin
+      .from("cohort_members")
+      .select("user_id")
+      .eq("cohort_id", cohortId);
+
+    if (cohortMembersResult.error) {
+      return fail(cohortMembersResult.error.message);
+    }
+
+    const cohortMemberIds = Array.from(
+      new Set((cohortMembersResult.data ?? []).map((member) => member.user_id))
+    );
+
+    if (coacheeId) {
+      if (!cohortMemberIds.includes(coacheeId)) {
+        return fail("Le coaché sélectionné n'appartient pas à cette cohorte.");
+      }
+
+      targetCoacheeIds = [coacheeId];
+    } else {
+      targetCoacheeIds = cohortMemberIds;
+    }
+  }
+
+  if (!targetCoacheeIds.length) {
+    return fail("Aucun coaché disponible pour cette planification.");
+  }
+
+  const coacheeRolesResult = await admin
+    .from("user_roles")
+    .select("user_id")
+    .eq("organization_id", organizationId)
+    .eq("role", "coachee")
+    .in("user_id", targetCoacheeIds);
+
+  if (coacheeRolesResult.error) {
+    return fail(coacheeRolesResult.error.message);
+  }
+
+  const validCoacheeIds = Array.from(
+    new Set((coacheeRolesResult.data ?? []).map((item) => item.user_id))
+  );
+
+  if (!validCoacheeIds.length) {
+    return fail("Aucun coaché valide trouvé pour cette session.");
+  }
+
+  if (validCoacheeIds.length !== targetCoacheeIds.length) {
+    return fail("Certains profils ciblés ne sont pas configurés comme coachés.");
+  }
+
   const sessionInsert = await admin
     .from("coaching_sessions")
-    .insert({
-      organization_id: organizationId,
-      coach_id: coachId,
-      coachee_id: coacheeId,
-      starts_at: startsAt,
-      ends_at: endsAt,
-      video_link: videoLink || null
-    })
-    .select("id")
-    .single<{ id: string }>();
+    .insert(
+      validCoacheeIds.map((targetId) => ({
+        organization_id: organizationId,
+        coach_id: coachId,
+        coachee_id: targetId,
+        cohort_id: cohortId || null,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        video_link: videoLink || null
+      }))
+    )
+    .select("id, coachee_id");
 
-  if (sessionInsert.error || !sessionInsert.data) {
+  if (sessionInsert.error || !(sessionInsert.data?.length ?? 0)) {
     return fail(sessionInsert.error?.message ?? "Impossible de planifier la session.");
   }
 
   await createNotifications([
-    {
+    ...validCoacheeIds.map((recipientId) => ({
       organizationId,
-      recipientId: coacheeId,
+      recipientId,
       actorId: context.user.id,
       title: "Nouvelle séance de coaching",
-      body: `Une séance a été planifiée pour le ${new Date(startsAt).toLocaleString("fr-FR")}.`,
+      body: cohortName
+        ? `Une séance a été planifiée pour le ${new Date(startsAt).toLocaleString("fr-FR")} dans la cohorte ${cohortName}.`
+        : `Une séance a été planifiée pour le ${new Date(startsAt).toLocaleString("fr-FR")}.`,
       deeplink: "/dashboard"
-    }
+    }))
   ]);
 
   revalidatePath("/coach");
   revalidatePath("/dashboard");
 
-  return ok("Séance de coaching planifiée.");
+  return ok(
+    validCoacheeIds.length > 1
+      ? `${validCoacheeIds.length} séances ont été planifiées${cohortName ? ` pour la cohorte ${cohortName}` : ""}.`
+      : `Séance de coaching planifiée${cohortName ? ` pour la cohorte ${cohortName}` : ""}.`
+  );
 }
 
 export async function reviewSubmissionAction(
