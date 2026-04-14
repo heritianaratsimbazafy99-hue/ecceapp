@@ -733,6 +733,30 @@ main {
   padding: 0;
 }
 
+.choice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  font-weight: 600;
+}
+
+.choice-row input {
+  min-height: auto;
+  padding: 0;
+}
+
+.quiz-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 14px 16px;
+  border: 1px solid rgba(16, 24, 32, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .form-error {
   margin: 0;
   font-size: 0.95rem;

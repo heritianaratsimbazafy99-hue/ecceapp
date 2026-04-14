@@ -1,10 +1,13 @@
+import Link from "next/link";
+
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getDashboardPageData } from "@/lib/platform-data";
 
 export default async function DashboardPage() {
-  const { metrics, assignments, notifications, recentContents } = await getDashboardPageData();
+  const { metrics, assignments, notifications, recentContents, recentAttempts } =
+    await getDashboardPageData();
 
   return (
     <div className="page-shell">
@@ -34,7 +37,18 @@ export default async function DashboardPage() {
                     <strong>{item.title}</strong>
                     <p>{item.due}</p>
                   </div>
-                  <Badge tone={item.type === "quiz" ? "warning" : "accent"}>{item.type}</Badge>
+                  <div className="table-actions">
+                    <Badge tone={item.type === "quiz" ? "warning" : "accent"}>{item.type}</Badge>
+                    {item.type === "quiz" && item.targetId ? (
+                      <Link className="button button-secondary button-small" href={`/quiz/${item.targetId}`}>
+                        Ouvrir
+                      </Link>
+                    ) : (
+                      <Link className="button button-secondary button-small" href="/library">
+                        Voir
+                      </Link>
+                    )}
+                  </div>
                 </article>
               ))}
             </div>
@@ -100,6 +114,32 @@ export default async function DashboardPage() {
           <div className="empty-state">
             <strong>Aucun contenu publié pour le moment.</strong>
             <p>Crée un contenu publié depuis l&apos;admin pour l&apos;alimenter immédiatement.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Mes derniers résultats</h3>
+          <p>Les tentatives de quiz soumises apparaissent ici automatiquement.</p>
+        </div>
+
+        {recentAttempts.length ? (
+          <div className="stack-list">
+            {recentAttempts.map((attempt) => (
+              <article className="list-row" key={attempt.id}>
+                <div>
+                  <strong>{attempt.title}</strong>
+                  <p>{attempt.meta}</p>
+                </div>
+                <Badge tone="success">{attempt.score}</Badge>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Aucun résultat pour l&apos;instant.</strong>
+            <p>Passe un quiz pour voir ici ton historique de tentatives.</p>
           </div>
         )}
       </section>

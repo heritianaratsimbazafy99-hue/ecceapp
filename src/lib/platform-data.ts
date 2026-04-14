@@ -50,11 +50,42 @@ type AssignmentRow = {
 type QuizRow = {
   id: string;
   title: string;
+  description?: string | null;
   kind?: string;
   status?: string;
   attempts_allowed?: number;
   time_limit_minutes?: number | null;
+  passing_score?: number | null;
   content_item_id?: string | null;
+};
+
+type QuizQuestionRow = {
+  id: string;
+  prompt: string;
+  helper_text: string | null;
+  question_type: string;
+  points: number;
+  position: number;
+  quiz_question_choices?: Array<{
+    id: string;
+    label: string;
+    is_correct: boolean;
+    position: number;
+  }>;
+};
+
+type QuizAttemptResultRow = {
+  id: string;
+  quiz_id: string;
+  user_id: string;
+  score: number | null;
+  status: string;
+  attempt_number: number;
+  submitted_at: string | null;
+  profiles?: Array<{
+    first_name: string;
+    last_name: string;
+  }>;
 };
 
 function formatDate(dateString: string | null) {
@@ -103,7 +134,9 @@ export async function getAdminPageData() {
       .order("created_at", { ascending: false }),
     admin
       .from("quizzes")
-      .select("id, title, kind, status, attempts_allowed, time_limit_minutes, content_item_id")
+      .select(
+        "id, title, description, kind, status, attempts_allowed, time_limit_minutes, passing_score, content_item_id"
+      )
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
     admin
@@ -256,7 +289,15 @@ export async function getCoachPageData() {
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
 
-  const [rolesResult, profilesResult, cohortsResult, sessionsResult, contentsResult, assignmentsResult] =
+  const [
+    rolesResult,
+    profilesResult,
+    cohortsResult,
+    sessionsResult,
+    contentsResult,
+    assignmentsResult,
+    quizAttemptsResult
+  ] =
     await Promise.all([
       admin
         .from("user_roles")
@@ -294,7 +335,14 @@ export async function getCoachPageData() {
         .eq("organization_id", organizationId)
         .not("due_at", "is", null)
         .order("due_at", { ascending: true })
-        .limit(20)
+        .limit(20),
+      admin
+        .from("quiz_attempts")
+        .select(
+          "id, quiz_id, user_id, score, status, attempt_number, submitted_at, profiles:user_id(first_name, last_name)"
+        )
+        .order("submitted_at", { ascending: false })
+        .limit(10)
     ]);
 
   const coacheeIds = new Set((rolesResult.data ?? []).map((item) => item.user_id));
@@ -362,6 +410,21 @@ export async function getCoachPageData() {
       targetCount: assignment.targetIds.length
     }));
 
+  const recentQuizResults = ((quizAttemptsResult.data ?? []) as QuizAttemptResultRow[])
+    .filter((attempt) => coacheeIds.has(attempt.user_id))
+    .map((attempt) => ({
+      id: attempt.id,
+      learner: (() => {
+        const profile = attempt.profiles?.[0];
+        return profile?.first_name && profile?.last_name
+          ? `${profile.first_name} ${profile.last_name}`
+          : "Coaché inconnu";
+      })(),
+      score: attempt.score !== null ? `${attempt.score}%` : "Non noté",
+      attempt: `Tentative ${attempt.attempt_number}`,
+      submittedAt: formatDate(attempt.submitted_at)
+    }));
+
   return {
     context,
     metrics: [
@@ -388,6 +451,7 @@ export async function getCoachPageData() {
     ],
     roster,
     deadlines: dueAssignments,
+    recentQuizResults,
     sessions: roster
       .filter((item) => item.upcomingSession)
       .slice(0, 6)
@@ -404,7 +468,13 @@ export async function getDashboardPageData() {
   const organizationId = context.profile.organization_id;
   const userId = context.user.id;
 
-  const [cohortMembersResult, notificationsResult, publishedContentResult, quizzesResult] =
+  const [
+    cohortMembersResult,
+    notificationsResult,
+    publishedContentResult,
+    quizzesResult,
+    quizAttemptsResult
+  ] =
     await Promise.all([
       admin.from("cohort_members").select("cohort_id").eq("user_id", userId),
       admin
@@ -428,7 +498,13 @@ export async function getDashboardPageData() {
         .from("quizzes")
         .select("id", { count: "exact" })
         .eq("organization_id", organizationId)
-        .eq("status", "published")
+        .eq("status", "published"),
+      admin
+        .from("quiz_attempts")
+        .select("id, quiz_id, score, status, attempt_number, submitted_at")
+        .eq("user_id", userId)
+        .order("submitted_at", { ascending: false })
+        .limit(6)
     ]);
 
   const cohortIds = (cohortMembersResult.data ?? []).map((item) => item.cohort_id);
@@ -460,7 +536,20 @@ export async function getDashboardPageData() {
   const contentIds = Array.from(
     new Set(assignments.map((item) => item.content_item_id).filter(Boolean))
   ) as string[];
-  const quizIds = Array.from(new Set(assignments.map((item) => item.quiz_id).filter(Boolean))) as string[];
+  const attempts = (quizAttemptsResult.data ?? []) as Array<{
+    id: string;
+    quiz_id: string;
+    score: number | null;
+    status: string;
+    attempt_number: number;
+    submitted_at: string | null;
+  }>;
+  const quizIds = Array.from(
+    new Set([
+      ...assignments.map((item) => item.quiz_id).filter(Boolean),
+      ...attempts.map((item) => item.quiz_id).filter(Boolean)
+    ])
+  ) as string[];
 
   const [assignmentContentsResult, assignmentQuizzesResult] = await Promise.all([
     contentIds.length
@@ -515,9 +604,82 @@ export async function getDashboardPageData() {
         quizById.get(item.quiz_id ?? "")?.title ??
         item.title,
       due: formatDate(item.due_at),
-      type: item.content_item_id ? "contenu" : "quiz"
+      type: item.content_item_id ? "contenu" : "quiz",
+      targetId: item.quiz_id ?? item.content_item_id ?? null
     })),
     notifications,
-    recentContents: publishedContents
+    recentContents: publishedContents,
+    recentAttempts: attempts.map((attempt) => ({
+      id: attempt.id,
+      title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
+      score: attempt.score !== null ? `${attempt.score}%` : "Non noté",
+      meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}`
+    }))
+  };
+}
+
+export async function getQuizPageData(quizId: string) {
+  const context = await requireRole(["admin", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const { data: quiz } = await admin
+    .from("quizzes")
+    .select(
+      `
+        id,
+        title,
+        description,
+        kind,
+        status,
+        attempts_allowed,
+        time_limit_minutes,
+        passing_score,
+        quiz_questions (
+          id,
+          prompt,
+          helper_text,
+          question_type,
+          points,
+          position,
+          quiz_question_choices (
+            id,
+            label,
+            is_correct,
+            position
+          )
+        )
+      `
+    )
+    .eq("organization_id", organizationId)
+    .eq("id", quizId)
+    .maybeSingle<
+      QuizRow & {
+        quiz_questions: QuizQuestionRow[];
+      }
+    >();
+
+  if (!quiz) {
+    return {
+      context,
+      quiz: null,
+      attempts: []
+    };
+  }
+
+  const { data: attempts } = await admin
+    .from("quiz_attempts")
+    .select("id, quiz_id, user_id, score, status, attempt_number, submitted_at")
+    .eq("quiz_id", quizId)
+    .eq("user_id", context.user.id)
+    .order("attempt_number", { ascending: false });
+
+  return {
+    context,
+    quiz: {
+      ...quiz,
+      quiz_questions: [...(quiz.quiz_questions ?? [])].sort((left, right) => left.position - right.position)
+    },
+    attempts: (attempts ?? []) as QuizAttemptResultRow[]
   };
 }

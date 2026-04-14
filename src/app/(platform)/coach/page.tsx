@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { getCoachPageData } from "@/lib/platform-data";
 
 export default async function CoachPage() {
-  const { metrics, roster, sessions, deadlines } = await getCoachPageData();
+  const { metrics, roster, sessions, deadlines, recentQuizResults } = await getCoachPageData();
 
   return (
     <div className="page-shell">
@@ -106,6 +106,34 @@ export default async function CoachPage() {
           <div className="empty-state">
             <strong>Aucune deadline active.</strong>
             <p>Crée une assignation avec échéance depuis l&apos;admin pour l&apos;afficher ici.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Résultats quiz récents</h3>
+          <p>Les tentatives soumises par les coachés remontent ici pour le suivi pédagogique.</p>
+        </div>
+
+        {recentQuizResults.length ? (
+          <div className="stack-list">
+            {recentQuizResults.map((result) => (
+              <article className="list-row list-row-stretch" key={result.id}>
+                <div>
+                  <strong>{result.learner}</strong>
+                  <p>
+                    {result.attempt} · {result.submittedAt}
+                  </p>
+                </div>
+                <Badge tone="success">{result.score}</Badge>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Aucun résultat quiz remonté pour le moment.</strong>
+            <p>Dès qu&apos;un coaché soumettra un quiz, tu verras ici son score.</p>
           </div>
         )}
       </section>
