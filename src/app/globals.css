@@ -46,7 +46,9 @@ a {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -148,6 +150,11 @@ main {
 
 .button:hover {
   opacity: 0.94;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.75;
 }
 
 .button-secondary {
@@ -304,6 +311,12 @@ main {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
 .feature-card,
 .roadmap-card,
 .panel,
@@ -456,13 +469,23 @@ main {
 }
 
 .account-chip p,
-.form-error {
+.form-error,
+.form-success,
+.empty-state p,
+.table-row p {
   color: var(--muted);
 }
 
 .button-small {
   min-height: 40px;
   padding: 0 14px;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .page-shell {
@@ -511,6 +534,25 @@ main {
   margin-bottom: 18px;
 }
 
+.admin-form {
+  display: grid;
+  gap: 18px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.form-grid-compact {
+  grid-template-columns: 1.4fr 1fr;
+}
+
+.form-grid-span {
+  grid-column: 1 / -1;
+}
+
 .stack-list {
   display: grid;
   gap: 14px;
@@ -523,6 +565,36 @@ main {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(16, 24, 32, 0.04);
+}
+
+.list-row-stretch {
+  align-items: flex-start;
+}
+
+.data-table {
+  display: grid;
+  gap: 14px;
+}
+
+.table-head,
+.table-row {
+  display: grid;
+  grid-template-columns: 1.5fr 0.8fr 1.2fr;
+  gap: 16px;
+  align-items: center;
+}
+
+.table-head {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.table-row {
   padding: 16px 18px;
   border-radius: 20px;
   background: rgba(16, 24, 32, 0.04);
@@ -619,23 +691,58 @@ main {
   gap: 16px;
 }
 
-.form-error {
-  margin: 0;
-  font-size: 0.95rem;
-}
-
+.admin-form label,
 .auth-form label {
   display: grid;
   gap: 8px;
   font-weight: 700;
 }
 
+.admin-form input,
+.admin-form select,
+.admin-form textarea,
 .auth-form input {
   min-height: 54px;
   padding: 0 16px;
   border: 1px solid rgba(16, 24, 32, 0.12);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.92);
+}
+
+.admin-form textarea {
+  min-height: 120px;
+  padding-top: 14px;
+  resize: vertical;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  min-height: auto;
+  padding: 0;
+}
+
+.form-error {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.form-success {
+  margin: 0;
+  color: var(--sage);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.empty-state {
+  padding: 20px;
+  border-radius: 20px;
+  background: rgba(16, 24, 32, 0.04);
 }
 
 .auth-footnote {
@@ -652,7 +759,8 @@ main {
   .card-grid-three,
   .roadmap-grid,
   .metric-grid,
-  .library-grid {
+  .library-grid,
+  .admin-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -673,6 +781,7 @@ main {
   .hero,
   .card-grid-two,
   .content-grid,
+  .admin-grid,
   .card-grid-three,
   .roadmap-grid,
   .metric-grid,
@@ -708,5 +817,16 @@ main {
 
   .list-row-meta {
     justify-items: start;
+  }
+
+  .form-grid,
+  .form-grid-compact,
+  .table-head,
+  .table-row {
+    grid-template-columns: 1fr;
+  }
+
+  .table-actions {
+    justify-content: flex-start;
   }
 }

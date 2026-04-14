@@ -1,100 +1,91 @@
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
-import { LibraryGrid } from "@/components/platform/library-grid";
 import { Badge } from "@/components/ui/badge";
-import { libraryCollections } from "@/lib/mock-data";
+import { getLibraryPageData } from "@/lib/platform-data";
 
-const taxonomy = [
-  "Fondamentaux",
-  "Pratique supervisée",
-  "Business",
-  "Replays",
-  "Documents",
-  "YouTube"
-];
+function contentTone(contentType: string) {
+  switch (contentType) {
+    case "youtube":
+      return "warning";
+    case "video":
+      return "accent";
+    case "document":
+      return "success";
+    default:
+      return "neutral";
+  }
+}
 
-export default function LibraryPage() {
+export default async function LibraryPage() {
+  const { contents, groups, taxonomy } = await getLibraryPageData();
+
   return (
     <div className="page-shell">
       <PlatformTopbar
         title="Bibliothèque ECCE"
-        description="Une organisation pensée pour classer les contenus par parcours, catégories, sous-catégories et usage pédagogique."
+        description="La bibliothèque lit maintenant les vrais contenus publiés depuis Supabase et les regroupe par catégories."
       />
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Organisation intelligente</h3>
-          <p>
-            Les coachs pourront combiner catégories, sous-catégories, tags, ordre
-            et rattachement aux programmes.
-          </p>
+          <h3>Taxonomie réelle</h3>
+          <p>Les catégories, sous-catégories et tags remontent directement de la base.</p>
         </div>
 
         <div className="tag-row">
-          {taxonomy.map((item) => (
-            <Badge key={item} tone="neutral">
-              {item}
-            </Badge>
+          {taxonomy.length ? (
+            taxonomy.map((item) => (
+              <Badge key={item} tone="neutral">
+                {item}
+              </Badge>
+            ))
+          ) : (
+            <Badge tone="neutral">Aucune taxonomie disponible pour le moment</Badge>
+          )}
+        </div>
+      </section>
+
+      {contents.length ? (
+        <section className="admin-grid">
+          {groups.map((group) => (
+            <div className="panel" key={group.category}>
+              <div className="panel-header">
+                <h3>{group.category}</h3>
+                <p>{group.items.length} ressource(s) publiée(s) dans cette catégorie.</p>
+              </div>
+
+              <div className="stack-list">
+                {group.items.map((item) => (
+                  <article className="list-row list-row-stretch" key={item.id}>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <p>
+                        {item.subcategory || "Sans sous-catégorie"} ·{" "}
+                        {item.estimated_minutes ? `${item.estimated_minutes} min` : "durée libre"}
+                      </p>
+                      {item.summary ? <p>{item.summary}</p> : null}
+                    </div>
+
+                    <div className="table-actions">
+                      <Badge tone={contentTone(item.content_type)}>{item.content_type}</Badge>
+                      {item.is_required ? <Badge tone="accent">obligatoire</Badge> : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
           ))}
-        </div>
-      </section>
-
-      <section className="section-spacer">
-        <LibraryGrid collections={libraryCollections} />
-      </section>
-
-      <section className="content-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <h3>Formats recommandés</h3>
-            <p>Approche hybride pour maximiser efficacité et maîtrise des coûts.</p>
+        </section>
+      ) : (
+        <section className="panel">
+          <div className="empty-state">
+            <strong>Aucun contenu publié pour l&apos;instant.</strong>
+            <p>
+              Crée un contenu depuis le back-office admin puis mets son statut sur
+              `published` pour le voir apparaître ici.
+            </p>
           </div>
-
-          <div className="stack-list">
-            <article className="list-row">
-              <div>
-                <strong>Vidéo YouTube</strong>
-                <p>Embed ou lien direct pour les contenus publics et pédagogiques classiques.</p>
-              </div>
-              <Badge tone="success">économe</Badge>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Upload Supabase Storage</strong>
-                <p>À réserver aux vidéos privées, premium, confidentielles ou téléchargeables.</p>
-              </div>
-              <Badge tone="warning">premium</Badge>
-            </article>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-header">
-            <h3>Liens pédagogiques</h3>
-            <p>Chaque contenu pourra être relié à une action concrète.</p>
-          </div>
-
-          <div className="stack-list">
-            <article className="list-row">
-              <div>
-                <strong>Ressource → Quiz</strong>
-                <p>Tester la compréhension immédiatement après lecture ou visionnage.</p>
-              </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Ressource → Exercice</strong>
-                <p>Passer du théorique à la mise en pratique avec deadline.</p>
-              </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Ressource → Débrief coach</strong>
-                <p>Créer un rendez-vous ou une consigne de feedback contextualisée.</p>
-              </div>
-            </article>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

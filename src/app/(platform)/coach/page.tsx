@@ -1,51 +1,86 @@
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
-import { CoachRoster } from "@/components/platform/coach-roster";
 import { MetricCard } from "@/components/platform/metric-card";
-import { coachAlerts, coachRoster } from "@/lib/mock-data";
+import { Badge } from "@/components/ui/badge";
+import { getCoachPageData } from "@/lib/platform-data";
 
-export default function CoachPage() {
+export default async function CoachPage() {
+  const { metrics, roster, sessions } = await getCoachPageData();
+
   return (
     <div className="page-shell">
       <PlatformTopbar
         title="Cockpit coach"
-        description="Une vue conçue pour agir vite: détecter les retards, corriger, préparer les sessions et suivre les cohortes."
+        description="Vue réelle des coachés, cohortes et sessions à venir, avec données chargées depuis Supabase."
       />
 
       <section className="metric-grid">
-        {coachAlerts.map((metric) => (
-          <MetricCard key={metric.label} label={metric.label} value={metric.value} delta={metric.note} />
+        {metrics.map((metric) => (
+          <MetricCard key={metric.label} {...metric} />
         ))}
       </section>
 
       <section className="content-grid">
-        <CoachRoster items={coachRoster} />
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Coachés visibles</h3>
+            <p>Les profils affichés ici viennent maintenant de la base ECCE.</p>
+          </div>
+
+          {roster.length ? (
+            <div className="stack-list">
+              {roster.map((item) => (
+                <article className="list-row list-row-stretch" key={item.id}>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <p>
+                      {item.cohorts.length ? item.cohorts.join(", ") : "Sans cohorte"} · {item.status}
+                    </p>
+                  </div>
+
+                  <div className="table-actions">
+                    <Badge tone={item.status === "active" ? "success" : "warning"}>
+                      {item.status}
+                    </Badge>
+                    {item.upcomingSession ? (
+                      <Badge tone="accent">{item.upcomingSession}</Badge>
+                    ) : (
+                      <Badge tone="neutral">aucune session</Badge>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun coaché détecté pour l&apos;instant.</strong>
+              <p>Ajoute un utilisateur avec le rôle `coachee` depuis l&apos;admin pour le voir ici.</p>
+            </div>
+          )}
+        </div>
 
         <div className="panel panel-accent">
           <div className="panel-header">
-            <h3>Ce que je recommande pour la V1.5</h3>
-            <p>Les éléments ci-dessous feront vraiment monter la valeur du produit côté coach.</p>
+            <h3>Sessions à venir</h3>
+            <p>Ces créneaux proviennent de la table `coaching_sessions`.</p>
           </div>
 
-          <div className="stack-list">
-            <article className="list-row">
-              <div>
-                <strong>Fiche individuelle</strong>
-                <p>Objectifs, blocages, prochaines actions, notes de session et feedbacks.</p>
-              </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Score d&apos;engagement</strong>
-                <p>Identifier en amont les coachés qui risquent de décrocher.</p>
-              </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Vue par cohorte</strong>
-                <p>Comparer rapidement progression, retards, évaluations et charge de correction.</p>
-              </div>
-            </article>
-          </div>
+          {sessions.length ? (
+            <div className="stack-list">
+              {sessions.map((session) => (
+                <article className="list-row" key={`${session.name}-${session.date}`}>
+                  <div>
+                    <strong>{session.name}</strong>
+                    <p>{session.date}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucune session planifiée.</strong>
+              <p>La table de séances est prête, il restera à ajouter l&apos;interface de planification.</p>
+            </div>
+          )}
         </div>
       </section>
     </div>

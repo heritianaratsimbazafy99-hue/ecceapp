@@ -1,82 +1,140 @@
+import { CreateContentForm, CreateUserForm, AssignRoleForm } from "@/app/(platform)/admin/forms";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
+import { Badge } from "@/components/ui/badge";
+import { getAdminPageData } from "@/lib/platform-data";
 
-const adminMetrics = [
-  { label: "Coachés actifs", value: "148", delta: "12 nouvelles activations ce mois-ci" },
-  { label: "Complétion moyenne", value: "72%", delta: "progression stable sur 30 jours" },
-  { label: "Contenus publiés", value: "64", delta: "9 nouvelles ressources en préparation" },
-  { label: "Retards critiques", value: "11", delta: "cohortes à relancer aujourd'hui" }
-];
+function roleTone(role: string) {
+  switch (role) {
+    case "admin":
+      return "warning";
+    case "coach":
+      return "accent";
+    case "professor":
+      return "success";
+    default:
+      return "neutral";
+  }
+}
 
-export default function AdminPage() {
+export default async function AdminPage() {
+  const { metrics, users, userOptions, contents } = await getAdminPageData();
+
   return (
     <div className="page-shell">
       <PlatformTopbar
         title="Pilotage admin"
-        description="Vue globale de la plateforme pour suivre l'adoption, la qualité pédagogique et la charge opérationnelle."
+        description="Back-office réel ECCE pour créer des utilisateurs, attribuer des rôles et gérer les premiers contenus connectés à Supabase."
       />
 
       <section className="metric-grid">
-        {adminMetrics.map((metric) => (
+        {metrics.map((metric) => (
           <MetricCard key={metric.label} {...metric} />
         ))}
+      </section>
+
+      <section className="admin-grid">
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Créer un utilisateur</h3>
+            <p>Création du compte Supabase, du profil ECCE et attribution du premier rôle.</p>
+          </div>
+          <CreateUserForm />
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Attribuer un rôle</h3>
+            <p>Ajoute un rôle complémentaire à un utilisateur déjà créé.</p>
+          </div>
+          <AssignRoleForm userOptions={userOptions} />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Créer un contenu</h3>
+          <p>Premier back-office branché sur `content_items` pour alimenter la bibliothèque réelle.</p>
+        </div>
+        <CreateContentForm />
       </section>
 
       <section className="content-grid">
         <div className="panel">
           <div className="panel-header">
-            <h3>Indicateurs à suivre dès la V1</h3>
-            <p>Des métriques simples pour piloter la plateforme sans attendre une couche analytics avancée.</p>
+            <h3>Utilisateurs ECCE</h3>
+            <p>Vue réelle des profils et des rôles actuellement enregistrés.</p>
           </div>
 
-          <div className="stack-list">
-            <article className="list-row">
-              <div>
-                <strong>Taux de complétion par module</strong>
-                <p>Identifier les étapes de parcours où les coachés décrochent le plus.</p>
+          {users.length ? (
+            <div className="data-table">
+              <div className="table-head">
+                <span>Utilisateur</span>
+                <span>Statut</span>
+                <span>Rôles</span>
               </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Qualité perçue des contenus</strong>
-                <p>Mesurer les ressources jugées utiles ou à améliorer par les coachés.</p>
-              </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Charge de correction</strong>
-                <p>Anticiper la pression opérationnelle sur les coachs et professeurs.</p>
-              </div>
-            </article>
-          </div>
+              {users.map((user) => (
+                <article className="table-row" key={user.id}>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <p>{user.email}</p>
+                  </div>
+                  <div>
+                    <Badge tone={user.status === "active" ? "success" : "warning"}>
+                      {user.status}
+                    </Badge>
+                  </div>
+                  <div className="tag-row">
+                    {user.roles.length ? (
+                      user.roles.map((role) => (
+                        <Badge key={`${user.id}-${role}`} tone={roleTone(role)}>
+                          {role}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge tone="neutral">sans rôle</Badge>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun utilisateur métier pour l&apos;instant.</strong>
+              <p>Crée ton premier coach, coaché ou professeur depuis le formulaire ci-dessus.</p>
+            </div>
+          )}
         </div>
 
-        <div className="panel panel-accent">
+        <div className="panel">
           <div className="panel-header">
-            <h3>Recommandation structurelle</h3>
-            <p>Le bon choix pour ECCE est de piloter la plateforme comme un produit d&apos;accompagnement.</p>
+            <h3>Contenus enregistrés</h3>
+            <p>Les éléments créés ici apparaîtront ensuite dans la bibliothèque publique selon leur statut.</p>
           </div>
 
-          <div className="stack-list">
-            <article className="list-row">
-              <div>
-                <strong>Dashboard par rôle</strong>
-                <p>Chaque rôle voit immédiatement ce qu&apos;il doit faire, sans surcharge cognitive.</p>
-              </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Un moteur d&apos;assignation</strong>
-                <p>Pour cibler contenus, quiz et deadlines par cohorte, groupe ou individu.</p>
-              </div>
-            </article>
-            <article className="list-row">
-              <div>
-                <strong>Historique d&apos;activité</strong>
-                <p>Pour comprendre qui a publié, corrigé, modifié ou commenté chaque objet métier.</p>
-              </div>
-            </article>
-          </div>
+          {contents.length ? (
+            <div className="stack-list">
+              {contents.map((content) => (
+                <article className="list-row" key={content.id}>
+                  <div>
+                    <strong>{content.title}</strong>
+                    <p>
+                      {content.category || "Sans catégorie"} · {content.content_type} ·{" "}
+                      {content.estimated_minutes ? `${content.estimated_minutes} min` : "durée libre"}
+                    </p>
+                  </div>
+                  <Badge tone={content.status === "published" ? "success" : "neutral"}>
+                    {content.status}
+                  </Badge>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun contenu n&apos;a encore été créé.</strong>
+              <p>Utilise le formulaire ci-dessus pour alimenter la bibliothèque ECCE.</p>
+            </div>
+          )}
         </div>
       </section>
     </div>

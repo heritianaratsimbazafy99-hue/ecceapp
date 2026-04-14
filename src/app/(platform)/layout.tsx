@@ -10,7 +10,7 @@ export default async function PlatformLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const { user, profile, role } = await getCurrentUserContext();
+  const { user, profile, role, roles } = await getCurrentUserContext();
 
   if (!user) {
     redirect("/auth/sign-in");
@@ -23,7 +23,7 @@ export default async function PlatformLayout({
 
   return (
     <main className="platform-layout">
-      <PlatformSidebar role={role} userName={displayName} />
+      <PlatformSidebar role={role} roles={roles} userName={displayName} />
       <section className="platform-content">
         <AccountChip
           email={user.email ?? "email inconnu"}
