@@ -80,6 +80,7 @@ type QuizAttemptResultRow = {
   id: string;
   quiz_id: string;
   user_id: string;
+  assignment_id?: string | null;
   score: number | null;
   status: string;
   attempt_number: number;
@@ -121,6 +122,7 @@ type SubmissionReviewRow = {
 
 type UserBadgeRow = {
   id: string;
+  user_id?: string;
   awarded_at: string;
   badges?:
     | {
@@ -153,6 +155,62 @@ type MessageRow = {
   read_at: string | null;
 };
 
+type NotificationAnalyticsRow = {
+  recipient_id: string;
+  created_at: string;
+  read_at: string | null;
+};
+
+type BadgeAwardAnalyticsRow = {
+  user_id: string;
+  awarded_at: string;
+};
+
+type SessionAnalyticsRow = {
+  coachee_id: string;
+  starts_at: string;
+  status: string;
+};
+
+type EngagementTrend = "up" | "steady" | "down";
+type EngagementBand = "strong" | "watch" | "risk";
+
+type LearnerEngagementSignal = {
+  id: string;
+  name: string;
+  status: ProfileRow["status"];
+  cohorts: string[];
+  score: number;
+  band: EngagementBand;
+  bandLabel: string;
+  trend: EngagementTrend;
+  trendLabel: string;
+  assignmentCount: number;
+  completedCount: number;
+  completionRate: number | null;
+  onTimeRate: number | null;
+  averageQuizScore: number | null;
+  overdueCount: number;
+  dueSoonCount: number;
+  unreadNotifications: number;
+  badgeCount: number;
+  recentActivityCount: number;
+  lastActivityAt: string | null;
+  lastActivityLabel: string;
+  nextFocus: string;
+};
+
+type EngagementOverview = {
+  averageScore: number;
+  atRiskCount: number;
+  watchCount: number;
+  strongCount: number;
+  completionRate: number | null;
+  onTimeRate: number | null;
+  averageQuizScore: number | null;
+  recentlyActiveCount: number;
+};
+
 const SUBMISSION_BUCKET = "submission-files";
 
 function formatDate(dateString: string | null) {
@@ -180,6 +238,430 @@ function formatMessagePreview(value: string | null) {
   }
 
   return value.length > 96 ? `${value.slice(0, 93)}...` : value;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundMetric(value: number) {
+  return Math.round(value);
+}
+
+function getDateValue(dateString: string | null | undefined) {
+  if (!dateString) {
+    return null;
+  }
+
+  const value = new Date(dateString).getTime();
+  return Number.isNaN(value) ? null : value;
+}
+
+function isWithinDays(dateString: string | null | undefined, days: number, now = Date.now()) {
+  const value = getDateValue(dateString);
+
+  if (value === null) {
+    return false;
+  }
+
+  return value <= now && value >= now - days * 24 * 60 * 60 * 1000;
+}
+
+function getDaysSince(dateString: string | null | undefined, now = Date.now()) {
+  const value = getDateValue(dateString);
+
+  if (value === null) {
+    return null;
+  }
+
+  return Math.floor((now - value) / (24 * 60 * 60 * 1000));
+}
+
+function formatLastActivity(dateString: string | null | undefined) {
+  const daysSince = getDaysSince(dateString);
+
+  if (daysSince === null) {
+    return "Aucune activité détectée";
+  }
+
+  if (daysSince <= 0) {
+    return "Actif aujourd'hui";
+  }
+
+  if (daysSince === 1) {
+    return "Actif hier";
+  }
+
+  if (daysSince < 7) {
+    return `Actif il y a ${daysSince} jours`;
+  }
+
+  return `Dernière activité ${formatDate(dateString ?? null)}`;
+}
+
+function getTrendLabel(trend: EngagementTrend) {
+  switch (trend) {
+    case "up":
+      return "dynamique en hausse";
+    case "down":
+      return "dynamique à relancer";
+    default:
+      return "rythme stable";
+  }
+}
+
+function getEngagementBandLabel(band: EngagementBand) {
+  switch (band) {
+    case "strong":
+      return "Très engagé";
+    case "risk":
+      return "A relancer";
+    default:
+      return "A surveiller";
+  }
+}
+
+function buildAssignmentTargets(
+  assignments: AssignmentRow[],
+  cohortMembers: Array<{ user_id: string; cohort_id: string }>
+) {
+  return assignments.map((assignment) => {
+    const cohortTargets = assignment.cohort_id
+      ? cohortMembers
+          .filter((member) => member.cohort_id === assignment.cohort_id)
+          .map((member) => member.user_id)
+      : [];
+
+    return {
+      ...assignment,
+      targetIds: uniqueById(
+        [
+          ...(assignment.assigned_user_id ? [{ id: assignment.assigned_user_id }] : []),
+          ...cohortTargets.map((id) => ({ id }))
+        ]
+      ).map((item) => item.id)
+    };
+  });
+}
+
+function buildEngagementSignals(params: {
+  learnerIds: string[];
+  profiles: ProfileRow[];
+  cohortNamesByUserId: Map<string, string[]>;
+  assignments: AssignmentRow[];
+  cohortMembers: Array<{ user_id: string; cohort_id: string }>;
+  attempts: QuizAttemptResultRow[];
+  submissions: SubmissionRow[];
+  sessions: SessionAnalyticsRow[];
+  notifications: NotificationAnalyticsRow[];
+  badges: BadgeAwardAnalyticsRow[];
+}) {
+  const now = Date.now();
+  const expandedAssignments = buildAssignmentTargets(params.assignments, params.cohortMembers);
+  const assignmentsByLearnerId = expandedAssignments.reduce((map, assignment) => {
+    for (const targetId of assignment.targetIds) {
+      const current = map.get(targetId) ?? [];
+      current.push(assignment);
+      map.set(targetId, current);
+    }
+
+    return map;
+  }, new Map<string, Array<AssignmentRow & { targetIds: string[] }>>());
+
+  const attemptsByLearnerId = params.attempts.reduce((map, attempt) => {
+    const current = map.get(attempt.user_id) ?? [];
+    current.push(attempt);
+    map.set(attempt.user_id, current);
+    return map;
+  }, new Map<string, QuizAttemptResultRow[]>());
+
+  const submissionsByLearnerId = params.submissions.reduce((map, submission) => {
+    const current = map.get(submission.user_id) ?? [];
+    current.push(submission);
+    map.set(submission.user_id, current);
+    return map;
+  }, new Map<string, SubmissionRow[]>());
+
+  const sessionsByLearnerId = params.sessions.reduce((map, session) => {
+    const current = map.get(session.coachee_id) ?? [];
+    current.push(session);
+    map.set(session.coachee_id, current);
+    return map;
+  }, new Map<string, SessionAnalyticsRow[]>());
+
+  const notificationsByLearnerId = params.notifications.reduce((map, notification) => {
+    const current = map.get(notification.recipient_id) ?? [];
+    current.push(notification);
+    map.set(notification.recipient_id, current);
+    return map;
+  }, new Map<string, NotificationAnalyticsRow[]>());
+
+  const badgesByLearnerId = params.badges.reduce((map, badge) => {
+    const current = map.get(badge.user_id) ?? [];
+    current.push(badge);
+    map.set(badge.user_id, current);
+    return map;
+  }, new Map<string, BadgeAwardAnalyticsRow[]>());
+
+  const latestAttemptByAssignmentKey = new Map<string, QuizAttemptResultRow>();
+  const latestAttemptByQuizKey = new Map<string, QuizAttemptResultRow>();
+
+  for (const attempt of params.attempts) {
+    if (attempt.assignment_id) {
+      const assignmentKey = `${attempt.user_id}:${attempt.assignment_id}`;
+      if (!latestAttemptByAssignmentKey.has(assignmentKey)) {
+        latestAttemptByAssignmentKey.set(assignmentKey, attempt);
+      }
+    }
+
+    const quizKey = `${attempt.user_id}:${attempt.quiz_id}`;
+    if (!latestAttemptByQuizKey.has(quizKey)) {
+      latestAttemptByQuizKey.set(quizKey, attempt);
+    }
+  }
+
+  const latestSubmissionByAssignmentKey = new Map<string, SubmissionRow>();
+  for (const submission of params.submissions) {
+    if (!submission.assignment_id) {
+      continue;
+    }
+
+    const submissionKey = `${submission.user_id}:${submission.assignment_id}`;
+    if (!latestSubmissionByAssignmentKey.has(submissionKey)) {
+      latestSubmissionByAssignmentKey.set(submissionKey, submission);
+    }
+  }
+
+  return params.learnerIds
+    .map((learnerId) => {
+      const profile = params.profiles.find((item) => item.id === learnerId);
+      if (!profile) {
+        return null;
+      }
+
+      const learnerAssignments = assignmentsByLearnerId.get(learnerId) ?? [];
+      const learnerAttempts = attemptsByLearnerId.get(learnerId) ?? [];
+      const learnerSubmissions = submissionsByLearnerId.get(learnerId) ?? [];
+      const learnerSessions = sessionsByLearnerId.get(learnerId) ?? [];
+      const learnerNotifications = notificationsByLearnerId.get(learnerId) ?? [];
+      const learnerBadges = badgesByLearnerId.get(learnerId) ?? [];
+
+      let completedCount = 0;
+      let overdueCount = 0;
+      let dueSoonCount = 0;
+      let onTimeCount = 0;
+      let dueResolvedCount = 0;
+
+      for (const assignment of learnerAssignments) {
+        const dueAt = getDateValue(assignment.due_at);
+        const attempt =
+          latestAttemptByAssignmentKey.get(`${learnerId}:${assignment.id}`) ??
+          (assignment.quiz_id ? latestAttemptByQuizKey.get(`${learnerId}:${assignment.quiz_id}`) : undefined);
+        const submission = latestSubmissionByAssignmentKey.get(`${learnerId}:${assignment.id}`);
+
+        const completedItem = assignment.content_item_id
+          ? Boolean(submission && submission.status !== "not_started")
+          : Boolean(attempt && attempt.status !== "in_progress" && attempt.status !== "expired");
+        const completedAt = assignment.content_item_id
+          ? submission?.submitted_at ?? submission?.reviewed_at ?? submission?.created_at ?? null
+          : attempt?.submitted_at ?? null;
+        const completedAtValue = getDateValue(completedAt);
+
+        if (completedItem) {
+          completedCount += 1;
+        }
+
+        if (dueAt !== null) {
+          if (!completedItem && dueAt < now) {
+            overdueCount += 1;
+          }
+
+          if (dueAt >= now && dueAt <= now + 7 * 24 * 60 * 60 * 1000) {
+            dueSoonCount += 1;
+          }
+
+          if (completedItem && completedAtValue !== null) {
+            dueResolvedCount += 1;
+            if (completedAtValue <= dueAt) {
+              onTimeCount += 1;
+            }
+          } else if (!completedItem && dueAt < now) {
+            dueResolvedCount += 1;
+          }
+        }
+      }
+
+      const gradedAttempts = learnerAttempts.filter(
+        (attempt) => attempt.status === "graded" && attempt.score !== null
+      );
+      const averageQuizScore = gradedAttempts.length
+        ? roundMetric(
+            gradedAttempts.reduce((total, attempt) => total + (attempt.score ?? 0), 0) /
+              gradedAttempts.length
+          )
+        : null;
+
+      const recentActivityCount =
+        learnerAttempts.filter((attempt) => isWithinDays(attempt.submitted_at, 14, now)).length +
+        learnerSubmissions.filter((submission) => isWithinDays(submission.submitted_at ?? submission.created_at, 14, now)).length +
+        learnerSessions.filter(
+          (session) => session.status !== "cancelled" && isWithinDays(session.starts_at, 21, now)
+        ).length +
+        learnerBadges.filter((badge) => isWithinDays(badge.awarded_at, 30, now)).length;
+
+      const previousActivityCount =
+        learnerAttempts.filter((attempt) => {
+          const value = getDateValue(attempt.submitted_at);
+          return value !== null && value < now - 7 * 24 * 60 * 60 * 1000 && value >= now - 14 * 24 * 60 * 60 * 1000;
+        }).length +
+        learnerSubmissions.filter((submission) => {
+          const value = getDateValue(submission.submitted_at ?? submission.created_at);
+          return value !== null && value < now - 7 * 24 * 60 * 60 * 1000 && value >= now - 14 * 24 * 60 * 60 * 1000;
+        }).length;
+
+      const trend: EngagementTrend =
+        recentActivityCount > previousActivityCount + 1
+          ? "up"
+          : previousActivityCount > recentActivityCount + 1
+            ? "down"
+            : "steady";
+
+      const completionRate = learnerAssignments.length
+        ? roundMetric((completedCount / learnerAssignments.length) * 100)
+        : null;
+      const onTimeRate = dueResolvedCount ? roundMetric((onTimeCount / dueResolvedCount) * 100) : null;
+
+      const scoreComponents: Array<{ weight: number; value: number }> = [];
+      if (learnerAssignments.length) {
+        scoreComponents.push({
+          weight: 40,
+          value: completedCount / learnerAssignments.length
+        });
+      }
+
+      if (dueResolvedCount) {
+        scoreComponents.push({
+          weight: 25,
+          value: onTimeCount / dueResolvedCount
+        });
+      }
+
+      if (learnerAssignments.length || recentActivityCount > 0 || learnerAttempts.length || learnerSubmissions.length) {
+        scoreComponents.push({
+          weight: 20,
+          value: clamp(recentActivityCount / 4, 0, 1)
+        });
+      }
+
+      if (averageQuizScore !== null) {
+        scoreComponents.push({
+          weight: 15,
+          value: averageQuizScore / 100
+        });
+      }
+
+      const score = scoreComponents.length
+        ? roundMetric(
+            (scoreComponents.reduce((total, component) => total + component.value * component.weight, 0) /
+              scoreComponents.reduce((total, component) => total + component.weight, 0)) *
+              100
+          )
+        : 0;
+
+      const unreadNotifications = learnerNotifications.filter((item) => !item.read_at).length;
+      const lastActivityAt = [
+        ...learnerAttempts.map((attempt) => attempt.submitted_at),
+        ...learnerSubmissions.map((submission) => submission.submitted_at ?? submission.created_at ?? null),
+        ...learnerSessions.map((session) => session.starts_at),
+        ...learnerBadges.map((badge) => badge.awarded_at)
+      ]
+        .filter(Boolean)
+        .sort((left, right) => (getDateValue(right) ?? 0) - (getDateValue(left) ?? 0))[0] ?? null;
+
+      const daysSinceActivity = getDaysSince(lastActivityAt, now);
+      const band: EngagementBand =
+        overdueCount >= 2 || (daysSinceActivity !== null && daysSinceActivity > 14) || score < 45
+          ? "risk"
+          : overdueCount >= 1 || (daysSinceActivity !== null && daysSinceActivity > 7) || score < 70
+            ? "watch"
+            : "strong";
+
+      const nextFocus =
+        overdueCount > 0
+          ? `${overdueCount} échéance(s) à relancer`
+          : dueSoonCount > 0
+            ? `${dueSoonCount} deadline(s) cette semaine`
+            : averageQuizScore !== null && averageQuizScore < 60
+              ? "Reprendre le dernier quiz pour consolider"
+              : learnerAssignments.length && completedCount < learnerAssignments.length
+                ? "Terminer les assignations en cours"
+                : unreadNotifications >= 3
+                  ? `${unreadNotifications} notification(s) à ouvrir`
+                  : "Rythme solide à maintenir";
+
+      return {
+        id: learnerId,
+        name: formatUserName(profile),
+        status: profile.status,
+        cohorts: params.cohortNamesByUserId.get(learnerId) ?? [],
+        score,
+        band,
+        bandLabel: getEngagementBandLabel(band),
+        trend,
+        trendLabel: getTrendLabel(trend),
+        assignmentCount: learnerAssignments.length,
+        completedCount,
+        completionRate,
+        onTimeRate,
+        averageQuizScore,
+        overdueCount,
+        dueSoonCount,
+        unreadNotifications,
+        badgeCount: learnerBadges.length,
+        recentActivityCount,
+        lastActivityAt,
+        lastActivityLabel: formatLastActivity(lastActivityAt),
+        nextFocus
+      } satisfies LearnerEngagementSignal;
+    })
+    .filter(Boolean) as LearnerEngagementSignal[];
+}
+
+function buildEngagementOverview(signals: LearnerEngagementSignal[]): EngagementOverview {
+  const completionSignals = signals.filter((signal) => signal.completionRate !== null);
+  const punctualSignals = signals.filter((signal) => signal.onTimeRate !== null);
+  const quizSignals = signals.filter((signal) => signal.averageQuizScore !== null);
+
+  return {
+    averageScore: signals.length
+      ? roundMetric(signals.reduce((total, signal) => total + signal.score, 0) / signals.length)
+      : 0,
+    atRiskCount: signals.filter((signal) => signal.band === "risk").length,
+    watchCount: signals.filter((signal) => signal.band === "watch").length,
+    strongCount: signals.filter((signal) => signal.band === "strong").length,
+    completionRate: completionSignals.length
+      ? roundMetric(
+          completionSignals.reduce((total, signal) => total + (signal.completionRate ?? 0), 0) /
+            completionSignals.length
+        )
+      : null,
+    onTimeRate: punctualSignals.length
+      ? roundMetric(
+          punctualSignals.reduce((total, signal) => total + (signal.onTimeRate ?? 0), 0) /
+            punctualSignals.length
+        )
+      : null,
+    averageQuizScore: quizSignals.length
+      ? roundMetric(
+          quizSignals.reduce((total, signal) => total + (signal.averageQuizScore ?? 0), 0) /
+            quizSignals.length
+        )
+      : null,
+    recentlyActiveCount: signals.filter((signal) => {
+      const daysSince = getDaysSince(signal.lastActivityAt);
+      return daysSince !== null && daysSince <= 7;
+    }).length
+  };
 }
 
 async function getSignedSubmissionUrl(storagePath: string | null, admin = createSupabaseAdminClient()) {
@@ -297,6 +779,7 @@ export async function getAdminPageData() {
     quizzesResult,
     assignmentsResult,
     cohortsResult,
+    cohortMembersResult,
     authUsersResult
   ] = await Promise.all([
     admin
@@ -348,6 +831,7 @@ export async function getAdminPageData() {
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
     admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin.from("cohort_members").select("user_id, cohort_id"),
     admin.auth.admin.listUsers({
       page: 1,
       perPage: 200
@@ -359,6 +843,7 @@ export async function getAdminPageData() {
   const quizzes = (quizzesResult.data ?? []) as QuizRow[];
   const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
   const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
   const authUsers = authUsersResult.data?.users ?? [];
   const emailByUserId = new Map(
     authUsers.map((item) => [item.id, item.email ?? "email indisponible"])
@@ -377,6 +862,75 @@ export async function getAdminPageData() {
     status: profile.status,
     roles: (profile.user_roles ?? []).map((item) => item.role)
   }));
+  const coacheeIds = profiles
+    .filter((profile) => (profile.user_roles ?? []).some((item) => item.role === "coachee"))
+    .map((profile) => profile.id);
+  const cohortNamesByUserId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    const name = cohortNameById.get(item.cohort_id);
+    if (name) {
+      current.push(name);
+    }
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+
+  const [analyticsAttemptsResult, analyticsSubmissionsResult, analyticsSessionsResult, analyticsNotificationsResult, analyticsBadgesResult] =
+    coacheeIds.length
+      ? await Promise.all([
+          admin
+            .from("quiz_attempts")
+            .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+            .in("user_id", coacheeIds)
+            .order("submitted_at", { ascending: false }),
+          admin
+            .from("submissions")
+            .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+            .in("user_id", coacheeIds)
+            .order("submitted_at", { ascending: false }),
+          admin
+            .from("coaching_sessions")
+            .select("coachee_id, starts_at, status")
+            .eq("organization_id", organizationId)
+            .in("coachee_id", coacheeIds)
+            .order("starts_at", { ascending: false }),
+          admin
+            .from("notifications")
+            .select("recipient_id, created_at, read_at")
+            .eq("organization_id", organizationId)
+            .in("recipient_id", coacheeIds)
+            .order("created_at", { ascending: false }),
+          admin
+            .from("user_badges")
+            .select("user_id, awarded_at")
+            .in("user_id", coacheeIds)
+            .order("awarded_at", { ascending: false })
+        ])
+      : [
+          { data: [] as QuizAttemptResultRow[] },
+          { data: [] as SubmissionRow[] },
+          { data: [] as SessionAnalyticsRow[] },
+          { data: [] as NotificationAnalyticsRow[] },
+          { data: [] as BadgeAwardAnalyticsRow[] }
+        ];
+
+  const engagementSignals = buildEngagementSignals({
+    learnerIds: coacheeIds,
+    profiles,
+    cohortNamesByUserId,
+    assignments,
+    cohortMembers,
+    attempts: (analyticsAttemptsResult.data ?? []) as QuizAttemptResultRow[],
+    submissions: (analyticsSubmissionsResult.data ?? []) as SubmissionRow[],
+    sessions: (analyticsSessionsResult.data ?? []) as SessionAnalyticsRow[],
+    notifications: (analyticsNotificationsResult.data ?? []) as NotificationAnalyticsRow[],
+    badges: (analyticsBadgesResult.data ?? []) as BadgeAwardAnalyticsRow[]
+  }).sort((left, right) => right.score - left.score || left.overdueCount - right.overdueCount);
+  const engagementOverview = buildEngagementOverview(engagementSignals);
+  const attentionLearners = [...engagementSignals]
+    .filter((signal) => signal.band !== "strong")
+    .sort((left, right) => right.overdueCount - left.overdueCount || left.score - right.score)
+    .slice(0, 6);
 
   const roleCount = (role: AppRole) =>
     users.filter((user) => user.roles.includes(role)).length.toString();
@@ -390,21 +944,30 @@ export async function getAdminPageData() {
         delta: `${users.length} comptes au total`
       },
       {
-        label: "Coachs",
-        value: roleCount("coach"),
-        delta: `${roleCount("coachee")} coachés enregistrés`
+        label: "Engagement moyen",
+        value: `${engagementOverview.averageScore}%`,
+        delta: `${engagementOverview.recentlyActiveCount} coaché(s) actifs cette semaine`
       },
       {
-        label: "Contenus publiés",
-        value: contents.filter((item) => item.status === "published").length.toString(),
-        delta: `${contents.length} contenus créés`
+        label: "Coachés à relancer",
+        value: engagementOverview.atRiskCount.toString(),
+        delta: `${engagementOverview.watchCount} supplémentaires à surveiller`
       },
       {
-        label: "Quiz / Assignations",
-        value: quizzes.length.toString(),
-        delta: `${assignments.length} deadlines créées`
+        label: "Ponctualité coachés",
+        value: `${engagementOverview.onTimeRate ?? 0}%`,
+        delta: `${engagementOverview.completionRate ?? 0}% de complétion moyenne`
       }
     ],
+    analyticsOverview: {
+      ...engagementOverview,
+      totalPublishedContents: contents.filter((item) => item.status === "published").length,
+      totalQuizzes: quizzes.length,
+      totalAssignments: assignments.length,
+      totalCoaches: Number(roleCount("coach"))
+    },
+    engagementSignals,
+    attentionLearners,
     users,
     userOptions: users.map((user) => ({
       id: user.id,
@@ -501,7 +1064,6 @@ export async function getCoachPageData() {
     profilesResult,
     cohortsResult,
     sessionsResult,
-    contentsResult,
     assignmentsResult,
     quizAttemptsResult,
     submissionsResult
@@ -537,11 +1099,6 @@ export async function getCoachPageData() {
 
         return query.limit(6);
       })(),
-      admin
-        .from("content_items")
-        .select("id", { count: "exact" })
-        .eq("organization_id", organizationId)
-        .eq("status", "published"),
       admin
         .from("learning_assignments")
         .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id")
@@ -588,6 +1145,65 @@ export async function getCoachPageData() {
     map.set(item.user_id, list);
     return map;
   }, new Map<string, string[]>());
+  const coacheeIdList = Array.from(coacheeIds);
+
+  const [analyticsAttemptsResult, analyticsSubmissionsResult, analyticsSessionsResult, analyticsNotificationsResult, analyticsBadgesResult] =
+    coacheeIdList.length
+      ? await Promise.all([
+          admin
+            .from("quiz_attempts")
+            .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+            .in("user_id", coacheeIdList)
+            .order("submitted_at", { ascending: false }),
+          admin
+            .from("submissions")
+            .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+            .in("user_id", coacheeIdList)
+            .order("submitted_at", { ascending: false }),
+          admin
+            .from("coaching_sessions")
+            .select("coachee_id, starts_at, status")
+            .eq("organization_id", organizationId)
+            .in("coachee_id", coacheeIdList)
+            .order("starts_at", { ascending: false }),
+          admin
+            .from("notifications")
+            .select("recipient_id, created_at, read_at")
+            .eq("organization_id", organizationId)
+            .in("recipient_id", coacheeIdList)
+            .order("created_at", { ascending: false }),
+          admin
+            .from("user_badges")
+            .select("user_id, awarded_at")
+            .in("user_id", coacheeIdList)
+            .order("awarded_at", { ascending: false })
+        ])
+      : [
+          { data: [] as QuizAttemptResultRow[] },
+          { data: [] as SubmissionRow[] },
+          { data: [] as SessionAnalyticsRow[] },
+          { data: [] as NotificationAnalyticsRow[] },
+          { data: [] as BadgeAwardAnalyticsRow[] }
+        ];
+
+  const engagementSignals = buildEngagementSignals({
+    learnerIds: coacheeIdList,
+    profiles,
+    cohortNamesByUserId,
+    assignments: (assignmentsResult.data ?? []) as AssignmentRow[],
+    cohortMembers,
+    attempts: (analyticsAttemptsResult.data ?? []) as QuizAttemptResultRow[],
+    submissions: (analyticsSubmissionsResult.data ?? []) as SubmissionRow[],
+    sessions: (analyticsSessionsResult.data ?? []) as SessionAnalyticsRow[],
+    notifications: (analyticsNotificationsResult.data ?? []) as NotificationAnalyticsRow[],
+    badges: (analyticsBadgesResult.data ?? []) as BadgeAwardAnalyticsRow[]
+  });
+  const engagementSignalById = new Map(engagementSignals.map((signal) => [signal.id, signal]));
+  const engagementOverview = buildEngagementOverview(engagementSignals);
+  const attentionLearners = [...engagementSignals]
+    .filter((signal) => signal.band !== "strong")
+    .sort((left, right) => right.overdueCount - left.overdueCount || left.score - right.score)
+    .slice(0, 6);
 
   const sessions = (sessionsResult.data ?? []) as Array<{
     id: string;
@@ -601,7 +1217,8 @@ export async function getCoachPageData() {
     name: formatUserName(profile),
     status: profile.status,
     cohorts: cohortNamesByUserId.get(profile.id) ?? [],
-    upcomingSession: sessions.find((session) => session.coachee_id === profile.id)?.starts_at ?? null
+    upcomingSession: sessions.find((session) => session.coachee_id === profile.id)?.starts_at ?? null,
+    engagement: engagementSignalById.get(profile.id) ?? null
   }));
 
   const dueAssignments = ((assignmentsResult.data ?? []) as AssignmentRow[])
@@ -796,21 +1413,26 @@ export async function getCoachPageData() {
         delta: `${profiles.filter((profile) => profile.status === "active").length} actifs`
       },
       {
-        label: "Sessions à venir",
-        value: sessions.length.toString(),
-        delta: "dans les prochains créneaux"
+        label: "Engagement moyen",
+        value: `${engagementOverview.averageScore}%`,
+        delta: `${engagementOverview.recentlyActiveCount} actifs cette semaine`
       },
       {
-        label: "Cohortes",
-        value: cohortIds.length.toString(),
-        delta: "rattachées à tes coachés"
+        label: "Coachés à relancer",
+        value: engagementOverview.atRiskCount.toString(),
+        delta: `${engagementOverview.watchCount} à surveiller`
       },
       {
         label: "Deadlines actives",
         value: dueAssignments.length.toString(),
-        delta: `${String(contentsResult.count ?? 0)} contenus publiés`
+        delta: `${engagementOverview.completionRate ?? 0}% de complétion moyenne`
       }
     ],
+    engagementOverview,
+    engagementSignals: [...engagementSignals].sort(
+      (left, right) => right.score - left.score || left.overdueCount - right.overdueCount
+    ),
+    attentionLearners,
     coachOptions,
     coacheeOptions,
     roster,
@@ -870,7 +1492,7 @@ export async function getDashboardPageData() {
         .eq("status", "published"),
       admin
         .from("quiz_attempts")
-        .select("id, quiz_id, score, status, attempt_number, submitted_at")
+        .select("id, quiz_id, assignment_id, score, status, attempt_number, submitted_at")
         .eq("user_id", userId)
         .order("submitted_at", { ascending: false })
         .limit(6),
@@ -884,7 +1506,7 @@ export async function getDashboardPageData() {
         .limit(4),
       admin
         .from("user_badges")
-        .select("id, awarded_at, badges(title, description, icon)")
+        .select("id, user_id, awarded_at, badges(title, description, icon)")
         .eq("user_id", userId)
         .order("awarded_at", { ascending: false })
         .limit(6)
@@ -922,6 +1544,7 @@ export async function getDashboardPageData() {
   const attempts = (quizAttemptsResult.data ?? []) as Array<{
     id: string;
     quiz_id: string;
+    assignment_id?: string | null;
     score: number | null;
     status: string;
     attempt_number: number;
@@ -1017,6 +1640,64 @@ export async function getDashboardPageData() {
     date: formatDate(session.starts_at),
     videoLink: session.video_link
   }));
+  const engagement = buildEngagementSignals({
+    learnerIds: [userId],
+    profiles: [
+      {
+        id: userId,
+        first_name: context.profile.first_name,
+        last_name: context.profile.last_name,
+        status: context.profile.status
+      }
+    ],
+    cohortNamesByUserId: new Map<string, string[]>(),
+    assignments,
+    cohortMembers: (cohortMembersResult.data ?? []).map((item) => ({
+      user_id: userId,
+      cohort_id: item.cohort_id
+    })),
+    attempts: attempts as QuizAttemptResultRow[],
+    submissions: (submissionsResult.data ?? []) as SubmissionRow[],
+    sessions: ((sessionsResult.data ?? []) as Array<{ id: string; starts_at: string; video_link: string | null }>).map(
+      (session) => ({
+        coachee_id: userId,
+        starts_at: session.starts_at,
+        status: "planned"
+      })
+    ),
+    notifications: notifications.map((notification) => ({
+      recipient_id: userId,
+      created_at: notification.created_at,
+      read_at: notification.read_at
+    })),
+    badges: ((badgesResult.data ?? []) as Array<{ user_id: string; awarded_at: string }>).map((badge) => ({
+      user_id: badge.user_id,
+      awarded_at: badge.awarded_at
+    }))
+  })[0] ?? {
+    id: userId,
+    name: `${context.profile.first_name} ${context.profile.last_name}`.trim(),
+    status: context.profile.status,
+    cohorts: [],
+    score: 0,
+    band: "watch" as const,
+    bandLabel: "A surveiller",
+    trend: "steady" as const,
+    trendLabel: "rythme stable",
+    assignmentCount: assignments.length,
+    completedCount: 0,
+    completionRate: null,
+    onTimeRate: null,
+    averageQuizScore: null,
+    overdueCount: 0,
+    dueSoonCount: 0,
+    unreadNotifications: notifications.filter((item) => !item.read_at).length,
+    badgeCount: badges.length,
+    recentActivityCount: 0,
+    lastActivityAt: null,
+    lastActivityLabel: "Aucune activité détectée",
+    nextFocus: "Commencer la première action assignée"
+  };
 
   const coachContacts = context.roles.includes("coachee")
     ? await (async () => {
@@ -1063,26 +1744,27 @@ export async function getDashboardPageData() {
     context,
     metrics: [
       {
-        label: "Contenus disponibles",
-        value: String(publishedContentResult.count ?? 0),
-        delta: `${String(quizzesResult.count ?? 0)} quiz publiés`
+        label: "Score d'engagement",
+        value: `${engagement.score}%`,
+        delta: engagement.bandLabel
       },
       {
         label: "Travaux assignés",
         value: assignments.length.toString(),
-        delta: "directs ou via cohorte"
+        delta: `${engagement.completedCount} déjà traités`
       },
       {
-        label: "Notifications",
-        value: notifications.filter((item) => !item.read_at).length.toString(),
-        delta: `${notifications.length} dernières notifications`
+        label: "Quiz moyen",
+        value: engagement.averageQuizScore !== null ? `${engagement.averageQuizScore}%` : "n/a",
+        delta: `${String(quizzesResult.count ?? 0)} quiz publiés`
       },
       {
         label: "Deadlines proches",
-        value: assignments.filter((item) => item.due_at).length.toString(),
-        delta: "à surveiller"
+        value: engagement.dueSoonCount.toString(),
+        delta: `${engagement.unreadNotifications} notification(s) non lue(s)`
       }
     ],
+    engagement,
     assignments: assignments.slice(0, 6).map((item) => ({
       id: item.id,
       title:

@@ -536,8 +536,127 @@ main {
   font-size: 2rem;
 }
 
+.engagement-meter {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.engagement-meter.is-compact {
+  padding: 16px 18px;
+  gap: 12px;
+}
+
+.engagement-meter.is-strong {
+  background: linear-gradient(135deg, rgba(231, 247, 237, 0.96), rgba(255, 255, 255, 0.92));
+}
+
+.engagement-meter.is-watch {
+  background: linear-gradient(135deg, rgba(236, 245, 255, 0.94), rgba(255, 255, 255, 0.92));
+}
+
+.engagement-meter.is-risk {
+  background: linear-gradient(135deg, rgba(255, 242, 228, 0.96), rgba(255, 255, 255, 0.92));
+}
+
+.engagement-meter-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.engagement-meter-head span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.engagement-meter-head strong {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: clamp(1.9rem, 4vw, 2.8rem);
+}
+
+.engagement-meter-head small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.engagement-meter-meta {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.engagement-trend {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.engagement-trend.is-up {
+  color: var(--sage);
+}
+
+.engagement-trend.is-down {
+  color: #b3551a;
+}
+
+.engagement-bar {
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.08);
+}
+
+.engagement-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent) 0%, #f7a14c 52%, var(--sage) 100%);
+}
+
 .panel-header {
   margin-bottom: 18px;
+}
+
+.analytics-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.analytics-item {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(16, 24, 32, 0.04);
+}
+
+.analytics-item span,
+.analytics-meta small {
+  color: var(--muted);
+}
+
+.analytics-item strong {
+  font-size: 1.35rem;
+}
+
+.analytics-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.analytics-meta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
 }
 
 .admin-form {
@@ -1237,6 +1356,7 @@ main {
   .card-grid-three,
   .roadmap-grid,
   .metric-grid,
+  .analytics-list,
   .library-grid,
   .admin-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1295,6 +1415,11 @@ main {
     padding: 20px;
   }
 
+  .engagement-meter-head,
+  .engagement-meter-meta {
+    justify-items: start;
+  }
+
   .timeline-card,
   .list-row {
     flex-direction: column;
@@ -1312,7 +1437,8 @@ main {
   .form-grid,
   .form-grid-compact,
   .table-head,
-  .table-row {
+  .table-row,
+  .analytics-list {
     grid-template-columns: 1fr;
   }
 

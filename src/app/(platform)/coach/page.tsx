@@ -7,6 +7,7 @@ import {
 } from "@/app/(platform)/coach/forms";
 import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
+import { EngagementMeter } from "@/components/platform/engagement-meter";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getCoachPageData } from "@/lib/platform-data";
@@ -15,7 +16,9 @@ export default async function CoachPage() {
   const {
     context,
     metrics,
+    engagementOverview,
     roster,
+    attentionLearners,
     sessions,
     deadlines,
     recentQuizResults,
@@ -30,13 +33,96 @@ export default async function CoachPage() {
     <div className="page-shell">
       <PlatformTopbar
         title="Cockpit coach"
-        description="Vue réelle des coachés, cohortes et sessions à venir, avec données chargées depuis Supabase."
+        description="Pilotage réel des coachés, avec visibilité sur l'engagement, les deadlines, les corrections et les échanges."
       />
 
       <section className="metric-grid">
         {metrics.map((metric) => (
           <MetricCard key={metric.label} {...metric} />
         ))}
+      </section>
+
+      <section className="content-grid">
+        <div className="panel panel-accent">
+          <div className="panel-header">
+            <h3>Signal d&apos;engagement global</h3>
+            <p>Lecture pédagogique du groupe que tu suis : activité récente, complétion et ponctualité.</p>
+          </div>
+
+          <EngagementMeter
+            band={
+              engagementOverview.averageScore >= 75
+                ? "strong"
+                : engagementOverview.averageScore >= 45
+                  ? "watch"
+                  : "risk"
+            }
+            bandLabel={
+              engagementOverview.averageScore >= 75
+                ? "Dynamique saine"
+                : engagementOverview.averageScore >= 45
+                  ? "Surveillance utile"
+                  : "Relance prioritaire"
+            }
+            caption={`${engagementOverview.atRiskCount} coaché(s) à relancer, ${engagementOverview.recentlyActiveCount} actifs cette semaine`}
+            score={engagementOverview.averageScore}
+            trend={engagementOverview.atRiskCount > 0 ? "down" : "steady"}
+            trendLabel={
+              engagementOverview.atRiskCount > 0
+                ? "certaines dynamiques demandent une relance"
+                : "rythme global maîtrisé"
+            }
+          />
+
+          <div className="analytics-list section-spacer">
+            <article className="analytics-item">
+              <span>Complétion groupe</span>
+              <strong>{engagementOverview.completionRate !== null ? `${engagementOverview.completionRate}%` : "n/a"}</strong>
+              <small>{engagementOverview.strongCount} coaché(s) très engagés</small>
+            </article>
+            <article className="analytics-item">
+              <span>Ponctualité</span>
+              <strong>{engagementOverview.onTimeRate !== null ? `${engagementOverview.onTimeRate}%` : "n/a"}</strong>
+              <small>{engagementOverview.watchCount} à surveiller</small>
+            </article>
+            <article className="analytics-item">
+              <span>Quiz moyen</span>
+              <strong>{engagementOverview.averageQuizScore !== null ? `${engagementOverview.averageQuizScore}%` : "n/a"}</strong>
+              <small>sur les quiz déjà corrigés</small>
+            </article>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Alertes d&apos;engagement</h3>
+            <p>Les coachés qui méritent une relance humaine maintenant.</p>
+          </div>
+
+          {attentionLearners.length ? (
+            <div className="stack-list">
+              {attentionLearners.map((learner) => (
+                <article className="list-row list-row-stretch" key={learner.id}>
+                  <div>
+                    <strong>{learner.name}</strong>
+                    <p>
+                      {learner.lastActivityLabel} · {learner.nextFocus}
+                    </p>
+                  </div>
+                  <div className="list-row-meta">
+                    <Badge tone={learner.band === "risk" ? "warning" : "accent"}>{learner.bandLabel}</Badge>
+                    <strong>{learner.score}%</strong>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucune alerte critique.</strong>
+              <p>Le groupe est plutôt bien engagé pour le moment.</p>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="panel">
@@ -68,12 +154,22 @@ export default async function CoachPage() {
                     <p>
                       {item.cohorts.length ? item.cohorts.join(", ") : "Sans cohorte"} · {item.status}
                     </p>
+                    {item.engagement ? (
+                      <p>
+                        engagement {item.engagement.score}% · {item.engagement.nextFocus}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="table-actions">
                     <Badge tone={item.status === "active" ? "success" : "warning"}>
                       {item.status}
                     </Badge>
+                    {item.engagement ? (
+                      <Badge tone={item.engagement.band === "strong" ? "success" : item.engagement.band === "risk" ? "warning" : "accent"}>
+                        {item.engagement.bandLabel}
+                      </Badge>
+                    ) : null}
                     {item.upcomingSession ? (
                       <Badge tone="accent">{item.upcomingSession}</Badge>
                     ) : (

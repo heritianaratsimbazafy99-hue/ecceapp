@@ -8,6 +8,7 @@ import {
   DeleteQuizQuestionButton
 } from "@/app/(platform)/admin/forms";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
+import { EngagementMeter } from "@/components/platform/engagement-meter";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getAdminPageData } from "@/lib/platform-data";
@@ -28,6 +29,9 @@ function roleTone(role: string) {
 export default async function AdminPage() {
   const {
     metrics,
+    analyticsOverview,
+    engagementSignals,
+    attentionLearners,
     users,
     userOptions,
     cohortOptions,
@@ -42,13 +46,101 @@ export default async function AdminPage() {
     <div className="page-shell">
       <PlatformTopbar
         title="Pilotage admin"
-        description="Back-office réel ECCE pour créer des utilisateurs, attribuer des rôles et gérer les premiers contenus connectés à Supabase."
+        description="Back-office réel ECCE pour piloter utilisateurs, contenus et santé pédagogique globale de l'école."
       />
 
       <section className="metric-grid">
         {metrics.map((metric) => (
           <MetricCard key={metric.label} {...metric} />
         ))}
+      </section>
+
+      <section className="content-grid">
+        <div className="panel panel-highlight">
+          <div className="panel-header">
+            <h3>Analytics pédagogiques</h3>
+            <p>Vue agrégée de la dynamique ECCE pour décider vite où concentrer l&apos;accompagnement.</p>
+          </div>
+
+          <EngagementMeter
+            band={
+              analyticsOverview.averageScore >= 75
+                ? "strong"
+                : analyticsOverview.averageScore >= 45
+                  ? "watch"
+                  : "risk"
+            }
+            bandLabel={
+              analyticsOverview.averageScore >= 75
+                ? "Cohorte saine"
+                : analyticsOverview.averageScore >= 45
+                  ? "Surveillance utile"
+                  : "Relance prioritaire"
+            }
+            caption={`${analyticsOverview.totalPublishedContents} contenus publiés · ${analyticsOverview.totalAssignments} assignations actives`}
+            score={analyticsOverview.averageScore}
+            trend={analyticsOverview.atRiskCount > 0 ? "down" : "steady"}
+            trendLabel={
+              analyticsOverview.atRiskCount > 0
+                ? `${analyticsOverview.atRiskCount} coaché(s) demandent une relance`
+                : "dynamique globale stable"
+            }
+          />
+
+          <div className="analytics-list section-spacer">
+            <article className="analytics-item">
+              <span>Complétion moyenne</span>
+              <strong>{analyticsOverview.completionRate !== null ? `${analyticsOverview.completionRate}%` : "n/a"}</strong>
+              <small>{analyticsOverview.strongCount} coaché(s) très engagés</small>
+            </article>
+            <article className="analytics-item">
+              <span>Ponctualité moyenne</span>
+              <strong>{analyticsOverview.onTimeRate !== null ? `${analyticsOverview.onTimeRate}%` : "n/a"}</strong>
+              <small>{analyticsOverview.watchCount} à surveiller</small>
+            </article>
+            <article className="analytics-item">
+              <span>Quiz moyen</span>
+              <strong>{analyticsOverview.averageQuizScore !== null ? `${analyticsOverview.averageQuizScore}%` : "n/a"}</strong>
+              <small>{analyticsOverview.recentlyActiveCount} actifs cette semaine</small>
+            </article>
+            <article className="analytics-item">
+              <span>Ressources actives</span>
+              <strong>{analyticsOverview.totalQuizzes}</strong>
+              <small>{analyticsOverview.totalCoaches} coach(s) mobilisés</small>
+            </article>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Coachés à relancer</h3>
+            <p>Ceux qui combinent retard, faible activité récente ou faible complétion.</p>
+          </div>
+
+          {attentionLearners.length ? (
+            <div className="stack-list">
+              {attentionLearners.map((learner) => (
+                <article className="list-row list-row-stretch" key={learner.id}>
+                  <div>
+                    <strong>{learner.name}</strong>
+                    <p>
+                      {learner.lastActivityLabel} · {learner.nextFocus}
+                    </p>
+                  </div>
+                  <div className="list-row-meta">
+                    <Badge tone={learner.band === "risk" ? "warning" : "accent"}>{learner.bandLabel}</Badge>
+                    <strong>{learner.score}%</strong>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucune alerte majeure.</strong>
+              <p>Les signaux d&apos;engagement restent sains à ce stade.</p>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="admin-grid">
@@ -177,6 +269,45 @@ export default async function AdminPage() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Vue engagement coachés</h3>
+          <p>Un radar simple pour repérer les dynamiques fortes et les points de friction individuels.</p>
+        </div>
+
+        {engagementSignals.length ? (
+          <div className="stack-list">
+            {engagementSignals.slice(0, 8).map((learner) => (
+              <article className="list-row list-row-stretch" key={learner.id}>
+                <div className="analytics-copy">
+                  <strong>{learner.name}</strong>
+                  <p>
+                    {learner.cohorts.length ? learner.cohorts.join(", ") : "Sans cohorte"} · {learner.lastActivityLabel}
+                  </p>
+                  <p>{learner.nextFocus}</p>
+                </div>
+
+                <div className="analytics-meta">
+                  <Badge tone={learner.band === "strong" ? "success" : learner.band === "risk" ? "warning" : "accent"}>
+                    {learner.bandLabel}
+                  </Badge>
+                  <strong>{learner.score}%</strong>
+                  <small>
+                    complétion {learner.completionRate !== null ? `${learner.completionRate}%` : "n/a"} · quiz{" "}
+                    {learner.averageQuizScore !== null ? `${learner.averageQuizScore}%` : "n/a"}
+                  </small>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Aucun signal coaché pour l&apos;instant.</strong>
+            <p>Ajoute des coachés puis des assignations pour faire vivre ce radar pédagogique.</p>
+          </div>
+        )}
       </section>
 
       <section className="content-grid">

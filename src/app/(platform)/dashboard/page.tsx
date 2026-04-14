@@ -3,6 +3,7 @@ import Link from "next/link";
 import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
 import { LiveNotificationFeed } from "@/components/notifications/realtime-notification-center";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
+import { EngagementMeter } from "@/components/platform/engagement-meter";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getDashboardPageData } from "@/lib/platform-data";
@@ -11,6 +12,7 @@ export default async function DashboardPage() {
   const {
     context,
     metrics,
+    engagement,
     assignments,
     notifications,
     upcomingSessions,
@@ -35,6 +37,47 @@ export default async function DashboardPage() {
       </section>
 
       <section className="content-grid">
+        <div className="panel panel-highlight">
+          <div className="panel-header">
+            <h3>Mon engagement pédagogique</h3>
+            <p>Un signal vivant construit depuis tes rendus, quiz, deadlines et activités récentes.</p>
+          </div>
+
+          <EngagementMeter
+            band={engagement.band}
+            bandLabel={engagement.bandLabel}
+            caption={engagement.nextFocus}
+            score={engagement.score}
+            trend={engagement.trend}
+            trendLabel={engagement.trendLabel}
+          />
+
+          <div className="analytics-list section-spacer">
+            <article className="analytics-item">
+              <span>Complétion</span>
+              <strong>{engagement.completionRate !== null ? `${engagement.completionRate}%` : "n/a"}</strong>
+              <small>
+                {engagement.completedCount}/{engagement.assignmentCount} assignation(s) traitée(s)
+              </small>
+            </article>
+            <article className="analytics-item">
+              <span>Ponctualité</span>
+              <strong>{engagement.onTimeRate !== null ? `${engagement.onTimeRate}%` : "n/a"}</strong>
+              <small>{engagement.overdueCount} échéance(s) en retard</small>
+            </article>
+            <article className="analytics-item">
+              <span>Quiz moyen</span>
+              <strong>{engagement.averageQuizScore !== null ? `${engagement.averageQuizScore}%` : "n/a"}</strong>
+              <small>{engagement.badgeCount} badge(s) débloqué(s)</small>
+            </article>
+            <article className="analytics-item">
+              <span>Dernière activité</span>
+              <strong>{engagement.lastActivityLabel}</strong>
+              <small>{engagement.unreadNotifications} notification(s) à ouvrir</small>
+            </article>
+          </div>
+        </div>
+
         <div className="panel">
           <div className="panel-header">
             <h3>Travaux et ressources assignés</h3>
@@ -51,7 +94,9 @@ export default async function DashboardPage() {
                   </div>
                   <div className="table-actions">
                     <Badge tone={item.type === "quiz" ? "warning" : "accent"}>{item.type}</Badge>
-                    <Badge tone={item.status === "reviewed" ? "success" : "neutral"}>{item.status}</Badge>
+                    <Badge tone={item.status === "reviewed" || item.status === "termine" ? "success" : "neutral"}>
+                      {item.status}
+                    </Badge>
                     {item.type === "quiz" && item.targetId ? (
                       <Link className="button button-secondary button-small" href={`/quiz/${item.targetId}?assignment=${item.id}`}>
                         Ouvrir
@@ -72,7 +117,9 @@ export default async function DashboardPage() {
             </div>
           )}
         </div>
+      </section>
 
+      <section className="content-grid">
         <div className="panel">
           <div className="panel-header">
             <h3>Notifications récentes</h3>
