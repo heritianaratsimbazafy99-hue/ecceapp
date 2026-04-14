@@ -23,7 +23,12 @@ export async function createSupabaseServerClient() {
         }>
       ) {
         cookiesToSet.forEach(({ name, value, options }) => {
-          cookieStore.set(name, value, options);
+          try {
+            cookieStore.set(name, value, options);
+          } catch {
+            // Pendant le rendu d'un Server Component, Next interdit l'écriture
+            // de cookies. Le middleware gère alors le refresh de session.
+          }
         });
       }
     }
