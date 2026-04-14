@@ -203,6 +203,9 @@ export function RealtimeConversationHub({
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const bannerTimeoutRef = useRef<number | null>(null);
   const selectedConversationRef = useRef<string | null>(initialConversationId);
+  const channelNameRef = useRef(
+    `coach-messages:${userId}:${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+  );
 
   const selectedConversation = conversations.find((item) => item.id === selectedConversationId) ?? null;
   const currentRecipientId = selectedConversation?.counterpartId ?? selectedRecipientId;
@@ -296,7 +299,7 @@ export function RealtimeConversationHub({
 
   useEffect(() => {
     const channel = supabase
-      .channel(`coach-messages:${userId}`)
+      .channel(channelNameRef.current)
       .on(
         "postgres_changes",
         {

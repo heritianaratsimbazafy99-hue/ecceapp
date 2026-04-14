@@ -50,6 +50,9 @@ function useRealtimeNotifications(userId: string, initialNotifications: Notifica
   const [notifications, setNotifications] = useState(() => initialRef.current);
   const [liveToast, setLiveToast] = useState<NotificationItem | null>(null);
   const timeoutRef = useRef<number | null>(null);
+  const channelNameRef = useRef(
+    `notifications:${userId}:${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+  );
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -77,7 +80,7 @@ function useRealtimeNotifications(userId: string, initialNotifications: Notifica
     void loadNotifications();
 
     const channel = supabase
-      .channel(`notifications:${userId}`)
+      .channel(channelNameRef.current)
       .on(
         "postgres_changes",
         {
