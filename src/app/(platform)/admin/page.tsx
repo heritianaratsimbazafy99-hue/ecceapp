@@ -1,9 +1,11 @@
 import {
+  AddQuizQuestionForm,
   AssignRoleForm,
   CreateAssignmentForm,
   CreateContentForm,
   CreateQuizForm,
-  CreateUserForm
+  CreateUserForm,
+  DeleteQuizQuestionButton
 } from "@/app/(platform)/admin/forms";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
@@ -187,17 +189,58 @@ export default async function AdminPage() {
           {quizzes.length ? (
             <div className="stack-list">
               {quizzes.map((quiz) => (
-                <article className="list-row list-row-stretch" key={quiz.id}>
-                  <div>
-                    <strong>{quiz.title}</strong>
+                <article className="panel panel-subtle" key={quiz.id}>
+                  <div className="panel-header">
+                    <h3>{quiz.title}</h3>
                     <p>
                       {quiz.kind} · {quiz.attempts_allowed ?? 1} tentative(s)
                       {quiz.time_limit_minutes ? ` · ${quiz.time_limit_minutes} min` : ""}
                     </p>
                   </div>
-                  <Badge tone={quiz.status === "published" ? "success" : "neutral"}>
-                    {quiz.status ?? "draft"}
-                  </Badge>
+
+                  <div className="table-actions">
+                    <Badge tone={quiz.status === "published" ? "success" : "neutral"}>
+                      {quiz.status ?? "draft"}
+                    </Badge>
+                    <Badge tone="accent">{quiz.quiz_questions?.length ?? 0} question(s)</Badge>
+                  </div>
+
+                  {quiz.quiz_questions?.length ? (
+                    <div className="stack-list section-spacer">
+                      {quiz.quiz_questions.map((question) => (
+                        <article className="list-row list-row-stretch" key={question.id}>
+                          <div>
+                            <strong>
+                              Q{question.position + 1} · {question.question_type}
+                            </strong>
+                            <p>{question.prompt}</p>
+                            {question.helper_text ? <p>{question.helper_text}</p> : null}
+                            {question.quiz_question_choices?.length ? (
+                              <p>
+                                {question.quiz_question_choices
+                                  .sort((left, right) => left.position - right.position)
+                                  .map((choice) => `${choice.is_correct ? "✓" : "•"} ${choice.label}`)
+                                  .join(" · ")}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="list-row-meta">
+                            <Badge tone="neutral">{question.points} pt(s)</Badge>
+                            <DeleteQuizQuestionButton questionId={question.id} quizId={quiz.id} />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state empty-state-compact">
+                      <strong>Aucune question pour ce quiz.</strong>
+                      <p>Ajoute des questions ci-dessous pour le rendre exploitable.</p>
+                    </div>
+                  )}
+
+                  <div className="section-spacer">
+                    <AddQuizQuestionForm quizId={quiz.id} />
+                  </div>
                 </article>
               ))}
             </div>

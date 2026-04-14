@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import {
+  GradeQuizTextAttemptForm,
   ReviewSubmissionForm,
   ScheduleCoachingSessionForm
 } from "@/app/(platform)/coach/forms";
@@ -18,6 +19,7 @@ export default async function CoachPage() {
     sessions,
     deadlines,
     recentQuizResults,
+    textReviewQueue,
     reviewQueue,
     coachOptions,
     coacheeOptions,
@@ -150,21 +152,57 @@ export default async function CoachPage() {
         {recentQuizResults.length ? (
           <div className="stack-list">
             {recentQuizResults.map((result) => (
-              <article className="list-row list-row-stretch" key={result.id}>
-                <div>
-                  <strong>{result.learner}</strong>
+                <article className="list-row list-row-stretch" key={result.id}>
+                  <div>
+                    <strong>{result.learner}</strong>
+                    <p>
+                      {result.attempt} · {result.submittedAt}
+                    </p>
+                  </div>
+                <Badge tone={result.status === "submitted" ? "neutral" : "success"}>{result.score}</Badge>
+                </article>
+              ))}
+            </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Aucun résultat quiz remonté pour le moment.</strong>
+            <p>Dès qu&apos;un coaché soumettra un quiz, tu verras ici son score.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Réponses textuelles à corriger</h3>
+          <p>Les tentatives avec réponses ouvertes arrivent ici pour correction manuelle et calcul du score final.</p>
+        </div>
+
+        {textReviewQueue.length ? (
+          <div className="stack-list">
+            {textReviewQueue.map((attempt) => (
+              <article className="panel panel-subtle" key={attempt.id}>
+                <div className="panel-header">
+                  <h3>{attempt.learner}</h3>
                   <p>
-                    {result.attempt} · {result.submittedAt}
+                    {attempt.quizTitle} · {attempt.attemptLabel} · {attempt.submittedAt}
                   </p>
                 </div>
-                <Badge tone="success">{result.score}</Badge>
+
+                <div className="table-actions">
+                  <Badge tone="warning">correction requise</Badge>
+                  <Badge tone="neutral">score auto actuel {attempt.score}</Badge>
+                </div>
+
+                <div className="section-spacer">
+                  <GradeQuizTextAttemptForm answers={attempt.answers} attemptId={attempt.id} />
+                </div>
               </article>
             ))}
           </div>
         ) : (
           <div className="empty-state">
-            <strong>Aucun résultat quiz remonté pour le moment.</strong>
-            <p>Dès qu&apos;un coaché soumettra un quiz, tu verras ici son score.</p>
+            <strong>Aucune réponse textuelle en attente.</strong>
+            <p>Dès qu&apos;un coaché soumettra un quiz avec question ouverte, tu pourras le corriger ici.</p>
           </div>
         )}
       </section>

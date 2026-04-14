@@ -42,13 +42,21 @@ export function QuizTakeForm({
 
       <CelebrationBurst
         active={Boolean(state.success)}
-        triggerKey={`${state.success ?? ""}-${state.score ?? ""}-${state.badgeTitle ?? ""}`}
+        triggerKey={`${state.success ?? ""}-${state.score ?? ""}-${state.badgeTitle ?? ""}-${state.pendingManualReview ?? false}`}
         body={
-          state.badgeTitle
+          state.pendingManualReview
+            ? "Tes réponses ouvertes ont été envoyées au coach pour correction."
+            : state.badgeTitle
             ? `Badge débloqué: ${state.badgeTitle}.`
             : "Ton résultat vient d'être enregistré dans ECCE."
         }
-        title={state.badgeTitle ? "Bravo, nouveau badge !" : "Quiz validé"}
+        title={
+          state.pendingManualReview
+            ? "Quiz envoyé"
+            : state.badgeTitle
+              ? "Bravo, nouveau badge !"
+              : "Quiz validé"
+        }
         tone={state.badgeTitle ? "badge" : "success"}
       />
 
@@ -90,7 +98,7 @@ export function QuizTakeForm({
       {state.error ? <p className="form-error">{state.error}</p> : null}
       {state.success ? (
         <p className="form-success">
-          {state.success} {state.score ? `Score: ${state.score}` : ""}
+          {state.success} {state.score ? `Score actuel: ${state.score}` : ""}
         </p>
       ) : null}
 

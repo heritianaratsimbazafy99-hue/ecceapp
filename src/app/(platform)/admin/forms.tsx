@@ -4,11 +4,13 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
+  addQuizQuestionAction,
   assignRoleAction,
   createAssignmentAction,
   createContentAction,
   createQuizAction,
   createUserAction,
+  deleteQuizQuestionAction,
   type AdminActionState
 } from "@/app/(platform)/admin/actions";
 
@@ -280,6 +282,13 @@ export function CreateQuizForm({
             Question
             <textarea name="question_prompt" placeholder="Quelle est la première étape d'une séance de coaching ?" rows={3} />
           </label>
+          <label>
+            Type de question
+            <select defaultValue="single_choice" name="first_question_type">
+              <option value="single_choice">single_choice</option>
+              <option value="text">text</option>
+            </select>
+          </label>
           <label className="form-grid-span">
             Aide / consigne
             <input name="helper_text" placeholder="Choisis la meilleure réponse." type="text" />
@@ -305,6 +314,82 @@ export function CreateQuizForm({
 
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Créer le quiz" pendingLabel="Création..." />
+    </form>
+  );
+}
+
+export function AddQuizQuestionForm({
+  quizId
+}: {
+  quizId: string;
+}) {
+  const [state, formAction] = useActionState(addQuizQuestionAction, initialState);
+
+  return (
+    <form action={formAction} className="admin-form admin-form-compact">
+      <input name="quiz_id" type="hidden" value={quizId} />
+
+      <div className="form-grid">
+        <label className="form-grid-span">
+          Intitulé
+          <textarea name="prompt" placeholder="Ajoute une nouvelle question à ce quiz." required rows={3} />
+        </label>
+        <label>
+          Type
+          <select defaultValue="single_choice" name="question_type">
+            <option value="single_choice">single_choice</option>
+            <option value="text">text</option>
+          </select>
+        </label>
+        <label>
+          Position
+          <input min="0" name="position" placeholder="auto" type="number" />
+        </label>
+        <label>
+          Points
+          <input defaultValue="1" min="1" name="points" type="number" />
+        </label>
+        <label className="form-grid-span">
+          Aide / consigne
+          <input name="helper_text" placeholder="Précise la consigne si besoin." type="text" />
+        </label>
+        <label className="form-grid-span">
+          Choix de réponses, un par ligne
+          <textarea
+            name="choices_text"
+            placeholder={"Réponse A\nRéponse B\nRéponse C"}
+            rows={4}
+          />
+        </label>
+        <label>
+          Numéro de la bonne réponse
+          <input min="1" name="correct_choice_index" placeholder="1" type="number" />
+        </label>
+      </div>
+
+      <ActionFeedback state={state} />
+      <SubmitButton idleLabel="Ajouter la question" pendingLabel="Ajout..." />
+    </form>
+  );
+}
+
+export function DeleteQuizQuestionButton({
+  quizId,
+  questionId
+}: {
+  quizId: string;
+  questionId: string;
+}) {
+  const [state, formAction] = useActionState(deleteQuizQuestionAction, initialState);
+
+  return (
+    <form action={formAction} className="inline-form">
+      <input name="quiz_id" type="hidden" value={quizId} />
+      <input name="question_id" type="hidden" value={questionId} />
+      <button className="inline-link button-reset" type="submit">
+        Supprimer
+      </button>
+      <ActionFeedback state={state} />
     </form>
   );
 }

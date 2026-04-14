@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createNotifications } from "@/lib/platform-events";
+import { awardQuizBadge, createNotifications } from "@/lib/platform-events";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -160,4 +160,168 @@ export async function reviewSubmissionAction(
   }
 
   return ok("Feedback envoyé au coaché.");
+}
+
+export async function gradeQuizTextAttemptAction(
+  _prevState: CoachActionState,
+  formData: FormData
+): Promise<CoachActionState> {
+  const context = await requireRole(["admin", "coach"]);
+  const admin = createSupabaseAdminClient();
+
+  const attemptId = String(formData.get("attempt_id") ?? "").trim();
+
+  if (!attemptId) {
+    return fail("Tentative introuvable.");
+  }
+
+  const attemptResult = await admin
+    .from("quiz_attempts")
+    .select("id, quiz_id, user_id")
+    .eq("id", attemptId)
+    .single<{ id: string; quiz_id: string; user_id: string }>();
+
+  if (attemptResult.error || !attemptResult.data) {
+    return fail("Tentative introuvable.");
+  }
+
+  const quizResult = await admin
+    .from("quizzes")
+    .select("id, title, organization_id, passing_score")
+    .eq("id", attemptResult.data.quiz_id)
+    .single<{
+      id: string;
+      title: string;
+      organization_id: string;
+      passing_score: number | null;
+    }>();
+
+  if (quizResult.error || !quizResult.data) {
+    return fail("Quiz introuvable.");
+  }
+
+  const answersResult = await admin
+    .from("quiz_attempt_answers")
+    .select("attempt_id, question_id, answer_text, points_awarded")
+    .eq("attempt_id", attemptId)
+    .not("answer_text", "is", null);
+
+  const textAnswers = (answersResult.data ?? []) as Array<{
+    attempt_id: string;
+    question_id: string;
+    answer_text: string | null;
+    points_awarded: number | null;
+  }>;
+
+  if (!textAnswers.length) {
+    return fail("Cette tentative ne contient pas de réponse textuelle à corriger.");
+  }
+
+  const questionIds = textAnswers.map((answer) => answer.question_id);
+  const questionsResult = await admin
+    .from("quiz_questions")
+    .select("id, points")
+    .in("id", questionIds);
+
+  const questionPointsById = new Map(
+    ((questionsResult.data ?? []) as Array<{ id: string; points: number }>).map((question) => [
+      question.id,
+      question.points
+    ])
+  );
+
+  const updates: Array<{ questionId: string; points: number; isCorrect: boolean | null }> = [];
+
+  for (const answer of textAnswers) {
+    const input = String(formData.get(`answer_${answer.question_id}_points`) ?? "").trim();
+    const maxPoints = questionPointsById.get(answer.question_id) ?? 0;
+    const parsed = input ? Number(input) : 0;
+
+    if (Number.isNaN(parsed) || parsed < 0 || parsed > maxPoints) {
+      return fail(`La note de la question doit être comprise entre 0 et ${maxPoints}.`);
+    }
+
+    updates.push({
+      questionId: answer.question_id,
+      points: parsed,
+      isCorrect: parsed === maxPoints ? true : parsed === 0 ? false : null
+    });
+  }
+
+  for (const update of updates) {
+    const { error } = await admin
+      .from("quiz_attempt_answers")
+      .update({
+        points_awarded: update.points,
+        is_correct: update.isCorrect
+      })
+      .eq("attempt_id", attemptId)
+      .eq("question_id", update.questionId);
+
+    if (error) {
+      return fail(error.message);
+    }
+  }
+
+  const allAnswersResult = await admin
+    .from("quiz_attempt_answers")
+    .select("question_id, points_awarded")
+    .eq("attempt_id", attemptId);
+
+  const allQuestionIds = Array.from(
+    new Set(((allAnswersResult.data ?? []) as Array<{ question_id: string; points_awarded: number | null }>).map((item) => item.question_id))
+  );
+  const allQuestionsResult = allQuestionIds.length
+    ? await admin.from("quiz_questions").select("id, points").in("id", allQuestionIds)
+    : { data: [] as Array<{ id: string; points: number }> };
+
+  const totalPossible = ((allQuestionsResult.data ?? []) as Array<{ id: string; points: number }>).reduce(
+    (sum, question) => sum + (question.points ?? 0),
+    0
+  );
+  const totalAwarded = ((allAnswersResult.data ?? []) as Array<{ question_id: string; points_awarded: number | null }>).reduce(
+    (sum, answer) => sum + (answer.points_awarded ?? 0),
+    0
+  );
+  const score = totalPossible > 0 ? Number(((totalAwarded / totalPossible) * 100).toFixed(2)) : 0;
+
+  const { error: updateAttemptError } = await admin
+    .from("quiz_attempts")
+    .update({
+      score,
+      status: "graded",
+      graded_at: new Date().toISOString()
+    })
+    .eq("id", attemptId);
+
+  if (updateAttemptError) {
+    return fail(updateAttemptError.message);
+  }
+
+  const badgeTitle = await awardQuizBadge({
+    organizationId: quizResult.data.organization_id,
+    userId: attemptResult.data.user_id,
+    quizAttemptId: attemptId,
+    score,
+    passingScore: quizResult.data.passing_score
+  });
+
+  await createNotifications([
+    {
+      organizationId: quizResult.data.organization_id,
+      recipientId: attemptResult.data.user_id,
+      actorId: context.user.id,
+      title: "Quiz corrigé",
+      body: badgeTitle
+        ? `${quizResult.data.title} a été corrigé avec un score de ${score}%. Badge obtenu: ${badgeTitle}.`
+        : `${quizResult.data.title} a été corrigé avec un score final de ${score}%.`,
+      deeplink: `/quiz/${quizResult.data.id}`
+    }
+  ]);
+
+  revalidatePath("/coach");
+  revalidatePath("/dashboard");
+  revalidatePath(`/quiz/${quizResult.data.id}`);
+
+  return ok("Réponses textuelles corrigées.");
 }

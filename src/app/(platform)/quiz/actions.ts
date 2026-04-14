@@ -15,6 +15,7 @@ export type QuizActionState = {
   success?: string;
   score?: string;
   badgeTitle?: string;
+  pendingManualReview?: boolean;
 };
 
 export async function submitQuizAttemptAction(
@@ -118,6 +119,7 @@ export async function submitQuizAttemptAction(
   const answerRows = [];
   let totalPoints = 0;
   let awardedPoints = 0;
+  let requiresManualReview = false;
 
   for (const question of quiz.quiz_questions ?? []) {
     totalPoints += question.points ?? 0;
@@ -138,6 +140,7 @@ export async function submitQuizAttemptAction(
         points_awarded: pointsAwarded
       });
     } else {
+      requiresManualReview = true;
       const answerText = String(formData.get(`question_${question.id}`) ?? "").trim();
       answerRows.push({
         attempt_id: attempt.id,
@@ -159,13 +162,14 @@ export async function submitQuizAttemptAction(
   }
 
   const score = totalPoints > 0 ? Number(((awardedPoints / totalPoints) * 100).toFixed(2)) : 0;
+  const attemptStatus = requiresManualReview ? "submitted" : "graded";
 
   const { error: updateError } = await admin
     .from("quiz_attempts")
     .update({
       score,
-      status: "graded",
-      graded_at: new Date().toISOString()
+      status: attemptStatus,
+      graded_at: requiresManualReview ? null : new Date().toISOString()
     })
     .eq("id", attempt.id);
 
@@ -179,8 +183,10 @@ export async function submitQuizAttemptAction(
       organizationId,
       recipientId: context.user.id,
       actorId: context.user.id,
-      title: "Quiz complété",
-      body: `Ton score pour "${quiz.title}" est de ${score}%.`,
+      title: requiresManualReview ? "Quiz envoyé pour correction" : "Quiz complété",
+      body: requiresManualReview
+        ? `Tes réponses pour "${quiz.title}" ont été envoyées. La correction coach est en attente.`
+        : `Ton score pour "${quiz.title}" est de ${score}%.`,
       deeplink: `/quiz/${quizId}`
     },
     ...staffIds
@@ -189,19 +195,23 @@ export async function submitQuizAttemptAction(
         organizationId,
         recipientId,
         actorId: context.user.id,
-        title: "Nouveau résultat quiz",
-        body: `${quiz.title} vient d'être soumis avec un score de ${score}%.`,
+        title: requiresManualReview ? "Quiz à corriger" : "Nouveau résultat quiz",
+        body: requiresManualReview
+          ? `${quiz.title} vient d'être soumis avec des réponses textuelles à corriger.`
+          : `${quiz.title} vient d'être soumis avec un score de ${score}%.`,
         deeplink: "/coach"
       }))
   ]);
 
-  const badgeTitle = await awardQuizBadge({
-    organizationId,
-    userId: context.user.id,
-    quizAttemptId: attempt.id,
-    score,
-    passingScore: quiz.passing_score
-  });
+  const badgeTitle = requiresManualReview
+    ? null
+    : await awardQuizBadge({
+        organizationId,
+        userId: context.user.id,
+        quizAttemptId: attempt.id,
+        score,
+        passingScore: quiz.passing_score
+      });
 
   if (badgeTitle) {
     await createNotifications([
@@ -221,8 +231,11 @@ export async function submitQuizAttemptAction(
   revalidatePath("/coach");
 
   return {
-    success: `Quiz "${quiz.title}" soumis avec succès.`,
+    success: requiresManualReview
+      ? `Quiz "${quiz.title}" envoyé pour correction.`
+      : `Quiz "${quiz.title}" soumis avec succès.`,
     score: `${score}%`,
-    badgeTitle: badgeTitle ?? undefined
+    badgeTitle: badgeTitle ?? undefined,
+    pendingManualReview: requiresManualReview
   };
 }

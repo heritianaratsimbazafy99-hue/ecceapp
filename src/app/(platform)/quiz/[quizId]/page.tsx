@@ -61,8 +61,20 @@ export default async function QuizPage({
                     <strong>Tentative {attempt.attempt_number}</strong>
                     <p>{attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString("fr-FR") : "En cours"}</p>
                   </div>
-                  <Badge tone={attempt.score !== null && attempt.score >= (quiz.passing_score ?? 0) ? "success" : "warning"}>
-                    {attempt.score !== null ? `${attempt.score}%` : "Non noté"}
+                  <Badge
+                    tone={
+                      attempt.status === "submitted"
+                        ? "neutral"
+                        : attempt.score !== null && attempt.score >= (quiz.passing_score ?? 0)
+                          ? "success"
+                          : "warning"
+                    }
+                  >
+                    {attempt.status === "submitted"
+                      ? "En correction"
+                      : attempt.score !== null
+                        ? `${attempt.score}%`
+                        : "Non noté"}
                   </Badge>
                 </article>
               ))}
@@ -79,7 +91,7 @@ export default async function QuizPage({
       <section className="panel">
         <div className="panel-header">
           <h3>Passer le quiz</h3>
-          <p>Les réponses à choix unique sont corrigées automatiquement à la soumission.</p>
+          <p>Les réponses à choix unique sont corrigées automatiquement, les réponses textuelles passent ensuite en correction coach.</p>
         </div>
 
         <QuizTakeForm

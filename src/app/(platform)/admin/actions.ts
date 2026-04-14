@@ -24,6 +24,7 @@ const VALID_CONTENT_TYPES = [
 ] as const;
 const VALID_PUBLICATION_STATUS = ["draft", "scheduled", "published", "archived"] as const;
 const VALID_QUIZ_KIND = ["qcm", "quiz", "assessment"] as const;
+const VALID_QUESTION_TYPES = ["single_choice", "text"] as const;
 
 function ok(success: string): AdminActionState {
   return { success };
@@ -222,6 +223,7 @@ export async function createQuizAction(
 
   const questionPrompt = String(formData.get("question_prompt") ?? "").trim();
   const helperText = String(formData.get("helper_text") ?? "").trim();
+  const firstQuestionType = String(formData.get("first_question_type") ?? "").trim();
   const choicesText = String(formData.get("choices_text") ?? "").trim();
   const correctChoiceIndex = Number(String(formData.get("correct_choice_index") ?? "").trim() || 0);
   const points = Number(String(formData.get("points") ?? "").trim() || 1);
@@ -260,6 +262,16 @@ export async function createQuizAction(
       .split("\n")
       .map((choice) => choice.trim())
       .filter(Boolean);
+    const questionType =
+      VALID_QUESTION_TYPES.includes(firstQuestionType as (typeof VALID_QUESTION_TYPES)[number])
+        ? firstQuestionType
+        : choices.length
+          ? "single_choice"
+          : "text";
+
+    if (questionType === "single_choice" && choices.length < 2) {
+      return fail("Une question à choix unique doit contenir au moins deux réponses.");
+    }
 
     const questionInsert = await admin
       .from("quiz_questions")
@@ -267,7 +279,7 @@ export async function createQuizAction(
         quiz_id: quizInsert.data.id,
         prompt: questionPrompt,
         helper_text: helperText || null,
-        question_type: choices.length ? "single_choice" : "text",
+        question_type: questionType,
         position: 0,
         points: points > 0 ? points : 1
       })
@@ -278,7 +290,7 @@ export async function createQuizAction(
       return fail(questionInsert.error?.message ?? "Le quiz a été créé, mais pas la première question.");
     }
 
-    if (choices.length) {
+    if (questionType === "single_choice" && choices.length) {
       const choicesInsert = await admin.from("quiz_question_choices").insert(
         choices.map((choice, index) => ({
           question_id: questionInsert.data.id,
@@ -300,6 +312,150 @@ export async function createQuizAction(
   revalidatePath("/dashboard");
 
   return ok(`Quiz "${title}" créé.`);
+}
+
+export async function addQuizQuestionAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const quizId = String(formData.get("quiz_id") ?? "").trim();
+  const prompt = String(formData.get("prompt") ?? "").trim();
+  const helperText = String(formData.get("helper_text") ?? "").trim();
+  const questionType = String(formData.get("question_type") ?? "").trim();
+  const choicesText = String(formData.get("choices_text") ?? "").trim();
+  const correctChoiceIndex = Number(String(formData.get("correct_choice_index") ?? "").trim() || 0);
+  const points = Number(String(formData.get("points") ?? "").trim() || 1);
+  const positionInput = String(formData.get("position") ?? "").trim();
+
+  if (!quizId || !prompt) {
+    return fail("Le quiz et l'intitulé de la question sont obligatoires.");
+  }
+
+  if (!VALID_QUESTION_TYPES.includes(questionType as (typeof VALID_QUESTION_TYPES)[number])) {
+    return fail("Le type de question n'est pas valide.");
+  }
+
+  const quizResult = await admin
+    .from("quizzes")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("id", quizId)
+    .maybeSingle<{ id: string }>();
+
+  if (quizResult.error || !quizResult.data) {
+    return fail("Quiz introuvable.");
+  }
+
+  const choices = choicesText
+    .split("\n")
+    .map((choice) => choice.trim())
+    .filter(Boolean);
+
+  if (questionType === "single_choice" && choices.length < 2) {
+    return fail("Une question à choix unique doit contenir au moins deux réponses.");
+  }
+
+  const lastQuestionResult = await admin
+    .from("quiz_questions")
+    .select("position")
+    .eq("quiz_id", quizId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ position: number }>();
+
+  const nextPosition = positionInput
+    ? Math.max(0, Number(positionInput))
+    : (lastQuestionResult.data?.position ?? -1) + 1;
+
+  const questionInsert = await admin
+    .from("quiz_questions")
+    .insert({
+      quiz_id: quizId,
+      prompt,
+      helper_text: helperText || null,
+      question_type: questionType,
+      position: Number.isFinite(nextPosition) ? nextPosition : 0,
+      points: points > 0 ? points : 1
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (questionInsert.error || !questionInsert.data) {
+    return fail(questionInsert.error?.message ?? "Impossible d'ajouter la question.");
+  }
+
+  if (questionType === "single_choice") {
+    const choicesInsert = await admin.from("quiz_question_choices").insert(
+      choices.map((choice, index) => ({
+        question_id: questionInsert.data.id,
+        label: choice,
+        is_correct: correctChoiceIndex > 0 ? index + 1 === correctChoiceIndex : index === 0,
+        position: index
+      }))
+    );
+
+    if (choicesInsert.error) {
+      return fail(choicesInsert.error.message || "Question créée, mais les choix n'ont pas été enregistrés.");
+    }
+  }
+
+  revalidatePath("/admin");
+  revalidatePath(`/quiz/${quizId}`);
+
+  return ok("Question ajoutée au quiz.");
+}
+
+export async function deleteQuizQuestionAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const questionId = String(formData.get("question_id") ?? "").trim();
+  const quizId = String(formData.get("quiz_id") ?? "").trim();
+
+  if (!questionId || !quizId) {
+    return fail("Question introuvable.");
+  }
+
+  const questionResult = await admin
+    .from("quiz_questions")
+    .select("id, quiz_id, quizzes!inner(id, organization_id)")
+    .eq("id", questionId)
+    .eq("quiz_id", quizId)
+    .eq("quizzes.organization_id", organizationId)
+    .maybeSingle<{ id: string; quiz_id: string }>();
+
+  if (questionResult.error || !questionResult.data) {
+    return fail("Question introuvable dans ce quiz.");
+  }
+
+  const answersResult = await admin
+    .from("quiz_attempt_answers")
+    .select("attempt_id")
+    .eq("question_id", questionId)
+    .limit(1);
+
+  if ((answersResult.data?.length ?? 0) > 0) {
+    return fail("Cette question a déjà été utilisée dans une tentative et ne peut plus être supprimée.");
+  }
+
+  const { error } = await admin.from("quiz_questions").delete().eq("id", questionId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath(`/quiz/${quizId}`);
+
+  return ok("Question supprimée.");
 }
 
 export async function createAssignmentAction(

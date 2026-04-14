@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
+  gradeQuizTextAttemptAction,
   reviewSubmissionAction,
   scheduleCoachingSessionAction,
   type CoachActionState
@@ -130,6 +131,56 @@ export function ReviewSubmissionForm({
 
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Envoyer le feedback" pendingLabel="Envoi..." />
+    </form>
+  );
+}
+
+export function GradeQuizTextAttemptForm({
+  attemptId,
+  answers
+}: {
+  attemptId: string;
+  answers: Array<{
+    questionId: string;
+    prompt: string;
+    answerText: string;
+    maxPoints: number;
+  }>;
+}) {
+  const [state, formAction] = useActionState(gradeQuizTextAttemptAction, initialState);
+
+  return (
+    <form action={formAction} className="admin-form admin-form-compact">
+      <input name="attempt_id" type="hidden" value={attemptId} />
+
+      <div className="stack-list">
+        {answers.map((answer) => (
+          <article className="panel panel-subtle" key={answer.questionId}>
+            <div className="panel-header">
+              <h3>{answer.prompt}</h3>
+              <p>Réponse du coaché</p>
+            </div>
+
+            <div className="stack-list">
+              <p>{answer.answerText}</p>
+              <label>
+                Points sur {answer.maxPoints}
+                <input
+                  max={answer.maxPoints}
+                  min="0"
+                  name={`answer_${answer.questionId}_points`}
+                  required
+                  step="0.01"
+                  type="number"
+                />
+              </label>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <ActionFeedback state={state} />
+      <SubmitButton idleLabel="Valider la correction" pendingLabel="Correction..." />
     </form>
   );
 }

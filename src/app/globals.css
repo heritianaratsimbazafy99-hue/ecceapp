@@ -798,6 +798,12 @@ main {
   gap: 14px;
 }
 
+.inline-form {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
 .inline-link {
   color: var(--ink);
   font-weight: 700;

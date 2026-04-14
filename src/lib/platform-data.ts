@@ -58,6 +58,7 @@ type QuizRow = {
   time_limit_minutes?: number | null;
   passing_score?: number | null;
   content_item_id?: string | null;
+  quiz_questions?: QuizQuestionRow[];
 };
 
 type QuizQuestionRow = {
@@ -313,7 +314,31 @@ export async function getAdminPageData() {
     admin
       .from("quizzes")
       .select(
-        "id, title, description, kind, status, attempts_allowed, time_limit_minutes, passing_score, content_item_id"
+        `
+          id,
+          title,
+          description,
+          kind,
+          status,
+          attempts_allowed,
+          time_limit_minutes,
+          passing_score,
+          content_item_id,
+          quiz_questions (
+            id,
+            prompt,
+            helper_text,
+            question_type,
+            points,
+            position,
+            quiz_question_choices (
+              id,
+              label,
+              is_correct,
+              position
+            )
+          )
+        `
       )
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
@@ -394,7 +419,10 @@ export async function getAdminPageData() {
       id: content.id,
       label: `${content.title} · ${content.status}`
     })),
-    quizzes,
+    quizzes: quizzes.map((quiz) => ({
+      ...quiz,
+      quiz_questions: [...(quiz.quiz_questions ?? [])].sort((left, right) => left.position - right.position)
+    })),
     quizOptions: quizzes.map((quiz) => ({
       id: quiz.id,
       label: `${quiz.title} · ${quiz.status ?? "draft"}`
@@ -613,10 +641,79 @@ export async function getCoachPageData() {
           ? `${profile.first_name} ${profile.last_name}`
           : "Coaché inconnu";
       })(),
-      score: attempt.score !== null ? `${attempt.score}%` : "Non noté",
+      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
+      status: attempt.status,
       attempt: `Tentative ${attempt.attempt_number}`,
       submittedAt: formatDate(attempt.submitted_at)
     }));
+
+  const coachVisibleAttempts = ((quizAttemptsResult.data ?? []) as QuizAttemptResultRow[]).filter((attempt) =>
+    coacheeIds.has(attempt.user_id)
+  );
+  const coachVisibleAttemptIds = coachVisibleAttempts.map((attempt) => attempt.id);
+  const textAnswersResult = coachVisibleAttemptIds.length
+    ? await admin
+        .from("quiz_attempt_answers")
+        .select("attempt_id, question_id, answer_text, points_awarded")
+        .in("attempt_id", coachVisibleAttemptIds)
+        .not("answer_text", "is", null)
+    : { data: [] as Array<{ attempt_id: string; question_id: string; answer_text: string | null; points_awarded: number | null }> };
+  const textAnswerRows = (textAnswersResult.data ?? []) as Array<{
+    attempt_id: string;
+    question_id: string;
+    answer_text: string | null;
+    points_awarded: number | null;
+  }>;
+  const textQuestionIds = Array.from(new Set(textAnswerRows.map((answer) => answer.question_id)));
+  const textQuizIds = Array.from(new Set(coachVisibleAttempts.map((attempt) => attempt.quiz_id)));
+  const [textQuestionRowsResult, textQuizRowsResult] = await Promise.all([
+    textQuestionIds.length
+      ? admin.from("quiz_questions").select("id, prompt, points").in("id", textQuestionIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; prompt: string; points: number }> }),
+    textQuizIds.length
+      ? admin.from("quizzes").select("id, title").in("id", textQuizIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string }> })
+  ]);
+  const textQuestionById = new Map(
+    ((textQuestionRowsResult.data ?? []) as Array<{ id: string; prompt: string; points: number }>).map((question) => [
+      question.id,
+      question
+    ])
+  );
+  const textQuizTitleById = new Map(
+    ((textQuizRowsResult.data ?? []) as Array<{ id: string; title: string }>).map((quiz) => [quiz.id, quiz.title])
+  );
+  const textAnswersByAttemptId = textAnswerRows.reduce((map, answer) => {
+    const list = map.get(answer.attempt_id) ?? [];
+    list.push(answer);
+    map.set(answer.attempt_id, list);
+    return map;
+  }, new Map<string, typeof textAnswerRows>());
+  const textReviewQueue = coachVisibleAttempts
+    .filter((attempt) => textAnswersByAttemptId.has(attempt.id) && attempt.status !== "graded")
+    .map((attempt) => {
+      const learner = profileById.get(attempt.user_id);
+      const answers = (textAnswersByAttemptId.get(attempt.id) ?? []).map((answer) => {
+        const question = textQuestionById.get(answer.question_id);
+
+        return {
+          questionId: answer.question_id,
+          prompt: question?.prompt ?? "Question",
+          answerText: answer.answer_text ?? "",
+          maxPoints: question?.points ?? 0
+        };
+      });
+
+      return {
+        id: attempt.id,
+        learner: learner ? formatUserName(learner) : "Coaché inconnu",
+        quizTitle: textQuizTitleById.get(attempt.quiz_id) ?? "Quiz",
+        submittedAt: formatDate(attempt.submitted_at),
+        attemptLabel: `Tentative ${attempt.attempt_number}`,
+        score: attempt.score !== null ? `${attempt.score}%` : "En attente",
+        answers
+      };
+    });
 
   const submissions = ((submissionsResult.data ?? []) as SubmissionRow[]).filter((item) =>
     coacheeIds.has(item.user_id)
@@ -719,6 +816,7 @@ export async function getCoachPageData() {
     roster,
     deadlines: dueAssignments,
     recentQuizResults,
+    textReviewQueue,
     reviewQueue,
     messagingWorkspace,
     sessions: roster
@@ -1006,8 +1104,8 @@ export async function getDashboardPageData() {
     recentAttempts: attempts.map((attempt) => ({
       id: attempt.id,
       title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
-      score: attempt.score !== null ? `${attempt.score}%` : "Non noté",
-      meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}`
+      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
+      meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}${attempt.status === "submitted" ? " · correction coach en cours" : ""}`
     }))
   };
 }
