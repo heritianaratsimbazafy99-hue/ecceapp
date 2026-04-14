@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { coachCanAccessCoachee, getAssignedCoachIdsForCoachee } from "@/lib/coach-assignments";
 import { requireRole, type AppRole } from "@/lib/auth";
 import { createNotifications } from "@/lib/platform-events";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -69,10 +70,29 @@ export async function sendConversationMessageAction(
   let recipientRoute = "/dashboard";
 
   if (senderIsCoach && recipientRoles.has("coachee")) {
+    const canAccess = await coachCanAccessCoachee({
+      organizationId,
+      coachId: context.user.id,
+      coacheeId: recipientId
+    });
+
+    if (!canAccess) {
+      return fail("Ce coaché n'est pas dans ton portefeuille.");
+    }
+
     coachId = context.user.id;
     coacheeId = recipientId;
     recipientRoute = "/dashboard";
   } else if (senderIsCoachee && recipientRoles.has("coach")) {
+    const assignedCoachIds = await getAssignedCoachIdsForCoachee({
+      organizationId,
+      coacheeId: context.user.id
+    });
+
+    if (!assignedCoachIds.includes(recipientId)) {
+      return fail("Ce coach n'est pas rattaché à ton parcours.");
+    }
+
     coachId = recipientId;
     coacheeId = context.user.id;
     recipientRoute = "/coach";

@@ -1,3 +1,4 @@
+import { getAssignedCoachIdsForCoachee, getCoachAssignmentScope } from "@/lib/coach-assignments";
 import { requireRole, type AppRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -687,10 +688,26 @@ async function getMessagingWorkspace(params: {
     .eq("organization_id", params.organizationId)
     .order("updated_at", { ascending: false });
 
+  const contactIds = params.contactOptions.map((contact) => contact.id);
+
   conversationQuery =
     params.viewerRole === "coach"
       ? conversationQuery.eq("coach_id", params.userId)
       : conversationQuery.eq("coachee_id", params.userId);
+
+  if (contactIds.length) {
+    conversationQuery =
+      params.viewerRole === "coach"
+        ? conversationQuery.in("coachee_id", contactIds)
+        : conversationQuery.in("coach_id", contactIds);
+  } else {
+    return {
+      contacts: params.contactOptions,
+      conversations: [],
+      initialConversationId: null,
+      initialMessages: []
+    };
+  }
 
   const conversationsResult = await conversationQuery.limit(12);
   const conversationRows = (conversationsResult.data ?? []) as ConversationRow[];
@@ -976,6 +993,12 @@ export async function getAdminPageData() {
       id: user.id,
       label: `${user.name} · ${user.email}`
     })),
+    coachOptions: users
+      .filter((user) => user.roles.includes("coach"))
+      .map((user) => ({
+        id: user.id,
+        label: `${user.name} · ${user.email}`
+      })),
     coacheeOptions: coacheeProfiles.map((profile) => ({
       id: profile.id,
       label: `${formatUserName(profile)} · ${emailByUserId.get(profile.id) ?? "email indisponible"}`
@@ -1020,31 +1043,456 @@ export async function getAdminPageData() {
   };
 }
 
-export async function getLibraryPageData() {
-  const context = await requireRole(["admin", "professor", "coach", "coachee"]);
+export async function getAdminOverviewPageData() {
+  const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
 
-  const { data } = await admin
+  const [profilesResult, authUsersResult, contentsResult, quizzesResult, assignmentsResult, cohortsResult] =
+    await Promise.all([
+      admin
+        .from("profiles")
+        .select("id, first_name, last_name, status, created_at, user_roles(role)")
+        .eq("organization_id", organizationId)
+        .order("created_at", { ascending: false }),
+      admin.auth.admin.listUsers({
+        page: 1,
+        perPage: 200
+      }),
+      admin
+        .from("content_items")
+        .select("id, status", { count: "exact" })
+        .eq("organization_id", organizationId),
+      admin
+        .from("quizzes")
+        .select("id, status", { count: "exact" })
+        .eq("organization_id", organizationId),
+      admin
+        .from("learning_assignments")
+        .select("id", { count: "exact" })
+        .eq("organization_id", organizationId),
+      admin
+        .from("cohorts")
+        .select("id", { count: "exact" })
+        .eq("organization_id", organizationId)
+    ]);
+
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const authUsers = authUsersResult.data?.users ?? [];
+  const emailByUserId = new Map(authUsers.map((item) => [item.id, item.email ?? "email indisponible"]));
+  const users = profiles.map((profile) => ({
+    id: profile.id,
+    name: formatUserName(profile),
+    email: emailByUserId.get(profile.id) ?? "email indisponible",
+    status: profile.status,
+    roles: (profile.user_roles ?? []).map((item) => item.role)
+  }));
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Utilisateurs actifs",
+        value: users.filter((user) => user.status === "active").length.toString(),
+        delta: `${users.length} profils ECCE`
+      },
+      {
+        label: "Cohortes",
+        value: String(cohortsResult.count ?? 0),
+        delta: `${users.filter((user) => user.roles.includes("coachee")).length} coaché(s) disponibles`
+      },
+      {
+        label: "Contenus publiés",
+        value: String(
+          ((contentsResult.data ?? []) as Array<{ status: string }>).filter((item) => item.status === "published").length
+        ),
+        delta: `${String(contentsResult.count ?? 0)} contenus au total`
+      },
+      {
+        label: "Quiz publiés",
+        value: String(
+          ((quizzesResult.data ?? []) as Array<{ status: string }>).filter((item) => item.status === "published").length
+        ),
+        delta: `${String(assignmentsResult.count ?? 0)} assignation(s) créées`
+      }
+    ],
+    users,
+    userOptions: users.map((user) => ({
+      id: user.id,
+      label: `${user.name} · ${user.email}`
+    }))
+  };
+}
+
+export async function getAdminLearnerOpsPageData() {
+  const base = await getAdminPageData();
+  const admin = createSupabaseAdminClient();
+  const organizationId = base.context.profile.organization_id;
+
+  const coachAssignmentsResult = await admin
+    .from("coach_assignments")
+    .select("id, coach_id, coachee_id, cohort_id, created_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false });
+
+  const assignments = (coachAssignmentsResult.data ?? []) as Array<{
+    id: string;
+    coach_id: string;
+    coachee_id: string | null;
+    cohort_id: string | null;
+    created_at: string;
+  }>;
+
+  const coachLabelById = new Map(base.coachOptions.map((item) => [item.id, item.label]));
+  const coacheeLabelById = new Map(base.coacheeOptions.map((item) => [item.id, item.label]));
+  const cohortLabelById = new Map(base.cohortOptions.map((item) => [item.id, item.label]));
+
+  const coachPortfolios = base.coachOptions.map((coach) => {
+    const coachRows = assignments.filter((item) => item.coach_id === coach.id);
+    const directCoachees = coachRows
+      .map((item) => item.coachee_id)
+      .filter(Boolean)
+      .map((item) => coacheeLabelById.get(item as string) ?? "Coaché")
+      .slice(0, 6);
+    const cohorts = coachRows
+      .map((item) => item.cohort_id)
+      .filter(Boolean)
+      .map((item) => cohortLabelById.get(item as string) ?? "Cohorte")
+      .slice(0, 6);
+
+    return {
+      id: coach.id,
+      name: coach.label,
+      directCount: coachRows.filter((item) => item.coachee_id).length,
+      cohortCount: coachRows.filter((item) => item.cohort_id).length,
+      directCoachees,
+      cohorts
+    };
+  });
+
+  return {
+    ...base,
+    coachAssignments: assignments.map((assignment) => ({
+      id: assignment.id,
+      coach: coachLabelById.get(assignment.coach_id) ?? "Coach inconnu",
+      target:
+        assignment.coachee_id
+          ? coacheeLabelById.get(assignment.coachee_id) ?? "Coaché inconnu"
+          : cohortLabelById.get(assignment.cohort_id ?? "") ?? "Cohorte inconnue",
+      targetType: assignment.coachee_id ? "coaché" : "cohorte",
+      createdAt: formatDate(assignment.created_at)
+    })),
+    coachPortfolios
+  };
+}
+
+export async function getAdminContentStudioPageData() {
+  const context = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const contentsResult = await admin
     .from("content_items")
     .select(
       "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
     )
     .eq("organization_id", organizationId)
-    .eq("status", "published")
-    .order("category", { ascending: true })
-    .order("position", { ascending: true })
     .order("created_at", { ascending: false });
 
-  const contents = (data ?? []) as ContentRow[];
+  const contents = (contentsResult.data ?? []) as ContentRow[];
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Ressources",
+        value: contents.length.toString(),
+        delta: `${contents.filter((item) => item.status === "published").length} publiées`
+      },
+      {
+        label: "Obligatoires",
+        value: contents.filter((item) => item.is_required).length.toString(),
+        delta: "parcours guidés"
+      }
+    ],
+    contents
+  };
+}
+
+export async function getAdminQuizStudioPageData() {
+  const context = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const [contentsResult, quizzesResult] = await Promise.all([
+    admin
+      .from("content_items")
+      .select("id, title, status")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("quizzes")
+      .select(
+        `
+          id,
+          title,
+          description,
+          kind,
+          status,
+          attempts_allowed,
+          time_limit_minutes,
+          passing_score,
+          content_item_id,
+          quiz_questions (
+            id,
+            prompt,
+            helper_text,
+            question_type,
+            points,
+            position,
+            quiz_question_choices (
+              id,
+              label,
+              is_correct,
+              position
+            )
+          )
+        `
+      )
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+  ]);
+
+  const contents = (contentsResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
+  const quizzes = (quizzesResult.data ?? []) as QuizRow[];
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Quiz",
+        value: quizzes.length.toString(),
+        delta: `${quizzes.filter((quiz) => quiz.status === "published").length} publiés`
+      },
+      {
+        label: "Questions",
+        value: quizzes.reduce((total, quiz) => total + (quiz.quiz_questions?.length ?? 0), 0).toString(),
+        delta: "dans le builder"
+      }
+    ],
+    contentOptions: contents.map((content) => ({
+      id: content.id,
+      label: `${content.title} · ${content.status}`
+    })),
+    quizzes: quizzes.map((quiz) => ({
+      ...quiz,
+      quiz_questions: [...(quiz.quiz_questions ?? [])].sort((left, right) => left.position - right.position)
+    }))
+  };
+}
+
+export async function getAdminAssignmentStudioPageData() {
+  const context = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const [
+    profilesResult,
+    authUsersResult,
+    cohortsResult,
+    contentsResult,
+    quizzesResult,
+    assignmentsResult
+  ] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, status, user_roles(role)")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 200
+    }),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin
+      .from("content_items")
+      .select("id, title, status")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("quizzes")
+      .select("id, title, status")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("learning_assignments")
+      .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+  ]);
+
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const authUsers = authUsersResult.data?.users ?? [];
+  const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const contents = (contentsResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
+  const quizzes = (quizzesResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
+  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const emailByUserId = new Map(authUsers.map((item) => [item.id, item.email ?? "email indisponible"]));
+  const userNameById = new Map(profiles.map((profile) => [profile.id, formatUserName(profile)]));
+  const contentTitleById = new Map(contents.map((content) => [content.id, content.title]));
+  const quizTitleById = new Map(quizzes.map((quiz) => [quiz.id, quiz.title]));
+  const cohortNameById = new Map(cohorts.map((cohort) => [cohort.id, cohort.name]));
+
+  const users = profiles.map((profile) => ({
+    id: profile.id,
+    name: formatUserName(profile),
+    email: emailByUserId.get(profile.id) ?? "email indisponible"
+  }));
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Assignations",
+        value: assignments.length.toString(),
+        delta: `${assignments.filter((item) => item.quiz_id).length} quiz`
+      },
+      {
+        label: "Cibles",
+        value: `${users.length} profils`,
+        delta: `${cohorts.length} cohortes`
+      }
+    ],
+    userOptions: users.map((user) => ({
+      id: user.id,
+      label: `${user.name} · ${user.email}`
+    })),
+    cohortOptions: cohorts.map((cohort) => ({
+      id: cohort.id,
+      label: cohort.name
+    })),
+    contentOptions: contents.map((content) => ({
+      id: content.id,
+      label: `${content.title} · ${content.status}`
+    })),
+    quizOptions: quizzes.map((quiz) => ({
+      id: quiz.id,
+      label: `${quiz.title} · ${quiz.status}`
+    })),
+    assignments: assignments.map((assignment) => ({
+      id: assignment.id,
+      title: assignment.title,
+      due: formatDate(assignment.due_at),
+      target:
+        userNameById.get(assignment.assigned_user_id ?? "") ??
+        cohortNameById.get(assignment.cohort_id ?? "") ??
+        "cible non résolue",
+      asset:
+        contentTitleById.get(assignment.content_item_id ?? "") ??
+        quizTitleById.get(assignment.quiz_id ?? "") ??
+        "élément non résolu",
+      type: assignment.quiz_id ? "quiz" : "contenu"
+    }))
+  };
+}
+
+export async function getLibraryPageData() {
+  const context = await requireRole(["admin", "professor", "coach", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const [contentsResult, quizzesResult] = await Promise.all([
+    admin
+      .from("content_items")
+      .select(
+        "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+      )
+      .eq("organization_id", organizationId)
+      .eq("status", "published")
+      .order("category", { ascending: true })
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: false }),
+    admin
+      .from("quizzes")
+      .select(
+        "id, title, description, kind, status, attempts_allowed, time_limit_minutes, passing_score, content_item_id, created_at, quiz_questions ( id )"
+      )
+      .eq("organization_id", organizationId)
+      .eq("status", "published")
+      .order("created_at", { ascending: false })
+  ]);
+
+  const contents = (contentsResult.data ?? []) as ContentRow[];
+  const quizzes = (quizzesResult.data ?? []) as Array<
+    QuizRow & {
+      created_at?: string;
+      content_item_id?: string | null;
+    }
+  >;
+  const linkedContentIds = Array.from(
+    new Set(quizzes.map((quiz) => quiz.content_item_id).filter(Boolean))
+  ) as string[];
+  const linkedContentRows = linkedContentIds.length
+    ? (
+        await admin
+          .from("content_items")
+          .select("id, category, subcategory, tags")
+          .in("id", linkedContentIds)
+      ).data ?? []
+    : [];
+  const linkedContentById = new Map(
+    (linkedContentRows as Array<{
+      id: string;
+      category: string | null;
+      subcategory: string | null;
+      tags: string[] | null;
+    }>).map((item) => [item.id, item])
+  );
+
+  const resources = [
+    ...contents.map((item) => ({
+      id: item.id,
+      title: item.title,
+      summary: item.summary,
+      category: item.category?.trim() || "Bibliothèque",
+      subcategory: item.subcategory,
+      tags: item.tags ?? [],
+      badge: item.content_type,
+      secondaryBadge: item.is_required ? "obligatoire" : null,
+      meta: item.estimated_minutes ? `${item.estimated_minutes} min` : "durée libre",
+      href: item.external_url || item.youtube_url || null,
+      hrefLabel: item.external_url || item.youtube_url ? "Ouvrir la ressource" : null,
+      type: "content" as const
+    })),
+    ...quizzes.map((quiz) => {
+      const linkedContent = linkedContentById.get(quiz.content_item_id ?? "");
+      const questionCount = quiz.quiz_questions?.length ?? 0;
+
+      return {
+        id: quiz.id,
+        title: quiz.title,
+        summary: quiz.description ?? "Quiz publié dans la bibliothèque ECCE.",
+        category: linkedContent?.category?.trim() || "Quiz",
+        subcategory: linkedContent?.subcategory ?? quiz.kind ?? "quiz",
+        tags: linkedContent?.tags ?? [],
+        badge: quiz.kind ?? "quiz",
+        secondaryBadge: `${questionCount} question(s)`,
+        meta: quiz.time_limit_minutes ? `${quiz.time_limit_minutes} min` : `${quiz.attempts_allowed ?? 1} tentative(s)`,
+        href: `/quiz/${quiz.id}`,
+        hrefLabel: "Ouvrir le quiz",
+        type: "quiz" as const
+      };
+    })
+  ];
+
   const groups = Array.from(
-    contents.reduce((map, item) => {
-      const key = item.category?.trim() || "Sans catégorie";
+    resources.reduce((map, item) => {
+      const key = item.category;
       const current = map.get(key) ?? [];
       current.push(item);
       map.set(key, current);
       return map;
-    }, new Map<string, ContentRow[]>())
+    }, new Map<string, Array<(typeof resources)[number]>>())
   ).map(([category, items]) => ({
     category,
     items
@@ -1052,15 +1500,15 @@ export async function getLibraryPageData() {
 
   const taxonomy = Array.from(
     new Set(
-      contents.flatMap((item) =>
-        [item.category, item.subcategory, ...(item.tags ?? [])].filter(Boolean) as string[]
+      resources.flatMap((item) =>
+        [item.category, item.subcategory, ...item.tags].filter(Boolean) as string[]
       )
     )
   );
 
   return {
     context,
-    contents,
+    resources,
     groups,
     taxonomy
   };
@@ -1070,6 +1518,15 @@ export async function getCoachPageData() {
   const context = await requireRole(["admin", "coach"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
+  const coachScope =
+    context.role === "coach"
+      ? await getCoachAssignmentScope({
+          organizationId,
+          coachId: context.user.id
+        })
+      : null;
+  const scopedCoacheeIds = coachScope?.coacheeIds ?? [];
+  const scopedCohortIds = coachScope?.cohortIds ?? [];
 
   const [
     coacheeRolesResult,
@@ -1082,22 +1539,62 @@ export async function getCoachPageData() {
     submissionsResult
   ] =
     await Promise.all([
-      admin
-        .from("user_roles")
-        .select("user_id, role")
-        .eq("organization_id", organizationId)
-        .eq("role", "coachee"),
+      (() => {
+        const query = admin
+          .from("user_roles")
+          .select("user_id, role")
+          .eq("organization_id", organizationId)
+          .eq("role", "coachee");
+
+        if (context.role === "coach") {
+          return scopedCoacheeIds.length
+            ? query.in("user_id", scopedCoacheeIds)
+            : Promise.resolve({ data: [] as Array<{ user_id: string; role: AppRole }> });
+        }
+
+        return query;
+      })(),
       admin
         .from("user_roles")
         .select("user_id, role")
         .eq("organization_id", organizationId)
         .eq("role", "coach"),
-      admin
-        .from("profiles")
-        .select("id, first_name, last_name, status")
-        .eq("organization_id", organizationId)
-        .order("created_at", { ascending: false }),
-      admin.from("cohort_members").select("user_id, cohort_id"),
+      (() => {
+        const query = admin
+          .from("profiles")
+          .select("id, first_name, last_name, status")
+          .eq("organization_id", organizationId)
+          .order("created_at", { ascending: false });
+
+        if (context.role === "coach") {
+          const profileIds = Array.from(new Set([...scopedCoacheeIds, context.user.id]));
+
+          return profileIds.length
+            ? query.in("id", profileIds)
+            : Promise.resolve({ data: [] as ProfileRow[] });
+        }
+
+        return query;
+      })(),
+      (() => {
+        if (context.role === "coach") {
+          const filters: string[] = [];
+
+          if (scopedCoacheeIds.length) {
+            filters.push(`user_id.in.(${scopedCoacheeIds.join(",")})`);
+          }
+
+          if (scopedCohortIds.length) {
+            filters.push(`cohort_id.in.(${scopedCohortIds.join(",")})`);
+          }
+
+          return filters.length
+            ? admin.from("cohort_members").select("user_id, cohort_id").or(filters.join(","))
+            : Promise.resolve({ data: [] as Array<{ user_id: string; cohort_id: string }> });
+        }
+
+        return admin.from("cohort_members").select("user_id, cohort_id");
+      })(),
       (() => {
         let query = admin
           .from("coaching_sessions")
@@ -1112,25 +1609,81 @@ export async function getCoachPageData() {
 
         return query.limit(6);
       })(),
-      admin
-        .from("learning_assignments")
-        .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id")
-        .eq("organization_id", organizationId)
-        .not("due_at", "is", null)
-        .order("due_at", { ascending: true })
-        .limit(20),
-      admin
-        .from("quiz_attempts")
-        .select(
-          "id, quiz_id, user_id, score, status, attempt_number, submitted_at, profiles:user_id(first_name, last_name)"
-        )
-        .order("submitted_at", { ascending: false })
-        .limit(10),
-      admin
-        .from("submissions")
-        .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
-        .order("submitted_at", { ascending: false })
-        .limit(10)
+      (() => {
+        if (context.role === "coach") {
+          return Promise.all([
+            scopedCoacheeIds.length
+              ? admin
+                  .from("learning_assignments")
+                  .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id")
+                  .eq("organization_id", organizationId)
+                  .in("assigned_user_id", scopedCoacheeIds)
+                  .not("due_at", "is", null)
+                  .order("due_at", { ascending: true })
+                  .limit(20)
+              : Promise.resolve({ data: [] as AssignmentRow[] }),
+            scopedCohortIds.length
+              ? admin
+                  .from("learning_assignments")
+                  .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id")
+                  .eq("organization_id", organizationId)
+                  .in("cohort_id", scopedCohortIds)
+                  .not("due_at", "is", null)
+                  .order("due_at", { ascending: true })
+                  .limit(20)
+              : Promise.resolve({ data: [] as AssignmentRow[] })
+          ]).then(([directAssignments, cohortAssignments]) => ({
+            data: Array.from(
+              new Map(
+                [
+                  ...((directAssignments.data ?? []) as AssignmentRow[]),
+                  ...((cohortAssignments.data ?? []) as AssignmentRow[])
+                ].map((item) => [item.id, item])
+              ).values()
+            )
+          }));
+        }
+
+        return admin
+          .from("learning_assignments")
+          .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id")
+          .eq("organization_id", organizationId)
+          .not("due_at", "is", null)
+          .order("due_at", { ascending: true })
+          .limit(20);
+      })(),
+      (() => {
+        const query = admin
+          .from("quiz_attempts")
+          .select(
+            "id, quiz_id, user_id, score, status, attempt_number, submitted_at, profiles:user_id(first_name, last_name)"
+          )
+          .order("submitted_at", { ascending: false })
+          .limit(10);
+
+        if (context.role === "coach") {
+          return scopedCoacheeIds.length
+            ? query.in("user_id", scopedCoacheeIds)
+            : Promise.resolve({ data: [] as QuizAttemptResultRow[] });
+        }
+
+        return query;
+      })(),
+      (() => {
+        const query = admin
+          .from("submissions")
+          .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+          .order("submitted_at", { ascending: false })
+          .limit(10);
+
+        if (context.role === "coach") {
+          return scopedCoacheeIds.length
+            ? query.in("user_id", scopedCoacheeIds)
+            : Promise.resolve({ data: [] as SubmissionRow[] });
+        }
+
+        return query;
+      })()
     ]);
 
   const coacheeIds = new Set((coacheeRolesResult.data ?? []).map((item) => item.user_id));
@@ -1145,7 +1698,7 @@ export async function getCoachPageData() {
     cohort_id: string;
   }>;
 
-  const cohortIds = Array.from(new Set(cohortMembers.map((item) => item.cohort_id)));
+  const cohortIds = Array.from(new Set([...cohortMembers.map((item) => item.cohort_id), ...scopedCohortIds]));
   const { data: cohortRows } = cohortIds.length
     ? await admin.from("cohorts").select("id, name").in("id", cohortIds)
     : { data: [] as Array<{ id: string; name: string }> };
@@ -1732,15 +2285,11 @@ export async function getDashboardPageData() {
 
   const coachContacts = context.roles.includes("coachee")
     ? await (async () => {
-        const coachRoleRows = (
-          await admin
-            .from("user_roles")
-            .select("user_id")
-            .eq("organization_id", organizationId)
-            .eq("role", "coach")
-        ).data ?? [];
-
-        const coachIds = Array.from(new Set(coachRoleRows.map((item) => item.user_id)));
+        const coachIds = await getAssignedCoachIdsForCoachee({
+          organizationId,
+          coacheeId: userId,
+          cohortIds
+        });
 
         if (!coachIds.length) {
           return [];
@@ -1934,7 +2483,7 @@ export async function getAssignmentPageData(assignmentId: string) {
 }
 
 export async function getQuizPageData(quizId: string) {
-  const context = await requireRole(["admin", "coachee"]);
+  const context = await requireRole(["admin", "professor", "coach", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
 
@@ -1982,12 +2531,14 @@ export async function getQuizPageData(quizId: string) {
     };
   }
 
-  const { data: attempts } = await admin
-    .from("quiz_attempts")
-    .select("id, quiz_id, user_id, score, status, attempt_number, submitted_at")
-    .eq("quiz_id", quizId)
-    .eq("user_id", context.user.id)
-    .order("attempt_number", { ascending: false });
+  const { data: attempts } = context.roles.includes("coachee") || context.roles.includes("admin")
+    ? await admin
+        .from("quiz_attempts")
+        .select("id, quiz_id, user_id, score, status, attempt_number, submitted_at")
+        .eq("quiz_id", quizId)
+        .eq("user_id", context.user.id)
+        .order("attempt_number", { ascending: false })
+    : { data: [] as QuizAttemptResultRow[] };
 
   return {
     context,

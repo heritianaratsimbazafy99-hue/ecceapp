@@ -15,7 +15,8 @@ export default async function QuizPage({
 }) {
   const { quizId } = await params;
   const { assignment } = await searchParams;
-  const { quiz, attempts } = await getQuizPageData(quizId);
+  const { context, quiz, attempts } = await getQuizPageData(quizId);
+  const canTakeQuiz = context.roles.includes("coachee") || context.roles.includes("admin");
 
   if (!quiz) {
     notFound();
@@ -49,11 +50,15 @@ export default async function QuizPage({
 
         <div className="panel">
           <div className="panel-header">
-            <h3>Historique de tes tentatives</h3>
-            <p>Les résultats de passage sont enregistrés dans la base Supabase.</p>
+            <h3>{canTakeQuiz ? "Historique de tes tentatives" : "Lecture du quiz"}</h3>
+            <p>
+              {canTakeQuiz
+                ? "Les résultats de passage sont enregistrés dans la base Supabase."
+                : "Cette vue te permet de relire la structure du quiz sans le soumettre."}
+            </p>
           </div>
 
-          {attempts.length ? (
+          {canTakeQuiz && attempts.length ? (
             <div className="stack-list">
               {attempts.map((attempt) => (
                 <article className="list-row" key={attempt.id}>
@@ -79,38 +84,45 @@ export default async function QuizPage({
                 </article>
               ))}
             </div>
-          ) : (
+          ) : canTakeQuiz ? (
             <div className="empty-state">
               <strong>Aucune tentative pour le moment.</strong>
               <p>Soumets le quiz ci-dessous pour générer ton premier résultat.</p>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Prévisualisation seule.</strong>
+              <p>Le passage du quiz reste réservé aux coachés et aux administrateurs testeurs.</p>
             </div>
           )}
         </div>
       </section>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Passer le quiz</h3>
-          <p>Les réponses à choix unique sont corrigées automatiquement, les réponses textuelles passent ensuite en correction coach.</p>
-        </div>
+      {canTakeQuiz ? (
+        <section className="panel">
+          <div className="panel-header">
+            <h3>Passer le quiz</h3>
+            <p>Les réponses à choix unique sont corrigées automatiquement, les réponses textuelles passent ensuite en correction coach.</p>
+          </div>
 
-        <QuizTakeForm
-          assignmentId={assignment ?? null}
-          quizId={quiz.id}
-          questions={(quiz.quiz_questions ?? []).map((question) => ({
-            id: question.id,
-            prompt: question.prompt,
-            helper_text: question.helper_text,
-            question_type: question.question_type,
-            points: question.points,
-            quiz_question_choices: (question.quiz_question_choices ?? []).map((choice) => ({
-              id: choice.id,
-              label: choice.label,
-              position: choice.position
-            }))
-          }))}
-        />
-      </section>
+          <QuizTakeForm
+            assignmentId={assignment ?? null}
+            quizId={quiz.id}
+            questions={(quiz.quiz_questions ?? []).map((question) => ({
+              id: question.id,
+              prompt: question.prompt,
+              helper_text: question.helper_text,
+              question_type: question.question_type,
+              points: question.points,
+              quiz_question_choices: (question.quiz_question_choices ?? []).map((choice) => ({
+                id: choice.id,
+                label: choice.label,
+                position: choice.position
+              }))
+            }))}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

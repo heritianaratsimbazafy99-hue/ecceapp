@@ -412,9 +412,17 @@ main {
   background:
     radial-gradient(circle at top right, rgba(255, 175, 123, 0.18), transparent 20%),
     linear-gradient(180deg, #f8f4ee 0%, #f0ebe3 100%);
+  transition: grid-template-columns 220ms ease;
+}
+
+html[data-platform-sidebar="collapsed"] .platform-layout {
+  grid-template-columns: 104px 1fr;
 }
 
 .platform-sidebar {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   gap: 26px;
@@ -422,6 +430,32 @@ main {
   border-right: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(180deg, #11212f 0%, #192a38 100%);
   color: #f7f2eb;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  transition: padding 220ms ease, background 220ms ease;
+}
+
+.platform-sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.platform-sidebar-toggle {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7f2eb;
+  cursor: pointer;
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.platform-sidebar-toggle:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .platform-nav {
@@ -430,15 +464,37 @@ main {
 }
 
 .platform-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 14px 16px;
   border-radius: 18px;
   color: rgba(247, 242, 235, 0.76);
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.platform-nav-link-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.platform-nav-link-label {
+  min-width: 0;
 }
 
 .platform-nav-link.is-active,
 .platform-nav-link:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #fff8f1;
+  transform: translateX(2px);
 }
 
 .sidebar-footnote {
@@ -453,8 +509,37 @@ main {
   line-height: 1.6;
 }
 
+html[data-platform-sidebar="collapsed"] .platform-sidebar {
+  padding-inline: 14px;
+}
+
+html[data-platform-sidebar="collapsed"] .platform-sidebar .brand {
+  justify-content: center;
+}
+
+html[data-platform-sidebar="collapsed"] .platform-sidebar .brand-copy,
+html[data-platform-sidebar="collapsed"] .platform-sidebar .platform-nav-link-label,
+html[data-platform-sidebar="collapsed"] .platform-sidebar .sidebar-footnote {
+  opacity: 0;
+  width: 0;
+  max-width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+html[data-platform-sidebar="collapsed"] .platform-sidebar .platform-sidebar-top {
+  flex-direction: column;
+}
+
+html[data-platform-sidebar="collapsed"] .platform-sidebar .platform-nav-link {
+  justify-content: center;
+  padding-inline: 10px;
+}
+
 .platform-content {
   padding: 28px;
+  transition: padding 220ms ease;
 }
 
 .account-chip {
@@ -498,6 +583,32 @@ main {
 .page-shell {
   display: grid;
   gap: 22px;
+}
+
+.admin-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.admin-link-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 244, 235, 0.82));
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.admin-link-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 34px rgba(16, 24, 32, 0.08);
+  border-color: rgba(255, 106, 61, 0.24);
+}
+
+.metric-grid-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .platform-topbar {
@@ -1364,16 +1475,24 @@ main {
     grid-template-columns: 1fr;
   }
 
+  html[data-platform-sidebar="collapsed"] .platform-layout {
+    grid-template-columns: 1fr;
+  }
+
   .card-grid-three,
   .roadmap-grid,
   .metric-grid,
+  .metric-grid-compact,
   .analytics-list,
   .library-grid,
-  .admin-grid {
+  .admin-grid,
+  .admin-link-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .platform-sidebar {
+    position: static;
+    min-height: 0;
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   }
@@ -1402,8 +1521,10 @@ main {
   .card-grid-three,
   .roadmap-grid,
   .metric-grid,
+  .metric-grid-compact,
   .library-grid,
-  .hero-metrics {
+  .hero-metrics,
+  .admin-link-grid {
     grid-template-columns: 1fr;
   }
 

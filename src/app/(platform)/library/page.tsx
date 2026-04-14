@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { Badge } from "@/components/ui/badge";
 import { getLibraryPageData } from "@/lib/platform-data";
@@ -10,19 +12,23 @@ function contentTone(contentType: string) {
       return "accent";
     case "document":
       return "success";
+    case "quiz":
+    case "qcm":
+    case "assessment":
+      return "accent";
     default:
       return "neutral";
   }
 }
 
 export default async function LibraryPage() {
-  const { contents, groups, taxonomy } = await getLibraryPageData();
+  const { resources, groups, taxonomy } = await getLibraryPageData();
 
   return (
     <div className="page-shell">
       <PlatformTopbar
         title="Bibliothèque ECCE"
-        description="La bibliothèque lit maintenant les vrais contenus publiés depuis Supabase et les regroupe par catégories."
+        description="La bibliothèque regroupe désormais les contenus publiés et les quiz publiés dans un même espace de consultation."
       />
 
       <section className="panel">
@@ -44,13 +50,13 @@ export default async function LibraryPage() {
         </div>
       </section>
 
-      {contents.length ? (
+      {resources.length ? (
         <section className="admin-grid">
           {groups.map((group) => (
             <div className="panel" key={group.category}>
               <div className="panel-header">
                 <h3>{group.category}</h3>
-                <p>{group.items.length} ressource(s) publiée(s) dans cette catégorie.</p>
+                <p>{group.items.length} ressource(s) active(s) dans cette catégorie.</p>
               </div>
 
               <div className="stack-list">
@@ -59,15 +65,23 @@ export default async function LibraryPage() {
                     <div>
                       <strong>{item.title}</strong>
                       <p>
-                        {item.subcategory || "Sans sous-catégorie"} ·{" "}
-                        {item.estimated_minutes ? `${item.estimated_minutes} min` : "durée libre"}
+                        {item.subcategory || "Sans sous-catégorie"} · {item.meta}
                       </p>
                       {item.summary ? <p>{item.summary}</p> : null}
                     </div>
 
                     <div className="table-actions">
-                      <Badge tone={contentTone(item.content_type)}>{item.content_type}</Badge>
-                      {item.is_required ? <Badge tone="accent">obligatoire</Badge> : null}
+                      <Badge tone={contentTone(item.badge)}>{item.badge}</Badge>
+                      {item.secondaryBadge ? <Badge tone="accent">{item.secondaryBadge}</Badge> : null}
+                      {item.href ? (
+                        <Link
+                          className="button button-secondary button-small"
+                          href={item.href}
+                          target={item.type === "content" ? "_blank" : undefined}
+                        >
+                          {item.hrefLabel}
+                        </Link>
+                      ) : null}
                     </div>
                   </article>
                 ))}
@@ -78,10 +92,9 @@ export default async function LibraryPage() {
       ) : (
         <section className="panel">
           <div className="empty-state">
-            <strong>Aucun contenu publié pour l&apos;instant.</strong>
+            <strong>Aucune ressource publiée pour l&apos;instant.</strong>
             <p>
-              Crée un contenu depuis le back-office admin puis mets son statut sur
-              `published` pour le voir apparaître ici.
+              Publie un contenu ou un quiz depuis les studios admin pour le voir apparaître ici.
             </p>
           </div>
         </section>

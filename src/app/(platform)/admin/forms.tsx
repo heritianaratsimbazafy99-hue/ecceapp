@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 import {
   addQuizQuestionAction,
   assignCoacheeToCohortAction,
+  assignCoachAction,
   assignRoleAction,
   createAssignmentAction,
   createContentAction,
@@ -14,6 +15,7 @@ import {
   deleteQuizQuestionAction,
   type AdminActionState
 } from "@/app/(platform)/admin/actions";
+import { CelebrationBurst } from "@/components/feedback/celebration-burst";
 
 type UserOption = {
   id: string;
@@ -186,11 +188,80 @@ export function AssignCoacheeToCohortForm({
   );
 }
 
+export function AssignCoachForm({
+  coachOptions,
+  coacheeOptions,
+  cohortOptions
+}: {
+  coachOptions: UserOption[];
+  coacheeOptions: UserOption[];
+  cohortOptions: CohortOption[];
+}) {
+  const [state, formAction] = useActionState(assignCoachAction, initialState);
+
+  return (
+    <form action={formAction} className="admin-form">
+      <div className="form-grid">
+        <label>
+          Coach
+          <select defaultValue="" name="coach_id" required>
+            <option disabled value="">
+              Choisir un coach
+            </option>
+            {coachOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Coaché direct
+          <select defaultValue="" name="coachee_id">
+            <option value="">Aucun coaché direct</option>
+            {coacheeOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-grid-span">
+          Cohorte suivie
+          <select defaultValue="" name="cohort_id">
+            <option value="">Aucune cohorte</option>
+            {cohortOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <p className="form-hint">
+        Renseigne soit un coaché précis, soit une cohorte. Cette affectation pilote ensuite la visibilité du cockpit coach,
+        des relances, des notes et de la messagerie.
+      </p>
+
+      <ActionFeedback state={state} />
+      <SubmitButton idleLabel="Attribuer le coach" pendingLabel="Affectation..." />
+    </form>
+  );
+}
+
 export function CreateContentForm() {
   const [state, formAction] = useActionState(createContentAction, initialState);
 
   return (
     <form action={formAction} className="admin-form">
+      <CelebrationBurst
+        active={Boolean(state.success)}
+        body="Le contenu est prêt à rejoindre la bibliothèque ECCE."
+        title="Contenu créé"
+        triggerKey={state.success}
+      />
+
       <div className="form-grid">
         <label>
           Titre
@@ -267,6 +338,13 @@ export function CreateQuizForm({
 
   return (
     <form action={formAction} className="admin-form">
+      <CelebrationBurst
+        active={Boolean(state.success)}
+        body="Le quiz est enregistré et prêt pour le builder avancé."
+        title="Quiz créé"
+        triggerKey={state.success}
+      />
+
       <div className="form-grid">
         <label>
           Titre du quiz

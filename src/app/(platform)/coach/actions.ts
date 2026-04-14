@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { coachCanAccessCoachee, coachCanAccessCohort } from "@/lib/coach-assignments";
 import { awardQuizBadge, createNotifications } from "@/lib/platform-events";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -43,6 +44,31 @@ export async function scheduleCoachingSessionAction(
   }
 
   const coachId = context.role === "admin" && coachIdInput ? coachIdInput : context.user.id;
+
+  if (context.role === "coach" && coacheeId) {
+    const canAccess = await coachCanAccessCoachee({
+      organizationId,
+      coachId: context.user.id,
+      coacheeId
+    });
+
+    if (!canAccess) {
+      return fail("Tu ne peux planifier des séances que pour tes coachés.");
+    }
+  }
+
+  if (context.role === "coach" && cohortId) {
+    const canAccess = await coachCanAccessCohort({
+      organizationId,
+      coachId: context.user.id,
+      cohortId
+    });
+
+    if (!canAccess) {
+      return fail("Tu ne peux planifier des séances que pour tes cohortes.");
+    }
+  }
+
   const startsAtDate = new Date(startsAtInput);
 
   if (Number.isNaN(startsAtDate.getTime())) {

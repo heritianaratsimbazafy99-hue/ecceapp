@@ -98,6 +98,7 @@ export async function createUserAction(
 
   revalidatePath("/admin");
   revalidatePath("/coach");
+  revalidatePath("/admin/learners");
 
   return ok(`Utilisateur créé avec le rôle ${role}.`);
 }
@@ -136,6 +137,7 @@ export async function assignRoleAction(
   revalidatePath("/admin");
   revalidatePath("/coach");
   revalidatePath("/dashboard");
+  revalidatePath("/admin/learners");
 
   return ok(`Rôle ${role} attribué.`);
 }
@@ -218,10 +220,138 @@ export async function assignCoacheeToCohortAction(
   revalidatePath("/admin");
   revalidatePath("/coach");
   revalidatePath("/dashboard");
+  revalidatePath("/admin/learners");
 
   return ok(
     `${profileResult.data.first_name} ${profileResult.data.last_name} a été ajouté(e) à la cohorte ${cohortResult.data.name}.`
   );
+}
+
+export async function assignCoachAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const coachId = String(formData.get("coach_id") ?? "").trim();
+  const coacheeId = String(formData.get("coachee_id") ?? "").trim();
+  const cohortId = String(formData.get("cohort_id") ?? "").trim();
+
+  if (!coachId) {
+    return fail("Sélectionne un coach.");
+  }
+
+  if ((!coacheeId && !cohortId) || (coacheeId && cohortId)) {
+    return fail("Choisis soit un coaché précis, soit une cohorte.");
+  }
+
+  const [coachRoleResult, coachProfileResult] = await Promise.all([
+    admin
+      .from("user_roles")
+      .select("user_id")
+      .eq("organization_id", organizationId)
+      .eq("user_id", coachId)
+      .eq("role", "coach")
+      .maybeSingle<{ user_id: string }>(),
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name")
+      .eq("organization_id", organizationId)
+      .eq("id", coachId)
+      .maybeSingle<{ id: string; first_name: string; last_name: string }>()
+  ]);
+
+  if (coachRoleResult.error || !coachRoleResult.data || coachProfileResult.error || !coachProfileResult.data) {
+    return fail("Coach introuvable.");
+  }
+
+  const coachProfile = coachProfileResult.data;
+  let successLabel = `${coachProfile.first_name} ${coachProfile.last_name}`;
+  let notificationTargets: string[] = [];
+
+  if (coacheeId) {
+    const coacheeRoleResult = await admin
+      .from("user_roles")
+      .select("user_id")
+      .eq("organization_id", organizationId)
+      .eq("user_id", coacheeId)
+      .eq("role", "coachee")
+      .maybeSingle<{ user_id: string }>();
+
+    if (coacheeRoleResult.error || !coacheeRoleResult.data) {
+      return fail("Coaché introuvable.");
+    }
+
+    const { error } = await admin.from("coach_assignments").insert({
+      organization_id: organizationId,
+      coach_id: coachId,
+      coachee_id: coacheeId,
+      created_by: context.user.id
+    });
+
+    if (error) {
+      return fail(error.message);
+    }
+
+    notificationTargets = [coacheeId];
+    successLabel += " suit maintenant ce coaché.";
+  }
+
+  if (cohortId) {
+    const cohortResult = await admin
+      .from("cohorts")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("id", cohortId)
+      .maybeSingle<{ id: string; name: string }>();
+
+    if (cohortResult.error || !cohortResult.data) {
+      return fail("Cohorte introuvable.");
+    }
+
+    const { error } = await admin.from("coach_assignments").insert({
+      organization_id: organizationId,
+      coach_id: coachId,
+      cohort_id: cohortId,
+      created_by: context.user.id
+    });
+
+    if (error) {
+      return fail(error.message);
+    }
+
+    const cohortMembersResult = await admin
+      .from("cohort_members")
+      .select("user_id")
+      .eq("cohort_id", cohortId);
+
+    notificationTargets = Array.from(
+      new Set((cohortMembersResult.data ?? []).map((item) => item.user_id))
+    );
+    successLabel += ` suit maintenant la cohorte ${cohortResult.data.name}.`;
+  }
+
+  if (notificationTargets.length) {
+    await createNotifications(
+      notificationTargets.map((recipientId) => ({
+        organizationId,
+        recipientId,
+        actorId: context.user.id,
+        title: "Nouveau coach référent",
+        body: `${coachProfile.first_name} ${coachProfile.last_name} suit désormais ton parcours.`,
+        deeplink: "/dashboard"
+      }))
+    );
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/learners");
+  revalidatePath("/coach");
+  revalidatePath("/dashboard");
+
+  return ok(successLabel);
 }
 
 export async function createContentAction(
@@ -282,6 +412,7 @@ export async function createContentAction(
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/content");
   revalidatePath("/library");
   revalidatePath("/dashboard");
 
@@ -393,6 +524,8 @@ export async function createQuizAction(
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/quizzes");
+  revalidatePath("/library");
   revalidatePath("/dashboard");
 
   return ok(`Quiz "${title}" créé.`);
@@ -488,6 +621,7 @@ export async function addQuizQuestionAction(
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/quizzes");
   revalidatePath(`/quiz/${quizId}`);
 
   return ok("Question ajoutée au quiz.");
@@ -537,6 +671,7 @@ export async function deleteQuizQuestionAction(
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/quizzes");
   revalidatePath(`/quiz/${quizId}`);
 
   return ok("Question supprimée.");
@@ -610,6 +745,7 @@ export async function createAssignmentAction(
   );
 
   revalidatePath("/admin");
+  revalidatePath("/admin/assignments");
   revalidatePath("/dashboard");
   revalidatePath("/coach");
 
