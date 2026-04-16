@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
@@ -20,16 +21,25 @@ export function CelebrationBurst({
   tone = "success"
 }: CelebrationBurstProps) {
   const [visible, setVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const pieces = useMemo(
     () =>
-      Array.from({ length: 22 }, (_, index) => ({
+      Array.from({ length: 54 }, (_, index) => ({
         id: index,
-        left: `${(index * 17) % 100}%`,
-        delay: `${(index % 6) * 70}ms`,
-        drift: `${(index % 2 === 0 ? -1 : 1) * (18 + (index % 5) * 10)}px`
+        left: `${((index * 13) % 100) + ((index % 4) - 1.5) * 1.4}%`,
+        delay: `${(index % 9) * 70}ms`,
+        drift: `${(index % 2 === 0 ? -1 : 1) * (30 + (index % 6) * 14)}px`,
+        rotate: `${(index % 2 === 0 ? -1 : 1) * (100 + (index % 5) * 44)}deg`,
+        duration: `${1700 + (index % 5) * 180}ms`,
+        scale: `${0.72 + (index % 4) * 0.18}`,
+        top: `${-8 - (index % 5) * 7}%`
       })),
     []
   );
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!active) {
@@ -37,20 +47,24 @@ export function CelebrationBurst({
     }
 
     setVisible(true);
-    const timeout = window.setTimeout(() => setVisible(false), 4200);
+    const timeout = window.setTimeout(() => setVisible(false), 3600);
 
     return () => window.clearTimeout(timeout);
   }, [active, triggerKey, title, body]);
 
-  if (!visible) {
+  if (!mounted || !visible) {
     return null;
   }
 
-  return (
+  return createPortal(
     <div className={cn("celebration-burst", tone === "badge" && "is-badge")} role="status">
+      <div className="celebration-backdrop" />
+
       <div className="celebration-copy">
+        <span className="eyebrow">{tone === "badge" ? "Nouveau palier" : "Mission accomplie"}</span>
         <strong>{title}</strong>
         {body ? <p>{body}</p> : null}
+        <small>Le parcours ECCE enregistre déjà cette progression.</small>
       </div>
 
       <div className="celebration-confetti" aria-hidden="true">
@@ -61,13 +75,24 @@ export function CelebrationBurst({
             style={
               {
                 left: piece.left,
+                top: piece.top,
                 animationDelay: piece.delay,
-                "--piece-drift": piece.drift
+                animationDuration: piece.duration,
+                "--piece-drift": piece.drift,
+                "--piece-rotate": piece.rotate,
+                "--piece-scale": piece.scale
               } as CSSProperties
             }
           />
         ))}
       </div>
-    </div>
+
+      <div className="celebration-rings" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>,
+    document.body
   );
 }

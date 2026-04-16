@@ -253,7 +253,7 @@ export function QuizStudioComposer({
   const questionPayload = JSON.stringify(readyQuestions);
 
   return (
-    <form action={formAction} className="quiz-studio-shell">
+    <form action={formAction} className="quiz-studio-shell admin-form">
       <CelebrationBurst
         active={Boolean(state.success)}
         body="Le quiz est publié dans le studio ECCE avec son lot de questions prêtes à être jouées."
@@ -299,79 +299,113 @@ export function QuizStudioComposer({
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel quiz-briefing-panel">
           <div className="panel-header">
             <h3>Cadrage pédagogique</h3>
             <p>Pose l&apos;intention du quiz, le niveau d&apos;exigence et son lien éventuel avec une ressource.</p>
           </div>
 
-          <div className="quiz-studio-grid">
-            <label className="form-grid-span">
-              Titre du quiz
-              <input onChange={(event) => setTitle(event.target.value)} placeholder="Quiz - Cadre de séance" type="text" value={title} />
-            </label>
-            <label className="form-grid-span">
-              Description
-              <textarea
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Explique l'objectif pédagogique, l'énergie attendue et le niveau de difficulté."
-                rows={4}
-                value={description}
-              />
-            </label>
-            <label>
-              Type
-              <select onChange={(event) => setKind(event.target.value)} value={kind}>
-                <option value="qcm">qcm</option>
-                <option value="quiz">quiz</option>
-                <option value="assessment">assessment</option>
-              </select>
-            </label>
-            <label>
-              Statut
-              <select onChange={(event) => setStatus(event.target.value)} value={status}>
-                <option value="draft">draft</option>
-                <option value="scheduled">scheduled</option>
-                <option value="published">published</option>
-                <option value="archived">archived</option>
-              </select>
-            </label>
-            <label>
-              Tentatives autorisées
-              <input min="1" onChange={(event) => setAttemptsAllowed(event.target.value)} type="number" value={attemptsAllowed} />
-            </label>
-            <label>
-              Temps limite (minutes)
-              <input min="0" onChange={(event) => setTimeLimitMinutes(event.target.value)} type="number" value={timeLimitMinutes} />
-            </label>
-            <label>
-              Score cible
-              <input min="0" onChange={(event) => setPassingScore(event.target.value)} step="0.01" type="number" value={passingScore} />
-            </label>
-            <label className="form-grid-span">
-              Ressource liée
-              <select onChange={(event) => setContentItemId(event.target.value)} value={contentItemId}>
-                <option value="">Aucun contenu rattaché</option>
-                {contentOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <div className="quiz-briefing-layout">
+            <article className="quiz-briefing-card quiz-briefing-card-primary">
+              <div className="quiz-briefing-card-head">
+                <span className="eyebrow">Identité</span>
+                <strong>Donne une personnalité claire au quiz</strong>
+                <p>Le titre et la description doivent déjà faire sentir le ton, le niveau et le bénéfice.</p>
+              </div>
 
-          <label className="quiz-studio-toggle">
-            <input
-              checked={randomizeQuestions}
-              onChange={(event) => setRandomizeQuestions(event.target.checked)}
-              type="checkbox"
-            />
-            <span>
-              Mélanger les questions pendant le passage
-              <small>Pratique pour les évaluations ou les tentatives répétées.</small>
-            </span>
-          </label>
+              <div className="quiz-studio-grid">
+                <label className="form-grid-span">
+                  Titre du quiz
+                  <input
+                    onChange={(event) => setTitle(event.target.value)}
+                    placeholder="Quiz - Cadre de séance"
+                    type="text"
+                    value={title}
+                  />
+                </label>
+                <label className="form-grid-span">
+                  Description
+                  <textarea
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="Explique l'objectif pédagogique, l'énergie attendue et le niveau de difficulté."
+                    rows={4}
+                    value={description}
+                  />
+                </label>
+                <label className="form-grid-span">
+                  Ressource liée
+                  <select onChange={(event) => setContentItemId(event.target.value)} value={contentItemId}>
+                    <option value="">Aucun contenu rattaché</option>
+                    {contentOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </article>
+
+            <div className="quiz-briefing-stack">
+              <article className="quiz-briefing-card">
+                <div className="quiz-briefing-card-head">
+                  <span className="eyebrow">Règles</span>
+                  <strong>Cadre de jeu</strong>
+                </div>
+
+                <div className="quiz-studio-grid">
+                  <label>
+                    Type
+                    <select onChange={(event) => setKind(event.target.value)} value={kind}>
+                      <option value="qcm">qcm</option>
+                      <option value="quiz">quiz</option>
+                      <option value="assessment">assessment</option>
+                    </select>
+                  </label>
+                  <label>
+                    Statut
+                    <select onChange={(event) => setStatus(event.target.value)} value={status}>
+                      <option value="draft">draft</option>
+                      <option value="scheduled">scheduled</option>
+                      <option value="published">published</option>
+                      <option value="archived">archived</option>
+                    </select>
+                  </label>
+                  <label>
+                    Tentatives autorisées
+                    <input min="1" onChange={(event) => setAttemptsAllowed(event.target.value)} type="number" value={attemptsAllowed} />
+                  </label>
+                  <label>
+                    Temps limite (minutes)
+                    <input min="0" onChange={(event) => setTimeLimitMinutes(event.target.value)} type="number" value={timeLimitMinutes} />
+                  </label>
+                  <label className="form-grid-span">
+                    Score cible
+                    <input min="0" onChange={(event) => setPassingScore(event.target.value)} step="0.01" type="number" value={passingScore} />
+                  </label>
+                </div>
+              </article>
+
+              <article className="quiz-briefing-card quiz-briefing-card-soft">
+                <div className="quiz-briefing-card-head">
+                  <span className="eyebrow">Expérience</span>
+                  <strong>Rythme du passage</strong>
+                </div>
+
+                <label className="quiz-studio-toggle">
+                  <input
+                    checked={randomizeQuestions}
+                    onChange={(event) => setRandomizeQuestions(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    Mélanger les questions pendant le passage
+                    <small>Pratique pour les évaluations ou les tentatives répétées.</small>
+                  </span>
+                </label>
+              </article>
+            </div>
+          </div>
         </section>
 
         <section className="panel">
@@ -506,7 +540,12 @@ export function QuizStudioComposer({
             {activeQuestion.questionType === "single_choice" ? (
               <div className="quiz-choice-editor">
                 <div className="quiz-choice-editor-head">
-                  <strong>Réponses</strong>
+                  <div>
+                    <strong>Réponses</strong>
+                    <p className="quiz-choice-editor-note">
+                      Clique sur A, B, C ou D pour définir la bonne réponse.
+                    </p>
+                  </div>
                   <button className="button button-secondary button-small" onClick={() => addChoice(activeQuestion.id)} type="button">
                     Ajouter un choix
                   </button>
@@ -516,6 +555,8 @@ export function QuizStudioComposer({
                   {activeQuestion.choices.map((choice, index) => (
                     <div className="quiz-choice-row" key={choice.id}>
                       <button
+                        aria-label={`Définir ${String.fromCharCode(65 + index)} comme bonne réponse`}
+                        aria-pressed={activeQuestion.correctChoiceId === choice.id}
                         className={`quiz-correct-toggle${activeQuestion.correctChoiceId === choice.id ? " is-active" : ""}`}
                         onClick={() =>
                           updateQuestion(activeQuestion.id, (question) => ({
@@ -523,6 +564,7 @@ export function QuizStudioComposer({
                             correctChoiceId: choice.id
                           }))
                         }
+                        title="Cliquer pour définir la bonne réponse"
                         type="button"
                       >
                         {String.fromCharCode(65 + index)}
