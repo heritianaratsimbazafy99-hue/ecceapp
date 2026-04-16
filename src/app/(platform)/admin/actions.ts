@@ -26,12 +26,97 @@ const VALID_PUBLICATION_STATUS = ["draft", "scheduled", "published", "archived"]
 const VALID_QUIZ_KIND = ["qcm", "quiz", "assessment"] as const;
 const VALID_QUESTION_TYPES = ["single_choice", "text"] as const;
 
+type QuizDraftPayloadQuestion = {
+  prompt: string;
+  helper_text?: string | null;
+  question_type: string;
+  points?: number;
+  position?: number;
+  choices?: Array<{
+    label: string;
+    is_correct?: boolean;
+  }>;
+};
+
+type NormalizedQuizDraftQuestion = {
+  prompt: string;
+  helper_text: string | null;
+  question_type: (typeof VALID_QUESTION_TYPES)[number];
+  points: number;
+  position: number;
+  choices: Array<{
+    label: string;
+    is_correct: boolean;
+    position: number;
+  }>;
+};
+
 function ok(success: string): AdminActionState {
   return { success };
 }
 
 function fail(error: string): AdminActionState {
   return { error };
+}
+
+function normalizeDraftQuestion(
+  question: QuizDraftPayloadQuestion,
+  index: number
+): { question?: NormalizedQuizDraftQuestion; error?: string } {
+  const prompt = String(question.prompt ?? "").trim();
+  const helperText = String(question.helper_text ?? "").trim();
+  const questionType = String(question.question_type ?? "").trim();
+  const points = Math.max(1, Number(question.points) || 1);
+
+  if (!prompt) {
+    return { error: `La question ${index + 1} est vide.` };
+  }
+
+  if (!VALID_QUESTION_TYPES.includes(questionType as (typeof VALID_QUESTION_TYPES)[number])) {
+    return { error: `Le type de la question ${index + 1} n'est pas valide.` };
+  }
+
+  if (questionType === "single_choice") {
+    const choices = (question.choices ?? [])
+      .map((choice, choiceIndex) => ({
+        label: String(choice.label ?? "").trim(),
+        is_correct: Boolean(choice.is_correct),
+        position: choiceIndex
+      }))
+      .filter((choice) => choice.label);
+
+    if (choices.length < 2) {
+      return { error: `La question ${index + 1} doit contenir au moins deux réponses.` };
+    }
+
+    const hasCorrectChoice = choices.some((choice) => choice.is_correct);
+    const normalizedChoices = choices.map((choice, choiceIndex) => ({
+      ...choice,
+      is_correct: hasCorrectChoice ? choice.is_correct : choiceIndex === 0
+    }));
+
+    return {
+      question: {
+        prompt,
+        helper_text: helperText || null,
+        question_type: "single_choice",
+        points,
+        position: Number.isFinite(Number(question.position)) ? Math.max(0, Number(question.position)) : index,
+        choices: normalizedChoices
+      }
+    };
+  }
+
+  return {
+    question: {
+      prompt,
+      helper_text: helperText || null,
+      question_type: "text",
+      points,
+      position: Number.isFinite(Number(question.position)) ? Math.max(0, Number(question.position)) : index,
+      choices: []
+    }
+  };
 }
 
 export async function createUserAction(
@@ -435,6 +520,8 @@ export async function createQuizAction(
   const timeLimitMinutes = Number(String(formData.get("time_limit_minutes") ?? "").trim() || 0);
   const passingScore = Number(String(formData.get("passing_score") ?? "").trim() || 0);
   const contentItemId = String(formData.get("content_item_id") ?? "").trim();
+  const randomizeQuestions = String(formData.get("randomize_questions") ?? "").trim() === "true";
+  const questionsPayload = String(formData.get("questions_payload") ?? "").trim();
 
   const questionPrompt = String(formData.get("question_prompt") ?? "").trim();
   const helperText = String(formData.get("helper_text") ?? "").trim();
@@ -451,28 +538,29 @@ export async function createQuizAction(
     return fail("Le statut du quiz n'est pas valide.");
   }
 
-  const quizInsert = await admin
-    .from("quizzes")
-    .insert({
-      organization_id: organizationId,
-      title,
-      description: description || null,
-      kind,
-      status,
-      attempts_allowed: attemptsAllowed > 0 ? attemptsAllowed : 1,
-      time_limit_minutes: timeLimitMinutes > 0 ? timeLimitMinutes : null,
-      passing_score: passingScore > 0 ? passingScore : null,
-      content_item_id: contentItemId || null,
-      created_by: context.user.id
-    })
-    .select("id")
-    .single<{ id: string }>();
+  let normalizedQuestions: NormalizedQuizDraftQuestion[] = [];
 
-  if (quizInsert.error || !quizInsert.data) {
-    return fail(quizInsert.error?.message ?? "Impossible de créer le quiz.");
-  }
+  if (questionsPayload) {
+    try {
+      const parsedQuestions = JSON.parse(questionsPayload) as QuizDraftPayloadQuestion[];
 
-  if (questionPrompt) {
+      if (!Array.isArray(parsedQuestions)) {
+        return fail("Le storyboard du quiz est invalide.");
+      }
+
+      for (const [index, question] of parsedQuestions.entries()) {
+        const normalized = normalizeDraftQuestion(question, index);
+
+        if (normalized.error || !normalized.question) {
+          return fail(normalized.error ?? "Impossible de normaliser une question du quiz.");
+        }
+
+        normalizedQuestions.push(normalized.question);
+      }
+    } catch {
+      return fail("Le storyboard du quiz n'a pas pu être décodé.");
+    }
+  } else if (questionPrompt) {
     const choices = choicesText
       .split("\n")
       .map((choice) => choice.trim())
@@ -484,40 +572,84 @@ export async function createQuizAction(
           ? "single_choice"
           : "text";
 
-    if (questionType === "single_choice" && choices.length < 2) {
-      return fail("Une question à choix unique doit contenir au moins deux réponses.");
+    const normalized = normalizeDraftQuestion(
+      {
+        prompt: questionPrompt,
+        helper_text: helperText || null,
+        question_type: questionType,
+        points,
+        position: 0,
+        choices:
+          questionType === "single_choice"
+            ? choices.map((choice, index) => ({
+                label: choice,
+                is_correct: correctChoiceIndex > 0 ? index + 1 === correctChoiceIndex : index === 0
+              }))
+            : []
+      },
+      0
+    );
+
+    if (normalized.error || !normalized.question) {
+      return fail(normalized.error ?? "Impossible de créer la première question.");
     }
 
+    normalizedQuestions = [normalized.question];
+  }
+
+  const quizInsert = await admin
+    .from("quizzes")
+    .insert({
+      organization_id: organizationId,
+      title,
+      description: description || null,
+      kind,
+      status,
+      attempts_allowed: attemptsAllowed > 0 ? attemptsAllowed : 1,
+      time_limit_minutes: timeLimitMinutes > 0 ? timeLimitMinutes : null,
+      passing_score: passingScore > 0 ? passingScore : null,
+      randomize_questions: randomizeQuestions,
+      content_item_id: contentItemId || null,
+      created_by: context.user.id
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (quizInsert.error || !quizInsert.data) {
+    return fail(quizInsert.error?.message ?? "Impossible de créer le quiz.");
+  }
+
+  for (const question of normalizedQuestions) {
     const questionInsert = await admin
       .from("quiz_questions")
       .insert({
         quiz_id: quizInsert.data.id,
-        prompt: questionPrompt,
-        helper_text: helperText || null,
-        question_type: questionType,
-        position: 0,
-        points: points > 0 ? points : 1
+        prompt: question.prompt,
+        helper_text: question.helper_text,
+        question_type: question.question_type,
+        position: question.position,
+        points: question.points
       })
       .select("id")
       .single<{ id: string }>();
 
     if (questionInsert.error || !questionInsert.data) {
-      return fail(questionInsert.error?.message ?? "Le quiz a été créé, mais pas la première question.");
+      return fail(questionInsert.error?.message ?? "Le quiz a été créé, mais une question n'a pas pu être enregistrée.");
     }
 
-    if (questionType === "single_choice" && choices.length) {
+    if (question.question_type === "single_choice" && question.choices.length) {
       const choicesInsert = await admin.from("quiz_question_choices").insert(
-        choices.map((choice, index) => ({
+        question.choices.map((choice) => ({
           question_id: questionInsert.data.id,
-          label: choice,
-          is_correct: correctChoiceIndex > 0 ? index + 1 === correctChoiceIndex : index === 0,
-          position: index
+          label: choice.label,
+          is_correct: choice.is_correct,
+          position: choice.position
         }))
       );
 
       if (choicesInsert.error) {
         return fail(
-          choicesInsert.error.message || "Le quiz a été créé, mais les choix de réponse ont échoué."
+          choicesInsert.error.message || "Le quiz a été créé, mais les choix de réponse n'ont pas pu être enregistrés."
         );
       }
     }
@@ -528,7 +660,11 @@ export async function createQuizAction(
   revalidatePath("/library");
   revalidatePath("/dashboard");
 
-  return ok(`Quiz "${title}" créé.`);
+  return ok(
+    normalizedQuestions.length
+      ? `Quiz "${title}" créé avec ${normalizedQuestions.length} question(s).`
+      : `Quiz "${title}" créé.`
+  );
 }
 
 export async function addQuizQuestionAction(

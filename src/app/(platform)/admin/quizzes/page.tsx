@@ -1,9 +1,11 @@
+import Link from "next/link";
+
 import {
   AddQuizQuestionForm,
-  CreateQuizForm,
   DeleteQuizQuestionButton
 } from "@/app/(platform)/admin/forms";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
+import { QuizStudioComposer } from "@/components/quizzes/quiz-studio-composer";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getAdminQuizStudioPageData } from "@/lib/platform-data";
@@ -15,7 +17,7 @@ export default async function AdminQuizzesPage() {
     <div className="page-shell">
       <PlatformTopbar
         title="Studio quiz"
-        description="Créer, publier et enrichir les quiz dans un espace plus lisible et plus intuitif."
+        description="Refonte complète du flux de création : cadrage, storyboard, preview live et catalogue de quiz jouables."
       />
 
       <section className="metric-grid metric-grid-compact">
@@ -24,70 +26,52 @@ export default async function AdminQuizzesPage() {
         ))}
       </section>
 
-      <section className="content-grid">
-        <div className="panel panel-highlight">
-          <div className="panel-header">
-            <h3>Nouveau quiz</h3>
-            <p>Crée le squelette du quiz ici, puis enrichis les questions juste en dessous dans le catalogue.</p>
-          </div>
-          <CreateQuizForm contentOptions={contentOptions} />
-        </div>
-
-        <div className="panel">
-          <div className="panel-header">
-            <h3>Workflow conseillé</h3>
-            <p>Le studio te guide pour aller vite sans perdre la logique pédagogique.</p>
-          </div>
-
-          <div className="stack-list">
-            <article className="panel panel-subtle">
-              <strong>1. Créer le cadre</strong>
-              <p>Définis le titre, le type, le score cible et la ressource liée si le quiz prolonge un contenu.</p>
-            </article>
-            <article className="panel panel-subtle">
-              <strong>2. Ajouter les questions</strong>
-              <p>Utilise ensuite les blocs du catalogue pour enrichir les quiz existants sans revenir au hub admin.</p>
-            </article>
-            <article className="panel panel-subtle">
-              <strong>3. Publier au bon moment</strong>
-              <p>Le quiz rejoint la bibliothèque dès qu&apos;il passe en `published`.</p>
-            </article>
-          </div>
-        </div>
-      </section>
+      <QuizStudioComposer contentOptions={contentOptions} />
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Catalogue des quiz</h3>
-          <p>Builder rapide pour compléter les quiz déjà créés, question par question.</p>
+          <h3>Catalogue live des quiz</h3>
+          <p>Chaque carte agit comme un cockpit léger : aperçu, métriques rapides et ajout instantané de questions.</p>
         </div>
 
         {quizzes.length ? (
-          <div className="stack-list">
+          <div className="quiz-catalog-grid">
             {quizzes.map((quiz) => (
-              <article className="panel panel-subtle" key={quiz.id}>
-                <div className="panel-header">
-                  <h3>{quiz.title}</h3>
-                  <p>
-                    {quiz.kind} · {quiz.attempts_allowed ?? 1} tentative(s)
-                    {quiz.time_limit_minutes ? ` · ${quiz.time_limit_minutes} min` : ""}
-                  </p>
+              <article className="panel quiz-catalog-card" key={quiz.id}>
+                <div className="quiz-catalog-card-head">
+                  <div>
+                    <h3>{quiz.title}</h3>
+                    <p>
+                      {quiz.kind} · {quiz.attempts_allowed ?? 1} tentative(s)
+                      {quiz.time_limit_minutes ? ` · ${quiz.time_limit_minutes} min` : ""}
+                      {quiz.passing_score ? ` · cible ${quiz.passing_score}%` : ""}
+                    </p>
+                  </div>
+
+                  <div className="tag-row">
+                    <Link className="button button-secondary button-small" href={`/quiz/${quiz.id}`}>
+                      Prévisualiser
+                    </Link>
+                  </div>
                 </div>
 
-                <div className="table-actions">
+                <div className="tag-row">
                   <Badge tone={quiz.status === "published" ? "success" : "neutral"}>
                     {quiz.status ?? "draft"}
                   </Badge>
                   <Badge tone="accent">{quiz.quiz_questions?.length ?? 0} question(s)</Badge>
+                  <Badge tone="neutral">
+                    {quiz.quiz_questions?.reduce((total, question) => total + question.points, 0) ?? 0} pt(s)
+                  </Badge>
                 </div>
 
                 {quiz.quiz_questions?.length ? (
-                  <div className="stack-list section-spacer">
+                  <div className="quiz-question-summary-list section-spacer">
                     {quiz.quiz_questions.map((question) => (
-                      <article className="list-row list-row-stretch" key={question.id}>
+                      <article className="quiz-question-summary" key={question.id}>
                         <div>
                           <strong>
-                            Q{question.position + 1} · {question.question_type}
+                            Q{question.position + 1} · {question.question_type === "single_choice" ? "Choix unique" : "Réponse ouverte"}
                           </strong>
                           <p>{question.prompt}</p>
                           {question.helper_text ? <p>{question.helper_text}</p> : null}
@@ -115,7 +99,7 @@ export default async function AdminQuizzesPage() {
                   </div>
                 )}
 
-                <div className="section-spacer">
+                <div className="section-spacer quiz-catalog-card-footer">
                   <AddQuizQuestionForm quizId={quiz.id} />
                 </div>
               </article>

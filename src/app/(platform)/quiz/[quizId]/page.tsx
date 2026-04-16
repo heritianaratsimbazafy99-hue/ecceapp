@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
 
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
+import { QuizPlayerExperience } from "@/components/quizzes/quiz-player-experience";
 import { Badge } from "@/components/ui/badge";
 import { getQuizPageData } from "@/lib/platform-data";
-
-import { QuizTakeForm } from "./form";
 
 export default async function QuizPage({
   params,
@@ -26,13 +25,13 @@ export default async function QuizPage({
     <div className="page-shell">
       <PlatformTopbar
         title={quiz.title}
-        description={quiz.description || "Passe ce quiz et enregistre automatiquement ta tentative dans ECCE."}
+        description={quiz.description || "Une expérience de quiz plus immersive, rythmée et lisible, pensée pour le passage comme pour la relecture."}
       />
 
       <section className="content-grid">
-        <div className="panel">
+        <div className="panel panel-highlight">
           <div className="panel-header">
-            <h3>Détails du quiz</h3>
+            <h3>Mode de jeu</h3>
             <p>
               {quiz.kind} · {quiz.attempts_allowed ?? 1} tentative(s)
               {quiz.time_limit_minutes ? ` · ${quiz.time_limit_minutes} min` : ""}
@@ -45,6 +44,9 @@ export default async function QuizPage({
               {quiz.status ?? "draft"}
             </Badge>
             <Badge tone="accent">{quiz.quiz_questions?.length ?? 0} question(s)</Badge>
+            <Badge tone="neutral">
+              {quiz.quiz_questions?.reduce((total, question) => total + question.points, 0) ?? 0} pt(s)
+            </Badge>
           </div>
         </div>
 
@@ -99,20 +101,18 @@ export default async function QuizPage({
       </section>
 
       {canTakeQuiz ? (
-        <section className="panel">
-          <div className="panel-header">
-            <h3>Passer le quiz</h3>
-            <p>Les réponses à choix unique sont corrigées automatiquement, les réponses textuelles passent ensuite en correction coach.</p>
-          </div>
-
-          <QuizTakeForm
-            assignmentId={assignment ?? null}
-            quizId={quiz.id}
-            questions={(quiz.quiz_questions ?? []).map((question) => ({
-              id: question.id,
-              prompt: question.prompt,
-              helper_text: question.helper_text,
-              question_type: question.question_type,
+        <QuizPlayerExperience
+          assignmentId={assignment ?? null}
+          attemptsAllowed={quiz.attempts_allowed ?? 1}
+          initialAttemptCount={attempts.length}
+          passingScore={quiz.passing_score}
+          quizId={quiz.id}
+          randomizeQuestions={quiz.randomize_questions ?? false}
+          questions={(quiz.quiz_questions ?? []).map((question) => ({
+            id: question.id,
+            prompt: question.prompt,
+            helper_text: question.helper_text,
+            question_type: question.question_type,
               points: question.points,
               quiz_question_choices: (question.quiz_question_choices ?? []).map((choice) => ({
                 id: choice.id,
@@ -120,8 +120,9 @@ export default async function QuizPage({
                 position: choice.position
               }))
             }))}
-          />
-        </section>
+          timeLimitMinutes={quiz.time_limit_minutes}
+          title={quiz.title}
+        />
       ) : null}
     </div>
   );

@@ -58,6 +58,7 @@ type QuizRow = {
   attempts_allowed?: number;
   time_limit_minutes?: number | null;
   passing_score?: number | null;
+  randomize_questions?: boolean;
   content_item_id?: string | null;
   quiz_questions?: QuizQuestionRow[];
 };
@@ -823,6 +824,7 @@ export async function getAdminPageData() {
           attempts_allowed,
           time_limit_minutes,
           passing_score,
+          randomize_questions,
           content_item_id,
           quiz_questions (
             id,
@@ -2499,6 +2501,7 @@ export async function getQuizPageData(quizId: string) {
         attempts_allowed,
         time_limit_minutes,
         passing_score,
+        randomize_questions,
         quiz_questions (
           id,
           prompt,
