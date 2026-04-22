@@ -1,10 +1,10 @@
 import Link from "next/link";
 
 import { AssignmentCommandBoard } from "@/components/assignments/assignment-command-board";
+import { LearnerDashboardSpotlight } from "@/components/dashboard/learner-dashboard-spotlight";
 import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
 import { LiveNotificationFeed } from "@/components/notifications/realtime-notification-center";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
-import { EngagementMeter } from "@/components/platform/engagement-meter";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getDashboardPageData } from "@/lib/platform-data";
@@ -12,8 +12,13 @@ import { getDashboardPageData } from "@/lib/platform-data";
 export default async function DashboardPage() {
   const {
     context,
+    profileName,
+    cohortLabels,
     metrics,
     engagement,
+    coachCount,
+    publishedContentCount,
+    publishedQuizCount,
     assignments,
     notifications,
     upcomingSessions,
@@ -28,7 +33,7 @@ export default async function DashboardPage() {
     <div className="page-shell">
       <PlatformTopbar
         title="Dashboard coaché"
-        description="Vue réelle des assignations, notifications et contenus publiés disponibles pour le coaché."
+        description="Un dashboard plus premium pour suivre tes missions, tes séances, tes ressources et ta progression sans friction."
       />
 
       <section className="metric-grid">
@@ -37,48 +42,16 @@ export default async function DashboardPage() {
         ))}
       </section>
 
-      <section className="panel panel-highlight">
-        <div>
-          <div className="panel-header">
-            <h3>Mon engagement pédagogique</h3>
-            <p>Un signal vivant construit depuis tes rendus, quiz, deadlines et activités récentes.</p>
-          </div>
-
-          <EngagementMeter
-            band={engagement.band}
-            bandLabel={engagement.bandLabel}
-            caption={engagement.nextFocus}
-            score={engagement.score}
-            trend={engagement.trend}
-            trendLabel={engagement.trendLabel}
-          />
-
-          <div className="analytics-list section-spacer">
-            <article className="analytics-item">
-              <span>Complétion</span>
-              <strong>{engagement.completionRate !== null ? `${engagement.completionRate}%` : "n/a"}</strong>
-              <small>
-                {engagement.completedCount}/{engagement.assignmentCount} assignation(s) traitée(s)
-              </small>
-            </article>
-            <article className="analytics-item">
-              <span>Ponctualité</span>
-              <strong>{engagement.onTimeRate !== null ? `${engagement.onTimeRate}%` : "n/a"}</strong>
-              <small>{engagement.overdueCount} échéance(s) en retard</small>
-            </article>
-            <article className="analytics-item">
-              <span>Quiz moyen</span>
-              <strong>{engagement.averageQuizScore !== null ? `${engagement.averageQuizScore}%` : "n/a"}</strong>
-              <small>{engagement.badgeCount} badge(s) débloqué(s)</small>
-            </article>
-            <article className="analytics-item">
-              <span>Dernière activité</span>
-              <strong>{engagement.lastActivityLabel}</strong>
-              <small>{engagement.unreadNotifications} notification(s) à ouvrir</small>
-            </article>
-          </div>
-        </div>
-      </section>
+      <LearnerDashboardSpotlight
+        coachCount={coachCount}
+        cohortLabels={cohortLabels}
+        engagement={engagement}
+        focusAssignment={assignments[0] ?? null}
+        nextSession={upcomingSessions[0] ?? null}
+        profileName={profileName}
+        publishedContentCount={publishedContentCount}
+        publishedQuizCount={publishedQuizCount}
+      />
 
       <AssignmentCommandBoard
         description="Une lecture plus nette des missions en cours, avec urgence, état d’avancement et accès direct à l’action."
@@ -89,11 +62,11 @@ export default async function DashboardPage() {
         title="Mes missions en cours"
       />
 
-      <section className="content-grid">
-        <div className="panel">
+      <section className="content-grid dashboard-focus-grid">
+        <div className="panel dashboard-notification-panel">
           <div className="panel-header">
             <h3>Notifications récentes</h3>
-            <p>Lecture en direct de la table `notifications` via Supabase Realtime.</p>
+            <p>Lecture en direct de la table `notifications` via Supabase Realtime, intégrée à ton rythme quotidien.</p>
           </div>
 
           <LiveNotificationFeed
@@ -101,141 +74,151 @@ export default async function DashboardPage() {
             userId={context.user.id}
           />
         </div>
-      </section>
 
-      <section className="content-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <h3>Mes sessions à venir</h3>
-            <p>Les séances planifiées par le coach remontent ici avec leur lien visio.</p>
-          </div>
+        <div className="dashboard-side-stack">
+          <div className="panel dashboard-session-panel">
+            <div className="panel-header">
+              <h3>Mes sessions à venir</h3>
+              <p>Les séances planifiées par le coach remontent ici avec leur lien visio.</p>
+            </div>
 
-          {upcomingSessions.length ? (
-            <div className="stack-list">
-              {upcomingSessions.map((session) => (
-                <article className="list-row list-row-stretch" key={session.id}>
-                  <div>
+            {upcomingSessions.length ? (
+              <div className="dashboard-session-list">
+                {upcomingSessions.map((session) => (
+                  <article className="dashboard-session-card" key={session.id}>
+                    <div className="tag-row">
+                      <Badge tone="accent">{session.emphasis}</Badge>
+                      {session.videoLink ? <Badge tone="success">lien prêt</Badge> : <Badge tone="neutral">lien à venir</Badge>}
+                    </div>
                     <strong>Séance de coaching</strong>
                     <p>{session.date}</p>
-                  </div>
-                  {session.videoLink ? (
-                    <Link className="button button-secondary button-small" href={session.videoLink} target="_blank">
-                      Rejoindre
-                    </Link>
-                  ) : (
-                    <Badge tone="neutral">lien à venir</Badge>
-                  )}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <strong>Aucune séance planifiée.</strong>
-              <p>Quand ton coach ajoutera une session, elle apparaîtra ici automatiquement.</p>
-            </div>
-          )}
-        </div>
-
-        <div className="panel panel-highlight">
-          <div className="panel-header">
-            <h3>Mes badges</h3>
-            <p>Les jalons débloqués s&apos;affichent ici pour valoriser ta progression.</p>
+                    {session.videoLink ? (
+                      <Link className="button button-secondary button-small" href={session.videoLink} target="_blank">
+                        Rejoindre
+                      </Link>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state empty-state-compact">
+                <strong>Aucune séance planifiée.</strong>
+                <p>Quand ton coach ajoutera une session, elle apparaîtra ici automatiquement.</p>
+              </div>
+            )}
           </div>
 
-          {badges.length ? (
-            <div className="stack-list">
-              {badges.map((badge) => (
-                <article className="badge-card" key={badge.id}>
-                  <div className="badge-card-icon" aria-hidden="true">
-                    {badge.icon === "spark" ? "*" : "+"}
-                  </div>
-                  <div>
-                    <strong>{badge.title}</strong>
-                    <p>{badge.description}</p>
-                    <small>{badge.awardedAt}</small>
-                  </div>
-                </article>
-              ))}
+          <div className="panel panel-highlight dashboard-badge-panel">
+            <div className="panel-header">
+              <h3>Mes badges</h3>
+              <p>Les jalons débloqués s&apos;affichent ici pour valoriser ta progression.</p>
             </div>
-          ) : (
-            <div className="empty-state">
-              <strong>Aucun badge débloqué.</strong>
-              <p>Complète un quiz validé pour commencer à enrichir ton palmarès ECCE.</p>
-            </div>
-          )}
+
+            {badges.length ? (
+              <div className="stack-list">
+                {badges.map((badge) => (
+                  <article className="badge-card" key={badge.id}>
+                    <div className="badge-card-icon" aria-hidden="true">
+                      {badge.icon === "spark" ? "*" : "+"}
+                    </div>
+                    <div>
+                      <strong>{badge.title}</strong>
+                      <p>{badge.description}</p>
+                      <small>{badge.awardedAt}</small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state empty-state-compact">
+                <strong>Aucun badge débloqué.</strong>
+                <p>Complète un quiz validé pour commencer à enrichir ton palmarès ECCE.</p>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
       {messagingWorkspace ? (
-        <RealtimeConversationHub
-          composerPlaceholder="Pose une question, demande un feedback ou confirme ta prochaine action."
-          contacts={messagingWorkspace.contacts}
-          conversations={messagingWorkspace.conversations}
-          description="Ton espace d'échange direct avec les coachs ECCE, mis à jour en temps réel."
-          emptyBody="Choisis un coach pour démarrer un échange en direct depuis ton dashboard."
-          emptyTitle="Pas encore de conversation."
-          initialConversationId={messagingWorkspace.initialConversationId}
-          initialMessages={messagingWorkspace.initialMessages}
-          title="Messagerie coach"
-          userId={context.user.id}
-        />
+        <section id="coach-messages">
+          <RealtimeConversationHub
+            composerPlaceholder="Pose une question, demande un feedback ou confirme ta prochaine action."
+            contacts={messagingWorkspace.contacts}
+            conversations={messagingWorkspace.conversations}
+            description="Ton espace d'échange direct avec les coachs ECCE, mis à jour en temps réel."
+            emptyBody="Choisis un coach pour démarrer un échange en direct depuis ton dashboard."
+            emptyTitle="Pas encore de conversation."
+            initialConversationId={messagingWorkspace.initialConversationId}
+            initialMessages={messagingWorkspace.initialMessages}
+            title="Messagerie coach"
+            userId={context.user.id}
+          />
+        </section>
       ) : null}
 
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Derniers contenus publiés</h3>
-          <p>La bibliothèque publique de l&apos;organisation ECCE, chargée en temps réel.</p>
-        </div>
+      <section className="content-grid dashboard-learning-grid">
+        <div className="panel dashboard-content-panel">
+          <div className="panel-header">
+            <h3>Ressources du moment</h3>
+            <p>Une sélection rapide de contenus publiés pour continuer à avancer sans quitter ton dashboard.</p>
+          </div>
 
-        {recentContents.length ? (
-          <div className="stack-list">
-            {recentContents.map((content) => (
-              <article className="list-row list-row-stretch" key={content.id}>
-                <div>
+          {recentContents.length ? (
+            <div className="dashboard-resource-grid">
+              {recentContents.map((content) => (
+                <article className="collection-card dashboard-resource-card" key={content.id}>
+                  <div className="tag-row">
+                    <Badge tone="accent">{content.content_type}</Badge>
+                    {content.is_required ? <Badge tone="warning">obligatoire</Badge> : null}
+                  </div>
                   <strong>{content.title}</strong>
-                  <p>
-                    {content.category || "Sans catégorie"} · {content.content_type}
-                  </p>
-                </div>
-                <div className="table-actions">
-                  {content.is_required ? <Badge tone="accent">obligatoire</Badge> : null}
-                  <Badge tone="success">published</Badge>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state">
-            <strong>Aucun contenu publié pour le moment.</strong>
-            <p>Crée un contenu publié depuis l&apos;admin pour l&apos;alimenter immédiatement.</p>
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Mes derniers résultats</h3>
-          <p>Les tentatives de quiz soumises apparaissent ici automatiquement.</p>
+                  <p>{content.summary}</p>
+                  <small>{content.meta}</small>
+                  <div className="assignment-card-footer">
+                    <Link
+                      className="button button-secondary button-small"
+                      href={content.href}
+                      target={content.href.startsWith("http") ? "_blank" : undefined}
+                    >
+                      Ouvrir
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun contenu publié pour le moment.</strong>
+              <p>Crée un contenu publié depuis l&apos;admin pour l&apos;alimenter immédiatement.</p>
+            </div>
+          )}
         </div>
 
-        {recentAttempts.length ? (
-          <div className="stack-list">
-            {recentAttempts.map((attempt) => (
-              <article className="list-row" key={attempt.id}>
-                <div>
-                  <strong>{attempt.title}</strong>
-                  <p>{attempt.meta}</p>
-                </div>
-                <Badge tone="success">{attempt.score}</Badge>
-              </article>
-            ))}
+        <div className="panel dashboard-attempt-panel">
+          <div className="panel-header">
+            <h3>Mes derniers résultats</h3>
+            <p>Les tentatives de quiz soumises apparaissent ici avec un rendu plus lisible.</p>
           </div>
-        ) : (
-          <div className="empty-state">
-            <strong>Aucun résultat pour l&apos;instant.</strong>
-            <p>Passe un quiz pour voir ici ton historique de tentatives.</p>
-          </div>
-        )}
+
+          {recentAttempts.length ? (
+            <div className="dashboard-attempt-list">
+              {recentAttempts.map((attempt) => (
+                <article className="dashboard-attempt-card" key={attempt.id}>
+                  <div>
+                    <strong>{attempt.title}</strong>
+                    <p>{attempt.meta}</p>
+                  </div>
+                  <Badge tone={attempt.tone}>{attempt.score}</Badge>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>Aucun résultat pour l&apos;instant.</strong>
+              <p>Passe un quiz pour voir ici ton historique de tentatives.</p>
+            </div>
+          )}
+        </div>
       </section>
     </div>
   );

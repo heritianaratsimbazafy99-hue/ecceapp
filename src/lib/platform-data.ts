@@ -2259,6 +2259,11 @@ export async function getDashboardPageData() {
     ]);
 
   const cohortIds = (cohortMembersResult.data ?? []).map((item) => item.cohort_id);
+  const { data: cohortRows } = cohortIds.length
+    ? await admin.from("cohorts").select("id, name").in("id", cohortIds)
+    : { data: [] as Array<{ id: string; name: string }> };
+  const cohortNameById = new Map((cohortRows ?? []).map((item) => [item.id, item.name]));
+  const cohortLabels = cohortIds.map((id) => cohortNameById.get(id)).filter(Boolean) as string[];
 
   const [directAssignmentsResult, cohortAssignmentsResult] = await Promise.all([
     admin
@@ -2484,6 +2489,8 @@ export async function getDashboardPageData() {
 
   return {
     context,
+    profileName: `${context.profile.first_name} ${context.profile.last_name}`.trim(),
+    cohortLabels,
     metrics: [
       {
         label: "Score d'engagement",
@@ -2507,6 +2514,9 @@ export async function getDashboardPageData() {
       }
     ],
     engagement,
+    coachCount: coachContacts.length,
+    publishedContentCount: publishedContentResult.count ?? 0,
+    publishedQuizCount: quizzesResult.count ?? 0,
     assignments: assignments.slice(0, 6).map((item) => {
       const linkedContent = contentById.get(item.content_item_id ?? "");
       const linkedQuiz = quizById.get(item.quiz_id ?? "");
@@ -2564,16 +2574,33 @@ export async function getDashboardPageData() {
       };
     }),
     notifications,
-    upcomingSessions,
+    upcomingSessions: upcomingSessions.map((session, index) => ({
+      ...session,
+      emphasis: index === 0 ? "prochaine" : "planifiée"
+    })),
     badges,
     messagingWorkspace,
-    recentContents: publishedContents,
-    recentAttempts: attempts.map((attempt) => ({
-      id: attempt.id,
-      title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
-      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
-      meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}${attempt.status === "submitted" ? " · correction coach en cours" : ""}`
-    }))
+    recentContents: publishedContents.map((content) => ({
+      id: content.id,
+      title: content.title,
+      summary: content.summary ?? "Ressource publiée dans la bibliothèque ECCE.",
+      category: content.category || "Sans catégorie",
+      content_type: content.content_type,
+      is_required: content.is_required,
+      meta: `${content.category || "Bibliothèque"} · ${content.content_type}${content.estimated_minutes ? ` · ${content.estimated_minutes} min` : ""}`,
+      href: content.external_url || content.youtube_url || "/library"
+    })),
+    recentAttempts: attempts.map((attempt) => {
+      const tone: "neutral" | "success" = attempt.status === "submitted" ? "neutral" : "success";
+
+      return {
+        id: attempt.id,
+        title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
+        score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
+        meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}${attempt.status === "submitted" ? " · correction coach en cours" : ""}`,
+        tone
+      };
+    })
   };
 }
 
