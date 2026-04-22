@@ -226,6 +226,60 @@ function formatDate(dateString: string | null) {
   }).format(new Date(dateString));
 }
 
+function getDeadlineState(dateString: string | null | undefined, completed = false, now = Date.now()) {
+  if (completed) {
+    return "done" as const;
+  }
+
+  const value = getDateValue(dateString);
+
+  if (value === null) {
+    return "open" as const;
+  }
+
+  if (value < now) {
+    return "overdue" as const;
+  }
+
+  if (value <= now + 7 * 24 * 60 * 60 * 1000) {
+    return "soon" as const;
+  }
+
+  return "planned" as const;
+}
+
+function getDeadlineStateLabel(state: ReturnType<typeof getDeadlineState>) {
+  switch (state) {
+    case "done":
+      return "terminé";
+    case "overdue":
+      return "en retard";
+    case "soon":
+      return "à venir";
+    case "planned":
+      return "planifié";
+    default:
+      return "sans deadline";
+  }
+}
+
+function getDeadlineStateTone(
+  state: ReturnType<typeof getDeadlineState>
+): "neutral" | "accent" | "warning" | "success" {
+  switch (state) {
+    case "done":
+      return "success";
+    case "overdue":
+      return "warning";
+    case "soon":
+      return "accent";
+    case "planned":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
+
 function formatUserName(user: ProfileRow) {
   return `${user.first_name} ${user.last_name}`.trim();
 }
@@ -1302,6 +1356,7 @@ export async function getAdminAssignmentStudioPageData() {
     profilesResult,
     authUsersResult,
     cohortsResult,
+    cohortMembersResult,
     contentsResult,
     quizzesResult,
     assignmentsResult
@@ -1316,14 +1371,15 @@ export async function getAdminAssignmentStudioPageData() {
       perPage: 200
     }),
     admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin.from("cohort_members").select("user_id, cohort_id"),
     admin
       .from("content_items")
-      .select("id, title, status")
+      .select("id, title, summary, content_type, status, estimated_minutes")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
     admin
       .from("quizzes")
-      .select("id, title, status")
+      .select("id, title, description, kind, status, time_limit_minutes")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
     admin
@@ -1336,20 +1392,45 @@ export async function getAdminAssignmentStudioPageData() {
   const profiles = (profilesResult.data ?? []) as ProfileRow[];
   const authUsers = authUsersResult.data?.users ?? [];
   const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
-  const contents = (contentsResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
-  const quizzes = (quizzesResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
+  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
+  const contents = (contentsResult.data ?? []) as Array<{
+    id: string;
+    title: string;
+    summary: string | null;
+    content_type: string;
+    status: string;
+    estimated_minutes: number | null;
+  }>;
+  const quizzes = (quizzesResult.data ?? []) as Array<{
+    id: string;
+    title: string;
+    description: string | null;
+    kind: string | null;
+    status: string;
+    time_limit_minutes: number | null;
+  }>;
   const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
   const emailByUserId = new Map(authUsers.map((item) => [item.id, item.email ?? "email indisponible"]));
   const userNameById = new Map(profiles.map((profile) => [profile.id, formatUserName(profile)]));
-  const contentTitleById = new Map(contents.map((content) => [content.id, content.title]));
-  const quizTitleById = new Map(quizzes.map((quiz) => [quiz.id, quiz.title]));
+  const contentById = new Map(contents.map((content) => [content.id, content]));
+  const quizById = new Map(quizzes.map((quiz) => [quiz.id, quiz]));
   const cohortNameById = new Map(cohorts.map((cohort) => [cohort.id, cohort.name]));
+  const cohortSizeById = cohortMembers.reduce((map, item) => {
+    map.set(item.cohort_id, (map.get(item.cohort_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
 
-  const users = profiles.map((profile) => ({
-    id: profile.id,
-    name: formatUserName(profile),
-    email: emailByUserId.get(profile.id) ?? "email indisponible"
-  }));
+  const coacheeUsers = profiles
+    .filter((profile) => (profile.user_roles ?? []).some((role) => role.role === "coachee"))
+    .map((profile) => ({
+      id: profile.id,
+      name: formatUserName(profile),
+      email: emailByUserId.get(profile.id) ?? "email indisponible"
+    }));
+  const now = Date.now();
+  const overdueCount = assignments.filter((assignment) => getDeadlineState(assignment.due_at, false, now) === "overdue").length;
+  const dueSoonCount = assignments.filter((assignment) => getDeadlineState(assignment.due_at, false, now) === "soon").length;
+  const withoutDeadlineCount = assignments.filter((assignment) => getDeadlineState(assignment.due_at, false, now) === "open").length;
 
   return {
     context,
@@ -1360,41 +1441,75 @@ export async function getAdminAssignmentStudioPageData() {
         delta: `${assignments.filter((item) => item.quiz_id).length} quiz`
       },
       {
-        label: "Cibles",
-        value: `${users.length} profils`,
+        label: "Deadlines proches",
+        value: dueSoonCount.toString(),
+        delta: `${overdueCount} en retard`
+      },
+      {
+        label: "Sans échéance",
+        value: withoutDeadlineCount.toString(),
+        delta: "parcours evergreen"
+      },
+      {
+        label: "Cibles disponibles",
+        value: coacheeUsers.length.toString(),
         delta: `${cohorts.length} cohortes`
       }
     ],
-    userOptions: users.map((user) => ({
+    userOptions: coacheeUsers.map((user) => ({
       id: user.id,
-      label: `${user.name} · ${user.email}`
+      label: `${user.name} · ${user.email}`,
+      meta: "coaché individuel"
     })),
     cohortOptions: cohorts.map((cohort) => ({
       id: cohort.id,
-      label: cohort.name
+      label: cohort.name,
+      meta: `${cohortSizeById.get(cohort.id) ?? 0} coaché(s)`
     })),
     contentOptions: contents.map((content) => ({
       id: content.id,
-      label: `${content.title} · ${content.status}`
+      label: content.title,
+      meta: `${content.content_type} · ${content.estimated_minutes ? `${content.estimated_minutes} min` : "durée libre"} · ${content.status}`,
+      summary: content.summary
     })),
     quizOptions: quizzes.map((quiz) => ({
       id: quiz.id,
-      label: `${quiz.title} · ${quiz.status}`
+      label: quiz.title,
+      meta: `${quiz.kind ?? "quiz"} · ${quiz.time_limit_minutes ? `${quiz.time_limit_minutes} min` : "temps libre"} · ${quiz.status}`,
+      summary: quiz.description
     })),
-    assignments: assignments.map((assignment) => ({
-      id: assignment.id,
-      title: assignment.title,
-      due: formatDate(assignment.due_at),
-      target:
-        userNameById.get(assignment.assigned_user_id ?? "") ??
-        cohortNameById.get(assignment.cohort_id ?? "") ??
-        "cible non résolue",
-      asset:
-        contentTitleById.get(assignment.content_item_id ?? "") ??
-        quizTitleById.get(assignment.quiz_id ?? "") ??
-        "élément non résolu",
-      type: assignment.quiz_id ? "quiz" : "contenu"
-    }))
+    assignments: assignments.map((assignment) => {
+      const content = contentById.get(assignment.content_item_id ?? "");
+      const quiz = quizById.get(assignment.quiz_id ?? "");
+      const dueState = getDeadlineState(assignment.due_at, false, now);
+      const targetIsCohort = Boolean(assignment.cohort_id);
+      const kind: "quiz" | "contenu" = assignment.quiz_id ? "quiz" : "contenu";
+
+      return {
+        id: assignment.id,
+        title: assignment.title,
+        summary:
+          content?.summary ??
+          quiz?.description ??
+          (assignment.quiz_id ? "Quiz programmé dans le parcours ECCE." : "Ressource programmée dans le parcours ECCE."),
+        due: formatDate(assignment.due_at),
+        dueState,
+        statusLabel: getDeadlineStateLabel(dueState),
+        statusTone: getDeadlineStateTone(dueState),
+        targetLabel:
+          userNameById.get(assignment.assigned_user_id ?? "") ??
+          cohortNameById.get(assignment.cohort_id ?? "") ??
+          "cible non résolue",
+        audienceLabel: targetIsCohort
+          ? `Cohorte · ${cohortSizeById.get(assignment.cohort_id ?? "") ?? 0} coaché(s)`
+          : "Assignation individuelle",
+        assetLabel: content?.title ?? quiz?.title ?? "élément non résolu",
+        kind,
+        meta: content
+          ? `${content.content_type} · ${content.estimated_minutes ? `${content.estimated_minutes} min` : "durée libre"}`
+          : `${quiz?.kind ?? "quiz"} · ${quiz?.time_limit_minutes ? `${quiz.time_limit_minutes} min` : "temps libre"}`
+      };
+    })
   };
 }
 
@@ -2166,7 +2281,7 @@ export async function getDashboardPageData() {
           .in("id", contentIds)
       : Promise.resolve({ data: [] as ContentRow[] }),
     quizIds.length
-      ? admin.from("quizzes").select("id, title").in("id", quizIds)
+      ? admin.from("quizzes").select("id, title, description, kind, time_limit_minutes").in("id", quizIds)
       : Promise.resolve({ data: [] as QuizRow[] })
   ]);
 
@@ -2347,19 +2462,62 @@ export async function getDashboardPageData() {
       }
     ],
     engagement,
-    assignments: assignments.slice(0, 6).map((item) => ({
-      id: item.id,
-      title:
-        contentById.get(item.content_item_id ?? "")?.title ??
-        quizById.get(item.quiz_id ?? "")?.title ??
-        item.title,
-      due: formatDate(item.due_at),
-      type: item.content_item_id ? "contenu" : "quiz",
-      targetId: item.content_item_id ? item.id : item.quiz_id ?? null,
-      status: item.content_item_id
-        ? submissionByAssignmentId.get(item.id)?.status ?? "a_rendre"
-        : attemptByQuizId.has(item.quiz_id ?? "") ? "termine" : "a_faire"
-    })),
+    assignments: assignments.slice(0, 6).map((item) => {
+      const linkedContent = contentById.get(item.content_item_id ?? "");
+      const linkedQuiz = quizById.get(item.quiz_id ?? "");
+      const contentSubmission = submissionByAssignmentId.get(item.id);
+      const hasQuizAttempt = attemptByQuizId.has(item.quiz_id ?? "");
+      const kind: "quiz" | "contenu" = item.content_item_id ? "contenu" : "quiz";
+      const completionStatus = item.content_item_id
+        ? contentSubmission?.status === "reviewed"
+          ? "reviewed"
+          : contentSubmission?.status === "submitted"
+            ? "submitted"
+            : "pending"
+        : hasQuizAttempt
+          ? "done"
+          : "pending";
+      const dueState = getDeadlineState(item.due_at, completionStatus === "reviewed" || completionStatus === "done");
+
+      return {
+        id: item.id,
+        title: linkedContent?.title ?? linkedQuiz?.title ?? item.title,
+        summary:
+          linkedContent?.summary ??
+          linkedQuiz?.description ??
+          (item.quiz_id ? "Quiz prêt à être lancé depuis ton parcours." : "Ressource à consulter puis à rendre."),
+        due: formatDate(item.due_at),
+        dueState,
+        statusLabel:
+          completionStatus === "reviewed"
+            ? "corrigé"
+            : completionStatus === "submitted"
+              ? "en revue"
+              : completionStatus === "done"
+                ? "terminé"
+                : getDeadlineStateLabel(dueState),
+        statusTone:
+          completionStatus === "reviewed" || completionStatus === "done"
+            ? "success"
+            : completionStatus === "submitted"
+              ? "accent"
+              : getDeadlineStateTone(dueState),
+        kind,
+        href: item.content_item_id ? `/assignments/${item.id}` : `/quiz/${item.quiz_id}?assignment=${item.id}`,
+        ctaLabel:
+          item.content_item_id
+            ? contentSubmission
+              ? "Voir le rendu"
+              : "Rendre"
+            : hasQuizAttempt
+              ? "Revoir"
+              : "Lancer",
+        meta: linkedContent
+          ? `${linkedContent.category || "Bibliothèque"} · ${linkedContent.content_type} · ${linkedContent.estimated_minutes ? `${linkedContent.estimated_minutes} min` : "durée libre"}`
+          : `${linkedQuiz?.kind ?? "quiz"} · ${linkedQuiz?.time_limit_minutes ? `${linkedQuiz.time_limit_minutes} min` : "temps libre"}`,
+        assetLabel: linkedContent?.title ?? linkedQuiz?.title ?? item.title
+      };
+    }),
     notifications,
     upcomingSessions,
     badges,

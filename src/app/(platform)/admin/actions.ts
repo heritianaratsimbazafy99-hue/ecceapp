@@ -832,15 +832,20 @@ export async function createAssignmentAction(
     return fail("Le titre de l'assignation est obligatoire.");
   }
 
-  if (!assignedUserId && !cohortId) {
-    return fail("Choisis au moins un utilisateur ou une cohorte.");
+  if ((!assignedUserId && !cohortId) || (assignedUserId && cohortId)) {
+    return fail("Choisis soit un coaché précis, soit une cohorte.");
   }
 
-  if (!contentItemId && !quizId) {
-    return fail("Sélectionne un contenu ou un quiz à assigner.");
+  if ((!contentItemId && !quizId) || (contentItemId && quizId)) {
+    return fail("Sélectionne soit un contenu, soit un quiz.");
   }
 
-  const dueAt = dueAtInput ? new Date(dueAtInput).toISOString() : null;
+  const parsedDueAt = dueAtInput ? new Date(dueAtInput) : null;
+  if (parsedDueAt && Number.isNaN(parsedDueAt.getTime())) {
+    return fail("La deadline renseignée n'est pas valide.");
+  }
+
+  const dueAt = parsedDueAt ? parsedDueAt.toISOString() : null;
 
   const assignmentInsert = await admin
     .from("learning_assignments")

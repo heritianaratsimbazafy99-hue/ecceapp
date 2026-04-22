@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AssignmentCommandBoard } from "@/components/assignments/assignment-command-board";
 import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
 import { LiveNotificationFeed } from "@/components/notifications/realtime-notification-center";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
@@ -36,8 +37,8 @@ export default async function DashboardPage() {
         ))}
       </section>
 
-      <section className="content-grid">
-        <div className="panel panel-highlight">
+      <section className="panel panel-highlight">
+        <div>
           <div className="panel-header">
             <h3>Mon engagement pédagogique</h3>
             <p>Un signal vivant construit depuis tes rendus, quiz, deadlines et activités récentes.</p>
@@ -77,47 +78,16 @@ export default async function DashboardPage() {
             </article>
           </div>
         </div>
-
-        <div className="panel">
-          <div className="panel-header">
-            <h3>Travaux et ressources assignés</h3>
-            <p>Les assignations affichées ici viennent de `learning_assignments`.</p>
-          </div>
-
-          {assignments.length ? (
-            <div className="stack-list">
-              {assignments.map((item) => (
-                <article className="timeline-card" key={item.id}>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <p>{item.due}</p>
-                  </div>
-                  <div className="table-actions">
-                    <Badge tone={item.type === "quiz" ? "warning" : "accent"}>{item.type}</Badge>
-                    <Badge tone={item.status === "reviewed" || item.status === "termine" ? "success" : "neutral"}>
-                      {item.status}
-                    </Badge>
-                    {item.type === "quiz" && item.targetId ? (
-                      <Link className="button button-secondary button-small" href={`/quiz/${item.targetId}?assignment=${item.id}`}>
-                        Ouvrir
-                      </Link>
-                    ) : (
-                      <Link className="button button-secondary button-small" href={`/assignments/${item.targetId}`}>
-                        Rendre
-                      </Link>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <strong>Aucune assignation pour l&apos;instant.</strong>
-              <p>Quand un contenu ou un quiz sera attribué, il apparaîtra ici automatiquement.</p>
-            </div>
-          )}
-        </div>
       </section>
+
+      <AssignmentCommandBoard
+        description="Une lecture plus nette des missions en cours, avec urgence, état d’avancement et accès direct à l’action."
+        emptyBody="Quand un contenu ou un quiz sera attribué, il apparaîtra ici automatiquement."
+        emptyTitle="Aucune assignation pour l'instant."
+        items={assignments}
+        mode="learner"
+        title="Mes missions en cours"
+      />
 
       <section className="content-grid">
         <div className="panel">
