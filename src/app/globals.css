@@ -3364,6 +3364,85 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   font-size: 1.35rem;
 }
 
+.messaging-preview-panel,
+.notification-preview-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.messaging-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.messaging-preview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.messaging-preview-stats article {
+  display: grid;
+  gap: 2px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(250, 252, 255, 0.92));
+}
+
+.messaging-preview-stats strong {
+  font-size: 1.45rem;
+}
+
+.messaging-preview-list {
+  display: grid;
+  gap: 12px;
+}
+
+.messaging-preview-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 15px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.messaging-preview-item-topline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.messaging-preview-item p,
+.messaging-preview-footnote p {
+  margin: 6px 0 0;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.messaging-preview-item small,
+.messaging-preview-footnote {
+  color: rgba(15, 23, 42, 0.56);
+}
+
+.messaging-preview-item-meta span {
+  min-width: 34px;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(247, 138, 73, 0.16);
+  color: #9d4d16;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .message-live-banner {
   margin-bottom: 1rem;
   padding: 0.95rem 1rem;
@@ -3764,13 +3843,18 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   }
 
   .notification-command-toolbar,
-  .panel-header-rich {
+  .panel-header-rich,
+  .messaging-preview-head {
     flex-direction: column;
     align-items: flex-start;
   }
 
   .messaging-inline-stats {
     justify-content: flex-start;
+  }
+
+  .messaging-preview-stats {
+    grid-template-columns: 1fr;
   }
 
   .conversation-panel {
@@ -3960,12 +4044,14 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   }
 
   .notification-filter-tabs,
-  .messaging-inline-stats {
+  .messaging-inline-stats,
+  .messaging-preview-stats {
     width: 100%;
   }
 
   .notification-filter-tab,
-  .messaging-inline-stats article {
+  .messaging-inline-stats article,
+  .messaging-preview-item {
     width: 100%;
   }
 

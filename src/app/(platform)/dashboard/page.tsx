@@ -2,16 +2,15 @@ import Link from "next/link";
 
 import { AssignmentCommandBoard } from "@/components/assignments/assignment-command-board";
 import { LearnerDashboardSpotlight } from "@/components/dashboard/learner-dashboard-spotlight";
-import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
-import { LiveNotificationFeed } from "@/components/notifications/realtime-notification-center";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
+import { MessagingPreviewPanel } from "@/components/messages/messaging-preview-panel";
+import { NotificationPreviewPanel } from "@/components/notifications/notification-preview-panel";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getDashboardPageData } from "@/lib/platform-data";
 
 export default async function DashboardPage() {
   const {
-    context,
     profileName,
     cohortLabels,
     metrics,
@@ -63,17 +62,11 @@ export default async function DashboardPage() {
       />
 
       <section className="content-grid dashboard-focus-grid">
-        <div className="panel dashboard-notification-panel">
-          <div className="panel-header">
-            <h3>Notifications récentes</h3>
-            <p>Lecture en direct de la table `notifications` via Supabase Realtime, intégrée à ton rythme quotidien.</p>
-          </div>
-
-          <LiveNotificationFeed
-            initialNotifications={notifications}
-            userId={context.user.id}
-          />
-        </div>
+        <NotificationPreviewPanel
+          description="Le dashboard montre maintenant un aperçu plus léger, et le centre live complet se trouve dans la page dédiée."
+          notifications={notifications}
+          title="Notifications récentes"
+        />
 
         <div className="dashboard-side-stack">
           <div className="panel dashboard-session-panel">
@@ -141,17 +134,13 @@ export default async function DashboardPage() {
 
       {messagingWorkspace ? (
         <section id="coach-messages">
-          <RealtimeConversationHub
-            composerPlaceholder="Pose une question, demande un feedback ou confirme ta prochaine action."
-            contacts={messagingWorkspace.contacts}
+          <MessagingPreviewPanel
             conversations={messagingWorkspace.conversations}
-            description="Ton espace d'échange direct avec les coachs ECCE, mis à jour en temps réel."
-            emptyBody="Choisis un coach pour démarrer un échange en direct depuis ton dashboard."
+            contactsCount={messagingWorkspace.contacts.length}
+            description="L’inbox complète a été déplacée vers une page dédiée pour garder ce dashboard plus rapide et plus lisible."
+            emptyBody="Quand un coach te répondra ou qu’un fil sera lancé, l’aperçu apparaîtra ici."
             emptyTitle="Pas encore de conversation."
-            initialConversationId={messagingWorkspace.initialConversationId}
-            initialMessages={messagingWorkspace.initialMessages}
-            title="Messagerie coach"
-            userId={context.user.id}
+            title="Aperçu de messagerie"
           />
         </section>
       ) : null}

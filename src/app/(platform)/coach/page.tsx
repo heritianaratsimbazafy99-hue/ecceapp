@@ -7,8 +7,8 @@ import {
   ReviewSubmissionForm,
   ScheduleCoachingSessionForm
 } from "@/app/(platform)/coach/forms";
-import { RealtimeConversationHub } from "@/components/messages/realtime-conversation-hub";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
+import { MessagingPreviewPanel } from "@/components/messages/messaging-preview-panel";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
 import { getCoachPageData } from "@/lib/platform-data";
@@ -162,17 +162,13 @@ export default async function CoachPage() {
       </section>
 
       {messagingWorkspace ? (
-        <RealtimeConversationHub
-          composerPlaceholder="Partage un retour, une relance ou une consigne actionnable."
-          contacts={messagingWorkspace.contacts}
+        <MessagingPreviewPanel
           conversations={messagingWorkspace.conversations}
-          description="Messagerie coach/coachee branchée sur Supabase Realtime pour accompagner sans friction."
-          emptyBody="Choisis un coaché puis envoie ton premier message pour démarrer un suivi direct."
+          contactsCount={messagingWorkspace.contacts.length}
+          description="Le cockpit garde maintenant un aperçu léger, et l’inbox complète est accessible dans une page dédiée pour accélérer l’ouverture."
+          emptyBody="Dès qu’un échange existe avec un coaché de ton portefeuille, il apparaîtra ici."
           emptyTitle="Aucune conversation lancée."
-          initialConversationId={messagingWorkspace.initialConversationId}
-          initialMessages={messagingWorkspace.initialMessages}
-          title="Messagerie coach"
-          userId={context.user.id}
+          title="Aperçu de la messagerie coach"
         />
       ) : null}
 

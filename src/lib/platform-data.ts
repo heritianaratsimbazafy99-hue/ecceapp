@@ -760,8 +760,16 @@ async function getMessagingWorkspace(params: {
   userId: string;
   viewerRole: "coach" | "coachee";
   contactOptions: Array<{ id: string; label: string }>;
+  conversationLimit?: number;
+  recentMessageLimit?: number;
+  initialMessageLimit?: number;
+  includeInitialMessages?: boolean;
 }) {
   const admin = createSupabaseAdminClient();
+  const conversationLimit = params.conversationLimit ?? 12;
+  const recentMessageLimit = params.recentMessageLimit ?? 120;
+  const initialMessageLimit = params.initialMessageLimit ?? 60;
+  const includeInitialMessages = params.includeInitialMessages ?? true;
 
   let conversationQuery = admin
     .from("coach_conversations")
@@ -790,7 +798,7 @@ async function getMessagingWorkspace(params: {
     };
   }
 
-  const conversationsResult = await conversationQuery.limit(12);
+  const conversationsResult = await conversationQuery.limit(conversationLimit);
   const conversationRows = (conversationsResult.data ?? []) as ConversationRow[];
   const conversationIds = conversationRows.map((conversation) => conversation.id);
 
@@ -800,7 +808,7 @@ async function getMessagingWorkspace(params: {
         .select("id, conversation_id, sender_id, recipient_id, body, created_at, read_at")
         .in("conversation_id", conversationIds)
         .order("created_at", { ascending: false })
-        .limit(120)).data ?? []) as MessageRow[]
+        .limit(recentMessageLimit)).data ?? []) as MessageRow[]
     : [];
 
   const lastMessageByConversationId = new Map<string, MessageRow>();
@@ -836,7 +844,7 @@ async function getMessagingWorkspace(params: {
   });
 
   const initialConversationId = conversations[0]?.id ?? null;
-  const initialMessages = initialConversationId
+  const initialMessages = includeInitialMessages && initialConversationId
     ? (
         (
           await admin
@@ -844,7 +852,7 @@ async function getMessagingWorkspace(params: {
             .select("id, conversation_id, sender_id, recipient_id, body, created_at, read_at")
             .eq("conversation_id", initialConversationId)
             .order("created_at", { ascending: true })
-            .limit(60)
+            .limit(initialMessageLimit)
         ).data ?? []
       ).map((message) => ({
         id: message.id,
@@ -925,7 +933,11 @@ export async function getMessagesPageData() {
     organizationId,
     userId,
     viewerRole: context.roles.includes("coach") ? "coach" : "coachee",
-    contactOptions
+    contactOptions,
+    conversationLimit: 16,
+    recentMessageLimit: 160,
+    initialMessageLimit: 80,
+    includeInitialMessages: true
   });
 
   const unreadCount = messagingWorkspace.conversations.reduce(
@@ -2281,7 +2293,10 @@ export async function getCoachPageData() {
         organizationId,
         userId: context.user.id,
         viewerRole: "coach",
-        contactOptions: coacheeOptions
+        contactOptions: coacheeOptions,
+        conversationLimit: 4,
+        recentMessageLimit: 40,
+        includeInitialMessages: false
       })
     : null;
 
@@ -2620,7 +2635,10 @@ export async function getDashboardPageData() {
         organizationId,
         userId,
         viewerRole: "coachee",
-        contactOptions: coachContacts
+        contactOptions: coachContacts,
+        conversationLimit: 4,
+        recentMessageLimit: 40,
+        includeInitialMessages: false
       })
     : null;
 
