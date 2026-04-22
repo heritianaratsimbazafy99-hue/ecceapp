@@ -1902,7 +1902,13 @@ export async function getCoachPageData() {
     status: profile.status,
     cohorts: cohortNamesByUserId.get(profile.id) ?? [],
     upcomingSession: sessions.find((session) => session.coachee_id === profile.id)?.starts_at ?? null,
-    engagement: engagementSignalById.get(profile.id) ?? null
+    engagement: engagementSignalById.get(profile.id) ?? null,
+    engagementScore: engagementSignalById.get(profile.id)?.score ?? null,
+    engagementBandLabel: engagementSignalById.get(profile.id)?.bandLabel ?? null,
+    nextFocus: engagementSignalById.get(profile.id)?.nextFocus ?? null,
+    overdueCount: engagementSignalById.get(profile.id)?.overdueCount ?? 0,
+    dueSoonCount: engagementSignalById.get(profile.id)?.dueSoonCount ?? 0,
+    completedCount: engagementSignalById.get(profile.id)?.completedCount ?? 0
   }));
 
   const dueAssignments = ((assignmentsResult.data ?? []) as AssignmentRow[])
@@ -1925,12 +1931,25 @@ export async function getCoachPageData() {
     })
     .filter((assignment) => assignment.targetIds.some((id) => coacheeIds.has(id)))
     .slice(0, 8)
-    .map((assignment) => ({
-      id: assignment.id,
-      title: assignment.title,
-      due: formatDate(assignment.due_at),
-      targetCount: assignment.targetIds.length
-    }));
+    .map((assignment) => {
+      const dueState = getDeadlineState(assignment.due_at);
+      const kind: "quiz" | "contenu" = assignment.quiz_id ? "quiz" : "contenu";
+
+      return {
+        id: assignment.id,
+        title: assignment.title,
+        due: formatDate(assignment.due_at),
+        dueState,
+        statusLabel: getDeadlineStateLabel(dueState),
+        statusTone: getDeadlineStateTone(dueState),
+        targetCount: assignment.targetIds.length,
+        meta: `${assignment.targetIds.length} coaché(s) concernés`,
+        kind,
+        audienceLabel: assignment.cohort_id
+          ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
+          : "Assignation individuelle"
+      };
+    });
 
   const recentQuizResults = ((quizAttemptsResult.data ?? []) as QuizAttemptResultRow[])
     .filter((attempt) => coacheeIds.has(attempt.user_id))

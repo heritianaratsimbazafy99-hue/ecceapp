@@ -2275,6 +2275,238 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   margin-top: auto;
 }
 
+.coach-session-studio {
+  display: grid;
+  grid-template-columns: minmax(0, 1.16fr) minmax(320px, 0.84fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.coach-session-main,
+.coach-session-side,
+.coach-portfolio-shell,
+.coach-roster-card,
+.coach-roster-copy,
+.coach-roster-next,
+.coach-alert-card,
+.coach-session-preview-copy,
+.coach-review-card {
+  display: grid;
+  gap: 18px;
+}
+
+.coach-session-hero,
+.coach-portfolio-hero {
+  overflow: hidden;
+  position: relative;
+  display: grid;
+  gap: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(168, 225, 195, 0.24), transparent 28%),
+    radial-gradient(circle at 16% 18%, rgba(255, 211, 166, 0.28), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 252, 0.94));
+}
+
+.coach-session-hero::after,
+.coach-portfolio-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -70px -80px auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(47, 104, 85, 0.16), transparent 72%);
+  pointer-events: none;
+}
+
+.coach-session-copy,
+.coach-portfolio-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 10px;
+}
+
+.coach-session-copy h3,
+.coach-portfolio-copy h3 {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 2.7rem);
+  line-height: 1.04;
+}
+
+.coach-session-copy p,
+.coach-portfolio-copy p,
+.coach-roster-head p {
+  margin: 0;
+}
+
+.coach-session-metrics,
+.coach-portfolio-metrics,
+.coach-roster-grid,
+.coach-alert-grid,
+.coach-review-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.coach-session-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.coach-portfolio-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.coach-session-metrics article,
+.coach-portfolio-metrics article,
+.coach-roster-kpis div {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.coach-session-metrics strong,
+.coach-portfolio-metrics strong,
+.coach-roster-kpis strong {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.coach-session-metrics span,
+.coach-portfolio-metrics span,
+.coach-roster-kpis span,
+.coach-alert-card small,
+.coach-roster-next small {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.coach-session-panel {
+  background:
+    radial-gradient(circle at top left, rgba(255, 239, 223, 0.34), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(249, 247, 243, 0.96));
+}
+
+.coach-session-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.coach-session-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.coach-session-preview {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 255, 0.9));
+  box-shadow: 0 24px 50px rgba(16, 24, 32, 0.08);
+}
+
+.coach-session-preview-copy strong {
+  font-size: 1.42rem;
+}
+
+.coach-session-preview-copy p,
+.coach-alert-card p,
+.coach-roster-copy p,
+.coach-roster-next p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.coach-session-preview-meta,
+.coach-roster-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.coach-session-preview-meta span,
+.coach-roster-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.06);
+}
+
+.coach-alert-strip,
+.coach-roster-board,
+.coach-ops-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.coach-alert-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.coach-alert-card {
+  padding: 18px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 247, 240, 0.92));
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.coach-roster-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.coach-roster-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.coach-roster-card {
+  min-height: 300px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 244, 238, 0.92));
+}
+
+.coach-roster-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.coach-roster-next {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(16, 24, 32, 0.04);
+}
+
+.coach-ops-list {
+  display: grid;
+  gap: 14px;
+}
+
+.coach-ops-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.coach-review-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .form-error {
   margin: 0;
   font-size: 0.95rem;
@@ -2840,19 +3072,24 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .content-catalog-grid,
   .library-showcase-grid,
   .assignment-board-grid,
+  .coach-alert-grid,
+  .coach-roster-grid,
+  .coach-review-grid,
   .quiz-studio-shell,
   .quiz-briefing-layout,
   .quiz-player-stage,
   .content-studio-shell,
   .content-briefing-layout,
   .assignment-studio-shell,
-  .assignment-planner-layout {
+  .assignment-planner-layout,
+  .coach-session-studio {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .quiz-studio-shell,
   .content-studio-shell,
-  .assignment-studio-shell {
+  .assignment-studio-shell,
+  .coach-session-studio {
     align-items: stretch;
   }
 
@@ -2921,6 +3158,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .library-showcase-grid,
   .assignment-studio-shell,
   .assignment-board-grid,
+  .coach-session-studio,
+  .coach-alert-grid,
+  .coach-roster-grid,
+  .coach-review-grid,
   .quiz-studio-shell,
   .quiz-briefing-layout,
   .quiz-studio-grid,
@@ -2935,7 +3176,11 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .assignment-planner-layout,
   .assignment-studio-hero-metrics,
   .assignment-readiness-grid,
-  .assignment-board-stats {
+  .assignment-board-stats,
+  .coach-session-grid,
+  .coach-session-metrics,
+  .coach-portfolio-metrics,
+  .coach-roster-kpis {
     grid-template-columns: 1fr;
   }
 
@@ -2952,7 +3197,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .quiz-catalog-card-head,
   .quiz-choice-editor-head,
   .library-search-head,
-  .assignment-board-head {
+  .assignment-board-head,
+  .coach-roster-head {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -2986,6 +3232,11 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .quiz-review-card,
   .quiz-question-summary {
     grid-template-columns: 1fr;
+  }
+
+  .coach-ops-card {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .celebration-copy {
