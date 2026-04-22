@@ -1752,8 +1752,8 @@ export async function getLibraryPageData() {
       badge: item.content_type,
       secondaryBadge: item.is_required ? "obligatoire" : null,
       meta: item.estimated_minutes ? `${item.estimated_minutes} min` : "durée libre",
-      href: item.external_url || item.youtube_url || null,
-      hrefLabel: item.external_url || item.youtube_url ? "Ouvrir la ressource" : null,
+      href: `/library/${item.slug}`,
+      hrefLabel: "Explorer la ressource",
       type: "content" as const
     })),
     ...quizzes.map((quiz) => {
@@ -1803,6 +1803,82 @@ export async function getLibraryPageData() {
     resources,
     groups,
     taxonomy
+  };
+}
+
+export async function getLibraryResourcePageData(slug: string) {
+  const context = await requireRole(["admin", "professor", "coach", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const contentResult = await admin
+    .from("content_items")
+    .select(
+      "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+    )
+    .eq("organization_id", organizationId)
+    .eq("slug", slug)
+    .eq("status", "published")
+    .maybeSingle<ContentRow>();
+
+  if (contentResult.error || !contentResult.data) {
+    return null;
+  }
+
+  const content = contentResult.data;
+  const [linkedQuizzesResult, relatedResourcesResult] = await Promise.all([
+    admin
+      .from("quizzes")
+      .select(
+        "id, title, description, kind, attempts_allowed, time_limit_minutes, passing_score, quiz_questions ( id )"
+      )
+      .eq("organization_id", organizationId)
+      .eq("status", "published")
+      .eq("content_item_id", content.id)
+      .order("created_at", { ascending: false })
+      .limit(3),
+    content.category
+      ? admin
+          .from("content_items")
+          .select(
+            "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+          )
+          .eq("organization_id", organizationId)
+          .eq("status", "published")
+          .eq("category", content.category)
+          .neq("id", content.id)
+          .order("created_at", { ascending: false })
+          .limit(3)
+      : Promise.resolve({ data: [] as ContentRow[] })
+  ]);
+
+  const linkedQuizzes = ((linkedQuizzesResult.data ?? []) as Array<
+    QuizRow & {
+      quiz_questions?: Array<{ id: string }>;
+    }
+  >).map((quiz) => ({
+    id: quiz.id,
+    title: quiz.title,
+    description: quiz.description ?? "Quiz lié à cette ressource.",
+    kind: quiz.kind ?? "quiz",
+    questionCount: quiz.quiz_questions?.length ?? 0,
+    timeLimitMinutes: quiz.time_limit_minutes ?? null
+  }));
+
+  const relatedResources = ((relatedResourcesResult.data ?? []) as ContentRow[]).map((item) => ({
+    id: item.id,
+    title: item.title,
+    slug: item.slug,
+    summary: item.summary ?? "Ressource complémentaire dans la même collection.",
+    contentType: item.content_type,
+    estimatedMinutes: item.estimated_minutes
+  }));
+
+  return {
+    context,
+    content,
+    linkedQuizzes,
+    relatedResources
   };
 }
 
@@ -2743,7 +2819,7 @@ export async function getDashboardPageData() {
       content_type: content.content_type,
       is_required: content.is_required,
       meta: `${content.category || "Bibliothèque"} · ${content.content_type}${content.estimated_minutes ? ` · ${content.estimated_minutes} min` : ""}`,
-      href: content.external_url || content.youtube_url || "/library"
+      href: `/library/${content.slug}`
     })),
     recentAttempts: attempts.map((attempt) => {
       const tone: "neutral" | "success" = attempt.status === "submitted" ? "neutral" : "success";

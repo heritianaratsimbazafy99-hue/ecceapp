@@ -163,7 +163,7 @@ export function LibraryExplorer({
                         <Link
                           className="button"
                           href={item.href}
-                          target={item.type === "content" ? "_blank" : undefined}
+                          target={item.href.startsWith("http") ? "_blank" : undefined}
                         >
                           {item.hrefLabel}
                         </Link>
