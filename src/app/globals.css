@@ -2507,6 +2507,192 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.assignment-page-shell,
+.assignment-submission-studio {
+  display: grid;
+  gap: 24px;
+}
+
+.assignment-page-hero,
+.assignment-submission-hero {
+  overflow: hidden;
+  position: relative;
+  display: grid;
+  gap: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 211, 166, 0.28), transparent 28%),
+    radial-gradient(circle at 14% 18%, rgba(47, 104, 85, 0.16), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.94));
+}
+
+.assignment-page-hero::after,
+.assignment-submission-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -70px -80px auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 106, 61, 0.16), transparent 72%);
+  pointer-events: none;
+}
+
+.assignment-page-copy,
+.assignment-submission-copy,
+.assignment-resource-copy,
+.assignment-history-copy,
+.assignment-submission-preview-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.assignment-page-copy h3,
+.assignment-submission-copy h3 {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  line-height: 1.04;
+}
+
+.assignment-page-copy p,
+.assignment-submission-copy p,
+.assignment-resource-copy p,
+.assignment-guidance-list p,
+.assignment-submission-preview-copy p,
+.assignment-submission-preview-note p,
+.assignment-review-summary p {
+  margin: 0;
+}
+
+.assignment-page-metrics,
+.assignment-submission-metrics,
+.assignment-history-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.assignment-page-metrics,
+.assignment-submission-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.assignment-page-metrics article,
+.assignment-submission-metrics article {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.assignment-page-metrics strong,
+.assignment-submission-metrics strong {
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+.assignment-page-metrics span,
+.assignment-submission-metrics span,
+.assignment-submission-preview-note small,
+.assignment-guidance-list small {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.assignment-resource-panel,
+.assignment-guidance-panel,
+.assignment-history-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.assignment-resource-card,
+.assignment-guidance-list,
+.assignment-submission-preview,
+.assignment-submission-main,
+.assignment-submission-side {
+  display: grid;
+  gap: 16px;
+}
+
+.assignment-resource-card {
+  padding: 22px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 244, 238, 0.92));
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.assignment-resource-actions,
+.assignment-history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assignment-guidance-list article,
+.assignment-review-summary,
+.assignment-submission-tips article,
+.assignment-submission-preview-note {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(16, 24, 32, 0.04);
+}
+
+.assignment-history-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.assignment-history-card {
+  min-height: 250px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 244, 238, 0.92));
+}
+
+.assignment-submission-studio {
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+  align-items: start;
+}
+
+.assignment-submission-main {
+  gap: 20px;
+}
+
+.assignment-submission-panel {
+  background:
+    radial-gradient(circle at top left, rgba(255, 239, 223, 0.34), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(249, 247, 243, 0.96));
+}
+
+.assignment-submission-grid,
+.assignment-submission-tips {
+  display: grid;
+  gap: 16px;
+}
+
+.assignment-submission-preview {
+  padding: 22px;
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 255, 0.9));
+  box-shadow: 0 24px 50px rgba(16, 24, 32, 0.08);
+}
+
+.assignment-submission-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.assignment-submission-preview-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.06);
+}
+
 .form-error {
   margin: 0;
   font-size: 0.95rem;
@@ -3075,6 +3261,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .coach-alert-grid,
   .coach-roster-grid,
   .coach-review-grid,
+  .assignment-history-grid,
   .quiz-studio-shell,
   .quiz-briefing-layout,
   .quiz-player-stage,
@@ -3082,14 +3269,16 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .content-briefing-layout,
   .assignment-studio-shell,
   .assignment-planner-layout,
-  .coach-session-studio {
+  .coach-session-studio,
+  .assignment-submission-studio {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .quiz-studio-shell,
   .content-studio-shell,
   .assignment-studio-shell,
-  .coach-session-studio {
+  .coach-session-studio,
+  .assignment-submission-studio {
     align-items: stretch;
   }
 
@@ -3162,6 +3351,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .coach-alert-grid,
   .coach-roster-grid,
   .coach-review-grid,
+  .assignment-history-grid,
+  .assignment-submission-studio,
   .quiz-studio-shell,
   .quiz-briefing-layout,
   .quiz-studio-grid,
@@ -3180,7 +3371,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .coach-session-grid,
   .coach-session-metrics,
   .coach-portfolio-metrics,
-  .coach-roster-kpis {
+  .coach-roster-kpis,
+  .assignment-page-metrics,
+  .assignment-submission-metrics {
     grid-template-columns: 1fr;
   }
 

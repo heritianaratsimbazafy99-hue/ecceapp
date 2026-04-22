@@ -280,6 +280,32 @@ function getDeadlineStateTone(
   }
 }
 
+function getSubmissionStatusLabel(status: string) {
+  switch (status) {
+    case "reviewed":
+      return "corrigé";
+    case "submitted":
+      return "envoyé";
+    case "draft":
+      return "brouillon";
+    default:
+      return status;
+  }
+}
+
+function getSubmissionStatusTone(status: string): "neutral" | "accent" | "warning" | "success" {
+  switch (status) {
+    case "reviewed":
+      return "success";
+    case "submitted":
+      return "accent";
+    case "draft":
+      return "neutral";
+    default:
+      return "warning";
+  }
+}
+
 function formatUserName(user: ProfileRow) {
   return `${user.first_name} ${user.last_name}`.trim();
 }
@@ -2601,12 +2627,18 @@ export async function getAssignmentPageData(assignmentId: string) {
     assignment.content_item_id
       ? admin
           .from("content_items")
-          .select("id, title, content_type, external_url, youtube_url")
+          .select("id, title, summary, category, subcategory, tags, content_type, estimated_minutes, is_required, external_url, youtube_url")
           .eq("id", assignment.content_item_id)
           .maybeSingle<{
             id: string;
             title: string;
+            summary: string | null;
+            category: string | null;
+            subcategory: string | null;
+            tags: string[] | null;
             content_type: string;
+            estimated_minutes: number | null;
+            is_required: boolean;
             external_url: string | null;
             youtube_url: string | null;
           }>()
@@ -2636,16 +2668,41 @@ export async function getAssignmentPageData(assignmentId: string) {
     }
   }
 
+  const latestSubmission = submissions[0] ?? null;
+  const dueState = getDeadlineState(
+    assignment.due_at,
+    latestSubmission?.status === "reviewed"
+  );
+
   return {
     context,
     assignment: {
       id: assignment.id,
       title: assignment.title,
       due: formatDate(assignment.due_at),
+      dueState,
+      dueLabel: getDeadlineStateLabel(dueState),
+      dueTone: getDeadlineStateTone(dueState),
       quizId: assignment.quiz_id,
       contentTitle: contentResult.data?.title ?? "Contenu ECCE",
-      contentMeta: contentResult.data?.content_type ?? "ressource",
-      resourceUrl: contentResult.data?.youtube_url ?? contentResult.data?.external_url ?? null
+      contentSummary:
+        contentResult.data?.summary ??
+        "Ressource assignée dans ton parcours ECCE. Consulte-la puis dépose ici ton rendu pour enclencher la relecture.",
+      contentMeta:
+        [
+          contentResult.data?.category,
+          contentResult.data?.subcategory,
+          contentResult.data?.content_type,
+          contentResult.data?.estimated_minutes ? `${contentResult.data.estimated_minutes} min` : null
+        ]
+          .filter(Boolean)
+          .join(" · ") || "ressource",
+      resourceUrl: contentResult.data?.youtube_url ?? contentResult.data?.external_url ?? null,
+      tags: contentResult.data?.tags ?? [],
+      isRequired: contentResult.data?.is_required ?? false,
+      submissionCount: submissions.length,
+      latestSubmissionStatus: latestSubmission ? getSubmissionStatusLabel(latestSubmission.status) : "pas encore envoyé",
+      latestSubmissionTone: latestSubmission ? getSubmissionStatusTone(latestSubmission.status) : "neutral"
     },
     submissions: await Promise.all(
       submissions.map(async (submission) => ({
@@ -2653,9 +2710,16 @@ export async function getAssignmentPageData(assignmentId: string) {
         title: submission.title,
         notes: submission.notes,
         status: submission.status,
+        statusLabel: getSubmissionStatusLabel(submission.status),
+        statusTone: getSubmissionStatusTone(submission.status),
         submittedAt: formatDate(submission.submitted_at),
         fileUrl: await getSignedSubmissionUrl(submission.storage_path, admin),
-        review: latestReviewBySubmissionId.get(submission.id) ?? null
+        review: latestReviewBySubmissionId.get(submission.id) ?? null,
+        reviewLabel: latestReviewBySubmissionId.get(submission.id)
+          ? latestReviewBySubmissionId.get(submission.id)?.grade !== null
+            ? `Note ${latestReviewBySubmissionId.get(submission.id)?.grade}/100`
+            : "Feedback disponible"
+          : null
       }))
     )
   };
