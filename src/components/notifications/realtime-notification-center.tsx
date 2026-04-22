@@ -15,6 +15,8 @@ type NotificationItem = {
   deeplink?: string | null;
 };
 
+type NotificationFilter = "all" | "unread" | "actionable";
+
 function sortNotifications(items: NotificationItem[]) {
   return [...items].sort(
     (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
@@ -45,6 +47,51 @@ function formatDate(dateString: string) {
   }).format(new Date(dateString));
 }
 
+function formatRelativeTime(dateString: string) {
+  const formatter = new Intl.RelativeTimeFormat("fr-FR", { numeric: "auto" });
+  const deltaInMinutes = Math.round((new Date(dateString).getTime() - Date.now()) / (60 * 1000));
+  const absoluteMinutes = Math.abs(deltaInMinutes);
+
+  if (absoluteMinutes < 60) {
+    return formatter.format(deltaInMinutes, "minute");
+  }
+
+  const deltaInHours = Math.round(deltaInMinutes / 60);
+  if (Math.abs(deltaInHours) < 24) {
+    return formatter.format(deltaInHours, "hour");
+  }
+
+  const deltaInDays = Math.round(deltaInHours / 24);
+  return formatter.format(deltaInDays, "day");
+}
+
+function getNotificationEyebrow(item: NotificationItem) {
+  if (!item.read_at && item.deeplink) {
+    return "Action prioritaire";
+  }
+
+  if (!item.read_at) {
+    return "À lire";
+  }
+
+  if (item.deeplink) {
+    return "Action archivée";
+  }
+
+  return "Information";
+}
+
+function filterNotifications(items: NotificationItem[], filter: NotificationFilter) {
+  switch (filter) {
+    case "unread":
+      return items.filter((item) => !item.read_at);
+    case "actionable":
+      return items.filter((item) => Boolean(item.deeplink));
+    default:
+      return items;
+  }
+}
+
 function useRealtimeNotifications(userId: string, initialNotifications: NotificationItem[] = []) {
   const initialRef = useRef(sortNotifications(initialNotifications));
   const [notifications, setNotifications] = useState(() => initialRef.current);
@@ -68,7 +115,7 @@ function useRealtimeNotifications(userId: string, initialNotifications: Notifica
         .select("id, title, body, created_at, read_at, deeplink")
         .eq("recipient_id", userId)
         .order("created_at", { ascending: false })
-        .limit(8);
+        .limit(24);
 
       if (!isMounted) {
         return;
@@ -133,17 +180,41 @@ function useRealtimeNotifications(userId: string, initialNotifications: Notifica
   );
 
   async function markAsRead(notificationId: string) {
+    const readAt = new Date().toISOString();
+
     setNotifications((current) =>
-      current.map((item) =>
-        item.id === notificationId ? { ...item, read_at: item.read_at ?? new Date().toISOString() } : item
-      )
+      current.map((item) => (item.id === notificationId ? { ...item, read_at: item.read_at ?? readAt } : item))
     );
 
     const supabase = createSupabaseBrowserClient();
     await supabase
       .from("notifications")
-      .update({ read_at: new Date().toISOString() })
+      .update({ read_at: readAt })
       .eq("id", notificationId)
+      .is("read_at", null);
+  }
+
+  async function markAllAsRead() {
+    const unreadIds = notifications.filter((item) => !item.read_at).map((item) => item.id);
+
+    if (!unreadIds.length) {
+      return;
+    }
+
+    const readAt = new Date().toISOString();
+
+    setNotifications((current) =>
+      current.map((item) => ({
+        ...item,
+        read_at: item.read_at ?? readAt
+      }))
+    );
+
+    const supabase = createSupabaseBrowserClient();
+    await supabase
+      .from("notifications")
+      .update({ read_at: readAt })
+      .in("id", unreadIds)
       .is("read_at", null);
   }
 
@@ -151,8 +222,87 @@ function useRealtimeNotifications(userId: string, initialNotifications: Notifica
     notifications,
     unreadCount,
     liveToast,
-    markAsRead
+    markAsRead,
+    markAllAsRead
   };
+}
+
+function NotificationStreamList({
+  items,
+  markAsRead,
+  variant = "compact",
+  onNavigate,
+  emptyBody,
+  emptyTitle
+}: {
+  items: NotificationItem[];
+  markAsRead: (notificationId: string) => Promise<void>;
+  variant?: "compact" | "page";
+  onNavigate?: () => void;
+  emptyTitle: string;
+  emptyBody: string;
+}) {
+  if (!items.length) {
+    return (
+      <div className="empty-state">
+        <strong>{emptyTitle}</strong>
+        <p>{emptyBody}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("notification-feed-list", variant === "page" && "is-page")}>
+      {items.map((item) => (
+        <article
+          className={cn(
+            "notification-feed-card",
+            !item.read_at && "is-unread",
+            item.deeplink && "is-actionable"
+          )}
+          key={item.id}
+        >
+          <div className="notification-feed-card-mark" aria-hidden="true">
+            {item.deeplink ? "->" : "*"}
+          </div>
+          <div className="notification-feed-card-copy">
+            <div className="notification-feed-card-topline">
+              <span>{getNotificationEyebrow(item)}</span>
+              <small>{formatRelativeTime(item.created_at)}</small>
+            </div>
+            <strong>{item.title}</strong>
+            <p>{item.body || "Notification système ECCE"}</p>
+            <small>{formatDate(item.created_at)}</small>
+          </div>
+          <div className="notification-feed-card-actions">
+            {item.deeplink ? (
+              <Link
+                className="button button-secondary button-small"
+                href={item.deeplink}
+                onClick={() => {
+                  if (!item.read_at) {
+                    void markAsRead(item.id);
+                  }
+                  onNavigate?.();
+                }}
+              >
+                Ouvrir
+              </Link>
+            ) : null}
+            {!item.read_at ? (
+              <button
+                className="button button-secondary button-small"
+                onClick={() => void markAsRead(item.id)}
+                type="button"
+              >
+                Marquer lue
+              </button>
+            ) : null}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
 }
 
 export function LiveNotificationFeed({
@@ -162,10 +312,7 @@ export function LiveNotificationFeed({
   initialNotifications: NotificationItem[];
   userId: string;
 }) {
-  const { notifications, liveToast, markAsRead } = useRealtimeNotifications(
-    userId,
-    initialNotifications
-  );
+  const { notifications, liveToast, markAsRead } = useRealtimeNotifications(userId, initialNotifications);
 
   return (
     <div className="stack-list">
@@ -176,53 +323,117 @@ export function LiveNotificationFeed({
         </div>
       ) : null}
 
-      {notifications.length ? (
-        notifications.map((item) => (
-          <article className="message-card message-card-rich" key={item.id}>
-            <span className={cn("message-dot", item.read_at && "is-muted")} />
-            <div className="message-copy">
-              <strong>{item.title}</strong>
-              <p>{item.body || "Notification système ECCE"}</p>
-              <small>{formatDate(item.created_at)}</small>
-            </div>
-            <div className="table-actions">
-              {item.deeplink ? (
-                <Link
-                  className="button button-secondary button-small"
-                  href={item.deeplink}
-                  onClick={() => {
-                    if (!item.read_at) {
-                      void markAsRead(item.id);
-                    }
-                  }}
-                >
-                  Ouvrir
-                </Link>
-              ) : null}
-              {!item.read_at ? (
-                <button
-                  className="button button-secondary button-small"
-                  onClick={() => void markAsRead(item.id)}
-                  type="button"
-                >
-                  Marquer lue
-                </button>
-              ) : null}
-            </div>
-          </article>
-        ))
-      ) : (
-        <div className="empty-state">
-          <strong>Aucune notification.</strong>
-          <p>Les alertes de deadline et de feedback s&apos;afficheront ici en temps réel.</p>
-        </div>
-      )}
+      <NotificationStreamList
+        emptyBody="Les alertes de deadline et de feedback s'afficheront ici en temps réel."
+        emptyTitle="Aucune notification."
+        items={notifications}
+        markAsRead={markAsRead}
+      />
     </div>
   );
 }
 
+export function NotificationCommandCenter({
+  initialNotifications,
+  userId
+}: {
+  initialNotifications: NotificationItem[];
+  userId: string;
+}) {
+  const { notifications, unreadCount, liveToast, markAsRead, markAllAsRead } = useRealtimeNotifications(
+    userId,
+    initialNotifications
+  );
+  const [filter, setFilter] = useState<NotificationFilter>("all");
+
+  const actionableCount = useMemo(
+    () => notifications.filter((item) => Boolean(item.deeplink)).length,
+    [notifications]
+  );
+  const filteredNotifications = useMemo(
+    () => filterNotifications(notifications, filter),
+    [filter, notifications]
+  );
+
+  return (
+    <section className="notification-command-center">
+      <div className="notification-command-hero">
+        <div>
+          <span className="eyebrow">Centre live ECCE</span>
+          <h3>Une seule vue pour ce qui mérite vraiment ton attention.</h3>
+          <p>
+            Les deadlines, messages, feedbacks et événements importants arrivent ici en direct, avec
+            un tri plus clair entre lecture rapide et actions à ouvrir.
+          </p>
+        </div>
+
+        <div className="notification-command-stats">
+          <article>
+            <strong>{notifications.length}</strong>
+            <small>événements récents</small>
+          </article>
+          <article>
+            <strong>{unreadCount}</strong>
+            <small>encore à lire</small>
+          </article>
+          <article>
+            <strong>{actionableCount}</strong>
+            <small>ouvrent une action</small>
+          </article>
+        </div>
+      </div>
+
+      {liveToast ? (
+        <div className="notification-live-banner notification-live-banner-page">
+          <strong>Nouvel événement détecté</strong>
+          <p>{liveToast.title}</p>
+        </div>
+      ) : null}
+
+      <div className="notification-command-toolbar">
+        <div className="notification-filter-tabs">
+          {[
+            { id: "all", label: "Tout", count: notifications.length },
+            { id: "unread", label: "Non lues", count: unreadCount },
+            { id: "actionable", label: "À ouvrir", count: actionableCount }
+          ].map((item) => (
+            <button
+              className={cn("notification-filter-tab", filter === item.id && "is-active")}
+              key={item.id}
+              onClick={() => setFilter(item.id as NotificationFilter)}
+              type="button"
+            >
+              <span>{item.label}</span>
+              <strong>{item.count}</strong>
+            </button>
+          ))}
+        </div>
+
+        <div className="table-actions">
+          <button
+            className="button button-secondary button-small"
+            disabled={!unreadCount}
+            onClick={() => void markAllAsRead()}
+            type="button"
+          >
+            Tout marquer comme lu
+          </button>
+        </div>
+      </div>
+
+      <NotificationStreamList
+        emptyBody="Quand une nouvelle activité ECCE arrivera, elle sera affichée ici automatiquement."
+        emptyTitle="Aucune notification pour ce filtre."
+        items={filteredNotifications}
+        markAsRead={markAsRead}
+        variant="page"
+      />
+    </section>
+  );
+}
+
 export function NotificationBell({ userId }: { userId: string }) {
-  const { notifications, unreadCount, liveToast, markAsRead } = useRealtimeNotifications(userId);
+  const { notifications, unreadCount, liveToast, markAsRead, markAllAsRead } = useRealtimeNotifications(userId);
   const [open, setOpen] = useState(false);
 
   return (
@@ -247,53 +458,32 @@ export function NotificationBell({ userId }: { userId: string }) {
       {open ? (
         <div className="notification-panel">
           <div className="notification-panel-head">
-            <strong>Flux live</strong>
-            <span>{unreadCount} non lue(s)</span>
+            <div>
+              <strong>Flux live</strong>
+              <span>{unreadCount} non lue(s)</span>
+            </div>
+            <div className="table-actions">
+              <button
+                className="inline-link button-reset"
+                disabled={!unreadCount}
+                onClick={() => void markAllAsRead()}
+                type="button"
+              >
+                Tout lire
+              </button>
+              <Link className="inline-link" href="/notifications" onClick={() => setOpen(false)}>
+                Voir tout
+              </Link>
+            </div>
           </div>
 
-          {notifications.length ? (
-            <div className="notification-panel-list">
-              {notifications.slice(0, 6).map((item) => (
-                <article className="notification-panel-item" key={item.id}>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <p>{item.body || "Notification système ECCE"}</p>
-                    <small>{formatDate(item.created_at)}</small>
-                  </div>
-                  <div className="table-actions">
-                    {item.deeplink ? (
-                      <Link
-                        className="inline-link"
-                        href={item.deeplink}
-                        onClick={() => {
-                          if (!item.read_at) {
-                            void markAsRead(item.id);
-                          }
-                          setOpen(false);
-                        }}
-                      >
-                        Ouvrir
-                      </Link>
-                    ) : null}
-                    {!item.read_at ? (
-                      <button
-                        className="inline-link button-reset"
-                        onClick={() => void markAsRead(item.id)}
-                        type="button"
-                      >
-                        Marquer lue
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <strong>Aucune notification.</strong>
-              <p>Les prochains événements arriveront ici en temps réel.</p>
-            </div>
-          )}
+          <NotificationStreamList
+            emptyBody="Les prochains événements arriveront ici en temps réel."
+            emptyTitle="Aucune notification."
+            items={notifications.slice(0, 6)}
+            markAsRead={markAsRead}
+            onNavigate={() => setOpen(false)}
+          />
         </div>
       ) : null}
     </div>

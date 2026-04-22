@@ -67,7 +67,7 @@ export async function sendConversationMessageAction(
 
   let coachId: string | null = null;
   let coacheeId: string | null = null;
-  let recipientRoute = "/dashboard";
+  let recipientRoute = "/messages";
 
   if (senderIsCoach && recipientRoles.has("coachee")) {
     const canAccess = await coachCanAccessCoachee({
@@ -82,7 +82,7 @@ export async function sendConversationMessageAction(
 
     coachId = context.user.id;
     coacheeId = recipientId;
-    recipientRoute = "/dashboard";
+    recipientRoute = "/messages";
   } else if (senderIsCoachee && recipientRoles.has("coach")) {
     const assignedCoachIds = await getAssignedCoachIdsForCoachee({
       organizationId,
@@ -95,7 +95,7 @@ export async function sendConversationMessageAction(
 
     coachId = recipientId;
     coacheeId = context.user.id;
-    recipientRoute = "/coach";
+    recipientRoute = "/messages";
   } else {
     return fail(initialError);
   }
@@ -148,6 +148,7 @@ export async function sendConversationMessageAction(
 
   revalidatePath("/coach");
   revalidatePath("/dashboard");
+  revalidatePath("/messages");
 
   return ok({
     success: "Message envoyé.",

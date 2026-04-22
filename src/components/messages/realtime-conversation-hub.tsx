@@ -54,6 +54,7 @@ type MessagingHubProps = {
   composerPlaceholder: string;
   emptyTitle: string;
   emptyBody: string;
+  variant?: "embedded" | "page";
 };
 
 const initialState: MessageActionState = {};
@@ -112,10 +113,7 @@ function normalizeMessage(
   };
 }
 
-async function fetchConversationRecord(
-  supabase: SupabaseClient,
-  conversationId: string
-) {
+async function fetchConversationRecord(supabase: SupabaseClient, conversationId: string) {
   const result = await supabase
     .from("coach_conversations")
     .select("id, coach_id, coachee_id, updated_at")
@@ -138,16 +136,11 @@ async function fetchConversationMessages(
     .limit(60);
 
   return sortMessages(
-    ((data ?? [])
-      .map((item) => normalizeMessage(item, userId))
-      .filter(Boolean) as ConversationMessage[])
+    ((data ?? []).map((item) => normalizeMessage(item, userId)).filter(Boolean) as ConversationMessage[])
   );
 }
 
-function upsertConversationSummary(
-  current: ConversationSummary[],
-  next: ConversationSummary
-) {
+function upsertConversationSummary(current: ConversationSummary[], next: ConversationSummary) {
   const map = new Map(current.map((item) => [item.id, item]));
   const existing = map.get(next.id);
 
@@ -180,7 +173,8 @@ export function RealtimeConversationHub({
   description,
   composerPlaceholder,
   emptyTitle,
-  emptyBody
+  emptyBody,
+  variant = "embedded"
 }: MessagingHubProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const contactMap = useMemo(
@@ -192,13 +186,12 @@ export function RealtimeConversationHub({
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, ConversationMessage[]>>(
     () => (initialConversationId ? { [initialConversationId]: initialMessages } : {})
   );
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(
-    initialConversationId
-  );
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(initialConversationId);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string>(
     initialConversations[0]?.counterpartId ?? contacts[0]?.id ?? ""
   );
   const [liveBanner, setLiveBanner] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const bannerTimeoutRef = useRef<number | null>(null);
@@ -207,12 +200,33 @@ export function RealtimeConversationHub({
     `coach-messages:${userId}:${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
   );
 
+  const filteredConversations = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+
+    if (!needle) {
+      return conversations;
+    }
+
+    return conversations.filter((conversation) =>
+      `${conversation.counterpartName} ${conversation.lastMessagePreview ?? ""}`.toLowerCase().includes(needle)
+    );
+  }, [conversations, query]);
+
   const selectedConversation = conversations.find((item) => item.id === selectedConversationId) ?? null;
   const currentRecipientId = selectedConversation?.counterpartId ?? selectedRecipientId;
   const currentMessages = useMemo(
     () => (selectedConversationId ? messagesByConversation[selectedConversationId] ?? [] : []),
     [messagesByConversation, selectedConversationId]
   );
+  const unreadConversationCount = useMemo(
+    () => conversations.filter((conversation) => conversation.unreadCount > 0).length,
+    [conversations]
+  );
+  const unreadMessageCount = useMemo(
+    () => conversations.reduce((total, conversation) => total + conversation.unreadCount, 0),
+    [conversations]
+  );
+  const latestTouchpoint = conversations[0]?.lastMessageAt ?? null;
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversationId;
@@ -247,9 +261,7 @@ export function RealtimeConversationHub({
       const readAt = new Date().toISOString();
 
       setConversations((current) =>
-        current.map((item) =>
-          item.id === selectedConversationId ? { ...item, unreadCount: 0 } : item
-        )
+        current.map((item) => (item.id === selectedConversationId ? { ...item, unreadCount: 0 } : item))
       );
       setMessagesByConversation((current) => {
         const items = current[selectedConversationId] ?? [];
@@ -328,10 +340,7 @@ export function RealtimeConversationHub({
 
           setMessagesByConversation((current) => ({
             ...current,
-            [nextMessage.conversationId]: sortMessages([
-              ...(current[nextMessage.conversationId] ?? []),
-              nextMessage
-            ])
+            [nextMessage.conversationId]: sortMessages([...(current[nextMessage.conversationId] ?? []), nextMessage])
           }));
 
           const conversation = await fetchConversationRecord(supabase, nextMessage.conversationId);
@@ -405,10 +414,7 @@ export function RealtimeConversationHub({
 
           setMessagesByConversation((current) => ({
             ...current,
-            [nextMessage.conversationId]: sortMessages([
-              ...(current[nextMessage.conversationId] ?? []),
-              nextMessage
-            ])
+            [nextMessage.conversationId]: sortMessages([...(current[nextMessage.conversationId] ?? []), nextMessage])
           }));
 
           const conversation = await fetchConversationRecord(supabase, nextMessage.conversationId);
@@ -486,19 +492,39 @@ export function RealtimeConversationHub({
   }, [contactMap, supabase, userId]);
 
   return (
-    <section className="panel panel-messaging">
-      <div className="panel-header">
-        <h3>{title}</h3>
-        <p>{description}</p>
+    <section className={cn("panel panel-messaging", variant === "page" && "panel-messaging-page")}>
+      <div className="panel-header panel-header-rich">
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+
+        <div className="messaging-inline-stats">
+          <article>
+            <strong>{conversations.length}</strong>
+            <small>conversations</small>
+          </article>
+          <article>
+            <strong>{unreadMessageCount}</strong>
+            <small>messages non lus</small>
+          </article>
+          <article>
+            <strong>{contacts.length}</strong>
+            <small>contacts actifs</small>
+          </article>
+        </div>
       </div>
 
       {liveBanner ? <div className="message-live-banner">{liveBanner}</div> : null}
 
       {contacts.length ? (
-        <div className="conversation-shell">
+        <div className={cn("conversation-shell", variant === "page" && "is-page")}>
           <aside className="conversation-sidebar">
             <div className="conversation-sidebar-head">
-              <strong>Conversations</strong>
+              <div>
+                <strong>Inbox ECCE</strong>
+                <p>{unreadConversationCount ? `${unreadConversationCount} fils attendent une réponse.` : "Tout est synchronisé."}</p>
+              </div>
               <button
                 className="inline-link button-reset"
                 onClick={() => setSelectedConversationId(null)}
@@ -508,14 +534,34 @@ export function RealtimeConversationHub({
               </button>
             </div>
 
-            {conversations.length ? (
+            <div className="conversation-sidebar-tools">
+              <label className="conversation-search">
+                <span>Filtrer</span>
+                <input
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Nom, message, relance..."
+                  type="search"
+                  value={query}
+                />
+              </label>
+
+              <div className="conversation-sidebar-summary">
+                <article>
+                  <strong>{latestTouchpoint ? formatThreadDate(latestTouchpoint) : "Aucun échange"}</strong>
+                  <small>dernier signal reçu</small>
+                </article>
+                <article>
+                  <strong>{variant === "page" ? "Temps réel actif" : "Live"}</strong>
+                  <small>Supabase Realtime synchronise les réponses</small>
+                </article>
+              </div>
+            </div>
+
+            {filteredConversations.length ? (
               <div className="conversation-list">
-                {conversations.map((conversation) => (
+                {filteredConversations.map((conversation) => (
                   <button
-                    className={cn(
-                      "conversation-list-item",
-                      selectedConversationId === conversation.id && "is-active"
-                    )}
+                    className={cn("conversation-list-item", selectedConversationId === conversation.id && "is-active")}
                     key={conversation.id}
                     onClick={() => {
                       setSelectedConversationId(conversation.id);
@@ -523,8 +569,11 @@ export function RealtimeConversationHub({
                     }}
                     type="button"
                   >
-                    <div>
-                      <strong>{conversation.counterpartName}</strong>
+                    <div className="conversation-list-item-copy">
+                      <div className="conversation-list-item-topline">
+                        <strong>{conversation.counterpartName}</strong>
+                        {conversation.unreadCount ? <span className="conversation-state-pill">A repondre</span> : null}
+                      </div>
                       <p>{conversation.lastMessagePreview || "Aucun message pour l'instant."}</p>
                     </div>
                     <div className="conversation-meta">
@@ -538,8 +587,8 @@ export function RealtimeConversationHub({
               </div>
             ) : (
               <div className="empty-state empty-state-compact">
-                <strong>{emptyTitle}</strong>
-                <p>{emptyBody}</p>
+                <strong>Aucun fil pour cette recherche.</strong>
+                <p>Change le filtre ou démarre une nouvelle conversation.</p>
               </div>
             )}
           </aside>
@@ -547,26 +596,50 @@ export function RealtimeConversationHub({
           <div className="conversation-panel">
             <div className="conversation-panel-head">
               <div>
+                <span className="eyebrow">Fil en direct</span>
                 <strong>
-                  {selectedConversation?.counterpartName ??
-                    contactMap.get(selectedRecipientId) ??
-                    "Nouvelle conversation"}
+                  {selectedConversation?.counterpartName ?? contactMap.get(selectedRecipientId) ?? "Nouvelle conversation"}
                 </strong>
                 <p>
                   {selectedConversation
-                    ? "Messagerie en direct via Supabase Realtime."
-                    : "Choisis un contact puis envoie ton premier message."}
+                    ? "Les messages lus et non lus se synchronisent automatiquement sur ce fil."
+                    : "Choisis un contact puis envoie ton premier message pour lancer le suivi."}
                 </p>
               </div>
+
+              <div className="conversation-panel-badges">
+                <span className="conversation-presence">Realtime actif</span>
+                {selectedConversation ? (
+                  <span className="conversation-presence is-accent">
+                    {selectedConversation.unreadCount ? `${selectedConversation.unreadCount} non lu(s)` : "fil a jour"}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="conversation-stage">
+              <article>
+                <strong>{selectedConversation ? "Dernier échange" : "Nouveau fil"}</strong>
+                <p>
+                  {selectedConversation
+                    ? `${formatThreadDate(selectedConversation.lastMessageAt)} · ${selectedConversation.lastMessagePreview || "conversation prête"}`
+                    : "Sélectionne un contact pour démarrer une conversation utile et contextualisée."}
+                </p>
+              </article>
+              <article>
+                <strong>Cadence</strong>
+                <p>
+                  {currentMessages.length
+                    ? `${currentMessages.length} message(s) visibles dans ce fil.`
+                    : "Le fil est vide pour le moment, mais prêt à recevoir ton prochain message."}
+                </p>
+              </article>
             </div>
 
             <div className="conversation-messages" ref={scrollerRef}>
               {selectedConversationId && currentMessages.length ? (
                 currentMessages.map((message) => (
-                  <article
-                    className={cn("message-bubble", message.mine && "is-mine")}
-                    key={message.id}
-                  >
+                  <article className={cn("message-bubble", message.mine && "is-mine")} key={message.id}>
                     <p>{message.body}</p>
                     <small>
                       {formatThreadDate(message.createdAt)}
@@ -585,45 +658,45 @@ export function RealtimeConversationHub({
             <form action={formAction} className="conversation-composer">
               <input name="recipient_id" type="hidden" value={currentRecipientId} />
 
-              {!selectedConversationId ? (
-                <label>
-                  Destinataire
-                  <select
-                    name="recipient_id"
-                    onChange={(event) => setSelectedRecipientId(event.target.value)}
-                    required
-                    value={selectedRecipientId}
-                  >
-                    <option disabled value="">
-                      Choisir un contact
-                    </option>
-                    {contacts.map((contact) => (
-                      <option key={contact.id} value={contact.id}>
-                        {contact.label}
+              <div className="conversation-composer-grid">
+                {!selectedConversationId ? (
+                  <label className="conversation-composer-field">
+                    <span>Destinataire</span>
+                    <select
+                      name="recipient_id"
+                      onChange={(event) => setSelectedRecipientId(event.target.value)}
+                      required
+                      value={selectedRecipientId}
+                    >
+                      <option disabled value="">
+                        Choisir un contact
                       </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+                      {contacts.map((contact) => (
+                        <option key={contact.id} value={contact.id}>
+                          {contact.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
 
-              <label>
-                Message
-                <textarea
-                  name="body"
-                  placeholder={composerPlaceholder}
-                  ref={textareaRef}
-                  required
-                  rows={4}
-                />
-              </label>
+                <label className="conversation-composer-field is-wide">
+                  <span>Message</span>
+                  <textarea
+                    name="body"
+                    placeholder={composerPlaceholder}
+                    ref={textareaRef}
+                    required
+                    rows={variant === "page" ? 5 : 4}
+                  />
+                </label>
+              </div>
 
               {state.error ? <p className="form-error">{state.error}</p> : null}
               {state.success ? <p className="form-success">{state.success}</p> : null}
 
               <div className="conversation-composer-actions">
-                <span className="form-helper">
-                  Les nouveaux messages arrivent ici sans recharger la page.
-                </span>
+                <span className="form-helper">Les nouveaux messages arrivent ici sans recharger la page.</span>
                 <MessageSubmitButton />
               </div>
             </form>

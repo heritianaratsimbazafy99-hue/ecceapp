@@ -866,6 +866,143 @@ async function getMessagingWorkspace(params: {
   };
 }
 
+export async function getMessagesPageData() {
+  const context = await requireRole(["coach", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const userId = context.user.id;
+
+  let contactOptions: Array<{ id: string; label: string }> = [];
+
+  if (context.roles.includes("coach")) {
+    const scope = await getCoachAssignmentScope({
+      organizationId,
+      coachId: userId
+    });
+
+    if (scope.coacheeIds.length) {
+      const profilesResult = await admin
+        .from("profiles")
+        .select("id, first_name, last_name, status")
+        .eq("organization_id", organizationId)
+        .in("id", scope.coacheeIds)
+        .order("first_name", { ascending: true });
+
+      contactOptions = ((profilesResult.data ?? []) as ProfileRow[]).map((profile) => ({
+        id: profile.id,
+        label: formatUserName(profile)
+      }));
+    }
+  } else {
+    const cohortMembersResult = await admin
+      .from("cohort_members")
+      .select("cohort_id")
+      .eq("user_id", userId);
+
+    const cohortIds = (cohortMembersResult.data ?? []).map((item) => item.cohort_id);
+    const coachIds = await getAssignedCoachIdsForCoachee({
+      organizationId,
+      coacheeId: userId,
+      cohortIds
+    });
+
+    if (coachIds.length) {
+      const profilesResult = await admin
+        .from("profiles")
+        .select("id, first_name, last_name, status")
+        .eq("organization_id", organizationId)
+        .in("id", coachIds)
+        .order("first_name", { ascending: true });
+
+      contactOptions = ((profilesResult.data ?? []) as ProfileRow[]).map((profile) => ({
+        id: profile.id,
+        label: formatUserName(profile)
+      }));
+    }
+  }
+
+  const messagingWorkspace = await getMessagingWorkspace({
+    organizationId,
+    userId,
+    viewerRole: context.roles.includes("coach") ? "coach" : "coachee",
+    contactOptions
+  });
+
+  const unreadCount = messagingWorkspace.conversations.reduce(
+    (total, conversation) => total + conversation.unreadCount,
+    0
+  );
+  const latestConversation = messagingWorkspace.conversations[0] ?? null;
+
+  return {
+    context,
+    messagingWorkspace,
+    metrics: [
+      {
+        label: "Conversations actives",
+        value: messagingWorkspace.conversations.length.toString(),
+        delta: latestConversation
+          ? `Dernier échange · ${formatDate(latestConversation.lastMessageAt)}`
+          : "Aucun échange démarré"
+      },
+      {
+        label: "Contacts disponibles",
+        value: messagingWorkspace.contacts.length.toString(),
+        delta: context.roles.includes("coach")
+          ? "Portefeuille coach visible ici"
+          : "Coachs rattachés à ton parcours"
+      },
+      {
+        label: "Messages non lus",
+        value: unreadCount.toString(),
+        delta: unreadCount ? "Des réponses attendent ton attention" : "Inbox à jour"
+      }
+    ]
+  };
+}
+
+export async function getNotificationsPageData() {
+  const context = await requireRole(["admin", "professor", "coach", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const userId = context.user.id;
+
+  const notificationsResult = await admin
+    .from("notifications")
+    .select("id, title, body, created_at, read_at, deeplink")
+    .eq("organization_id", organizationId)
+    .eq("recipient_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  const notifications = (notificationsResult.data ?? []) as NotificationRow[];
+  const unreadCount = notifications.filter((item) => !item.read_at).length;
+  const actionableCount = notifications.filter((item) => Boolean(item.deeplink)).length;
+  const todayCount = notifications.filter((item) => isWithinDays(item.created_at, 1)).length;
+
+  return {
+    context,
+    notifications,
+    metrics: [
+      {
+        label: "Notifications non lues",
+        value: unreadCount.toString(),
+        delta: unreadCount ? "Le centre live mérite un passage" : "Tout est à jour"
+      },
+      {
+        label: "Actions directes",
+        value: actionableCount.toString(),
+        delta: "Notifications avec lien d'ouverture"
+      },
+      {
+        label: "Activité aujourd'hui",
+        value: todayCount.toString(),
+        delta: notifications[0] ? `Dernière alerte · ${formatDate(notifications[0].created_at)}` : "Aucun événement récent"
+      }
+    ]
+  };
+}
+
 export async function getAdminPageData() {
   const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();
