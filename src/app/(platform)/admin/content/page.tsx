@@ -1,4 +1,6 @@
-import { CreateContentForm } from "@/app/(platform)/admin/forms";
+import Link from "next/link";
+
+import { ContentStudioComposer } from "@/components/content/content-studio-composer";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +13,7 @@ export default async function AdminContentPage() {
     <div className="page-shell">
       <PlatformTopbar
         title="Studio contenus"
-        description="Un espace dédié pour créer des ressources plus sereinement et enrichir la bibliothèque ECCE."
+        description="Refonte du flux éditorial : cadrage, preview live, qualité éditoriale et catalogue de ressources plus lisible."
       />
 
       <section className="metric-grid metric-grid-compact">
@@ -20,49 +22,25 @@ export default async function AdminContentPage() {
         ))}
       </section>
 
-      <section className="content-grid">
-        <div className="panel panel-highlight">
-          <div className="panel-header">
-            <h3>Créer un contenu</h3>
-            <p>Concentre-toi sur la ressource, pas sur le bruit administratif.</p>
-          </div>
-          <CreateContentForm />
-        </div>
-
-        <div className="panel">
-          <div className="panel-header">
-            <h3>Cadre éditorial</h3>
-            <p>Un bon contenu ECCE est clair, actionnable et relié à une progression pédagogique.</p>
-          </div>
-
-          <div className="stack-list">
-            <article className="panel panel-subtle">
-              <strong>1. Intention pédagogique</strong>
-              <p>Explique en une phrase ce que le coaché saura faire après la ressource.</p>
-            </article>
-            <article className="panel panel-subtle">
-              <strong>2. Format utile</strong>
-              <p>Choisis `document`, `video`, `youtube` ou `template` selon le meilleur usage réel.</p>
-            </article>
-            <article className="panel panel-subtle">
-              <strong>3. Publication maîtrisée</strong>
-              <p>Passe à `published` uniquement quand le résumé, les liens et la taxonomie sont prêts.</p>
-            </article>
-          </div>
-        </div>
-      </section>
+      <ContentStudioComposer />
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Catalogue des contenus</h3>
-          <p>Vue centralisée des ressources déjà créées, avec statut et niveau de priorité.</p>
+          <h3>Catalogue éditorial</h3>
+          <p>Chaque ressource se lit maintenant comme une fiche de diffusion, avec aperçu, niveau de priorité et accès rapide.</p>
         </div>
 
         {contents.length ? (
-          <div className="stack-list">
+          <div className="content-catalog-grid">
             {contents.map((content) => (
-              <article className="list-row list-row-stretch" key={content.id}>
+              <article className="collection-card content-catalog-card" key={content.id}>
                 <div>
+                  <div className="tag-row">
+                    <Badge tone={content.status === "published" ? "success" : "neutral"}>{content.status}</Badge>
+                    <Badge tone="accent">{content.content_type}</Badge>
+                    {content.is_required ? <Badge tone="warning">obligatoire</Badge> : null}
+                  </div>
+
                   <strong>{content.title}</strong>
                   <p>
                     {content.category || "Sans catégorie"} · {content.content_type} ·{" "}
@@ -72,8 +50,17 @@ export default async function AdminContentPage() {
                 </div>
 
                 <div className="table-actions">
-                  {content.is_required ? <Badge tone="accent">obligatoire</Badge> : null}
-                  <Badge tone={content.status === "published" ? "success" : "neutral"}>{content.status}</Badge>
+                  {content.external_url || content.youtube_url ? (
+                    <Link
+                      className="button button-secondary button-small"
+                      href={content.youtube_url || content.external_url || "#"}
+                      target="_blank"
+                    >
+                      Ouvrir
+                    </Link>
+                  ) : (
+                    <span className="form-hint">Aucun lien rattaché</span>
+                  )}
                 </div>
               </article>
             ))}
