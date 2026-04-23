@@ -97,7 +97,7 @@ export default async function ProfessorPage({
           <h3>Une lecture professor enfin construite pour agir, pas seulement pour observer.</h3>
           <p>
             {focusCohort
-              ? `${focusCohort.name} concentre actuellement le point d&apos;attention principal. ${focusCohort.statusLabel}.`
+              ? `${focusCohort.name} concentre actuellement le point d'attention principal. ${focusCohort.statusLabel}.`
               : "Le cockpit se remplira dès que des cohortes et des apprenants seront visibles dans ECCE."}
           </p>
 

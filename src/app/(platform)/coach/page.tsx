@@ -35,6 +35,16 @@ export default async function CoachPage() {
       <PlatformTopbar
         title="Cockpit coach"
         description="Portefeuille coach, relances, sessions, corrections et échanges dans une interface de pilotage plus premium."
+        actions={
+          <>
+            <Link className="button button-secondary" href="/coach/reviews">
+              Corrections
+            </Link>
+            <Link className="button" href="/agenda">
+              Agenda
+            </Link>
+          </>
+        }
       />
 
       <section className="metric-grid">
@@ -126,9 +136,15 @@ export default async function CoachPage() {
       />
 
       <section className="panel">
-        <div className="panel-header">
-          <h3>Réponses textuelles à corriger</h3>
-          <p>Les tentatives avec réponses ouvertes arrivent ici pour correction manuelle et calcul du score final.</p>
+        <div className="panel-header-rich">
+          <div>
+            <h3>Réponses textuelles à corriger</h3>
+            <p>Les tentatives avec réponses ouvertes arrivent ici pour correction manuelle et calcul du score final.</p>
+          </div>
+
+          <Link className="button button-secondary button-small" href="/coach/reviews?lane=quiz">
+            Centre de corrections
+          </Link>
         </div>
 
         {textReviewQueue.length ? (
@@ -173,9 +189,15 @@ export default async function CoachPage() {
       ) : null}
 
       <section className="panel">
-        <div className="panel-header">
-          <h3>Soumissions a relire</h3>
-          <p>Le coach peut relire, noter et envoyer un feedback sans quitter ce cockpit.</p>
+        <div className="panel-header-rich">
+          <div>
+            <h3>Soumissions à relire</h3>
+            <p>Le coach peut relire, noter et envoyer un feedback sans quitter ce cockpit.</p>
+          </div>
+
+          <Link className="button button-secondary button-small" href="/coach/reviews?lane=submissions">
+            Ouvrir la file dédiée
+          </Link>
         </div>
 
         {reviewQueue.length ? (

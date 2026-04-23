@@ -1,11 +1,13 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 type PlatformTopbarProps = {
+  actions?: ReactNode;
   title: string;
   description: string;
 };
 
-export function PlatformTopbar({ title, description }: PlatformTopbarProps) {
+export function PlatformTopbar({ actions, title, description }: PlatformTopbarProps) {
   return (
     <header className="platform-topbar">
       <div>
@@ -15,9 +17,16 @@ export function PlatformTopbar({ title, description }: PlatformTopbarProps) {
       </div>
 
       <div className="topbar-actions">
-        <Link className="button button-secondary" href="/auth/sign-in">
-          Configurer l&apos;accès
-        </Link>
+        {actions ?? (
+          <>
+            <Link className="button button-secondary" href="/notifications">
+              Notifications
+            </Link>
+            <Link className="button" href="/account">
+              Mon compte
+            </Link>
+          </>
+        )}
       </div>
     </header>
   );

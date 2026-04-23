@@ -17,6 +17,7 @@ const navigation = [
   { href: "/notifications", label: "Notifications", shortLabel: "NT", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/account", label: "Mon compte", shortLabel: "MC", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/coach", label: "Espace coach", shortLabel: "CO", match: "exact", roles: ["admin", "coach"] },
+  { href: "/coach/reviews", label: "Corrections", shortLabel: "CR", match: "prefix", roles: ["admin", "coach"] },
   { href: "/admin", label: "Hub admin", shortLabel: "AD", match: "exact", roles: ["admin"] },
   { href: "/admin/audit", label: "Audit", shortLabel: "AU", match: "prefix", roles: ["admin"] },
   { href: "/admin/users", label: "Utilisateurs", shortLabel: "US", match: "prefix", roles: ["admin"] },
