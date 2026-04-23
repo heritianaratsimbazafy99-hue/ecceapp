@@ -254,6 +254,58 @@ function formatDate(dateString: string | null) {
   }).format(new Date(dateString));
 }
 
+function formatDateCompact(dateString: string | null) {
+  if (!dateString) {
+    return "Date non définie";
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short",
+    day: "numeric",
+    month: "long"
+  }).format(new Date(dateString));
+}
+
+function formatTimeOnly(dateString: string | null) {
+  if (!dateString) {
+    return "Heure libre";
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    timeStyle: "short"
+  }).format(new Date(dateString));
+}
+
+function getRelativeDayLabel(dateString: string | null, now = Date.now()) {
+  if (!dateString) {
+    return "À planifier";
+  }
+
+  const targetDate = new Date(dateString);
+  const today = new Date(now);
+  const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const targetStart = new Date(
+    targetDate.getFullYear(),
+    targetDate.getMonth(),
+    targetDate.getDate()
+  ).getTime();
+  const diffDays = Math.round((targetStart - dayStart) / (24 * 60 * 60 * 1000));
+
+  if (diffDays === 0) {
+    return "Aujourd'hui";
+  }
+
+  if (diffDays === 1) {
+    return "Demain";
+  }
+
+  if (diffDays === -1) {
+    return "Hier";
+  }
+
+  return formatDateCompact(dateString);
+}
+
 function getDeadlineState(dateString: string | null | undefined, completed = false, now = Date.now()) {
   if (completed) {
     return "done" as const;
@@ -3021,6 +3073,435 @@ export async function getCoachPageData() {
       date: formatDate(session.starts_at),
       cohort: session.cohort_id ? (cohortNameById.get(session.cohort_id) ?? null) : null
     }))
+  };
+}
+
+export async function getAgendaPageData() {
+  const context = await requireRole(["admin", "coach", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const userId = context.user.id;
+  const now = Date.now();
+  const rangeStartIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const rangeEndIso = new Date(now + 45 * 24 * 60 * 60 * 1000).toISOString();
+
+  const coachScope =
+    context.role === "coach"
+      ? await getCoachAssignmentScope({
+          organizationId,
+          coachId: userId
+        })
+      : null;
+
+  const directCohortRowsResult = await admin.from("cohort_members").select("user_id, cohort_id");
+  const allCohortRows = (directCohortRowsResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
+  const ownCohortIds =
+    context.role === "coachee"
+      ? allCohortRows.filter((item) => item.user_id === userId).map((item) => item.cohort_id)
+      : [];
+  const coachIdsForLearner =
+    context.role === "coachee"
+      ? await getAssignedCoachIdsForCoachee({
+          organizationId,
+          coacheeId: userId,
+          cohortIds: ownCohortIds
+        })
+      : [];
+
+  const scopedProfileIds =
+    context.role === "coach"
+      ? Array.from(new Set([userId, ...(coachScope?.coacheeIds ?? [])]))
+      : context.role === "coachee"
+        ? Array.from(new Set([userId, ...coachIdsForLearner]))
+        : [];
+
+  const [profilesResult, coachRolesResult, coacheeRolesResult, cohortsResult] = await Promise.all([
+    (() => {
+      const query = admin
+        .from("profiles")
+        .select("id, first_name, last_name, status")
+        .eq("organization_id", organizationId)
+        .order("created_at", { ascending: false });
+
+      if (context.role === "admin") {
+        return query;
+      }
+
+      return scopedProfileIds.length
+        ? query.in("id", scopedProfileIds)
+        : Promise.resolve({ data: [] as ProfileRow[] });
+    })(),
+    (() => {
+      const query = admin
+        .from("user_roles")
+        .select("user_id, role")
+        .eq("organization_id", organizationId)
+        .eq("role", "coach");
+
+      if (context.role === "coach") {
+        return query.eq("user_id", userId);
+      }
+
+      if (context.role === "coachee") {
+        return coachIdsForLearner.length
+          ? query.in("user_id", coachIdsForLearner)
+          : Promise.resolve({ data: [] as Array<{ user_id: string; role: AppRole }> });
+      }
+
+      return query;
+    })(),
+    (() => {
+      const query = admin
+        .from("user_roles")
+        .select("user_id, role")
+        .eq("organization_id", organizationId)
+        .eq("role", "coachee");
+
+      if (context.role === "admin") {
+        return query;
+      }
+
+      return coachScope?.coacheeIds?.length
+        ? query.in("user_id", coachScope.coacheeIds)
+        : context.role === "coachee"
+          ? query.eq("user_id", userId)
+          : Promise.resolve({ data: [] as Array<{ user_id: string; role: AppRole }> });
+    })(),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name")
+  ]);
+
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const coachIds = new Set((coachRolesResult.data ?? []).map((item) => item.user_id));
+  const coacheeIds = new Set((coacheeRolesResult.data ?? []).map((item) => item.user_id));
+  const cohortRows = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const cohortNameById = new Map(cohortRows.map((cohort) => [cohort.id, cohort.name]));
+
+  const visibleCohortRows =
+    context.role === "admin"
+      ? allCohortRows
+      : context.role === "coach"
+        ? allCohortRows.filter(
+            (item) =>
+              (coachScope?.coacheeIds ?? []).includes(item.user_id) ||
+              (coachScope?.cohortIds ?? []).includes(item.cohort_id)
+          )
+        : allCohortRows.filter((item) => item.user_id === userId);
+
+  const cohortCountById = visibleCohortRows.reduce((map, item) => {
+    map.set(item.cohort_id, (map.get(item.cohort_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const cohortLabelsByUserId = visibleCohortRows.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    const cohortName = cohortNameById.get(item.cohort_id);
+
+    if (cohortName) {
+      current.push(cohortName);
+    }
+
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+
+  const [sessionsResult, assignmentsResult] = await Promise.all([
+    (() => {
+      const query = admin
+        .from("coaching_sessions")
+        .select("id, coach_id, coachee_id, cohort_id, starts_at, ends_at, status, video_link")
+        .eq("organization_id", organizationId)
+        .gte("starts_at", rangeStartIso)
+        .lte("starts_at", rangeEndIso)
+        .order("starts_at", { ascending: true })
+        .limit(80);
+
+      if (context.role === "admin") {
+        return query;
+      }
+
+      if (context.role === "coach") {
+        return query.eq("coach_id", userId);
+      }
+
+      return query.eq("coachee_id", userId);
+    })(),
+    (() => {
+      const baseQuery = admin
+        .from("learning_assignments")
+        .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+        .eq("organization_id", organizationId)
+        .not("due_at", "is", null)
+        .gte("due_at", rangeStartIso)
+        .order("due_at", { ascending: true })
+        .limit(80);
+
+      if (context.role === "admin") {
+        return baseQuery;
+      }
+
+      if (context.role === "coach") {
+        const scopedCoacheeIds = coachScope?.coacheeIds ?? [];
+        const scopedCohortIds = coachScope?.cohortIds ?? [];
+
+        return Promise.all([
+          scopedCoacheeIds.length
+            ? admin
+                .from("learning_assignments")
+                .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+                .eq("organization_id", organizationId)
+                .in("assigned_user_id", scopedCoacheeIds)
+                .not("due_at", "is", null)
+                .gte("due_at", rangeStartIso)
+                .order("due_at", { ascending: true })
+                .limit(80)
+            : Promise.resolve({ data: [] as AssignmentRow[] }),
+          scopedCohortIds.length
+            ? admin
+                .from("learning_assignments")
+                .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+                .eq("organization_id", organizationId)
+                .in("cohort_id", scopedCohortIds)
+                .not("due_at", "is", null)
+                .gte("due_at", rangeStartIso)
+                .order("due_at", { ascending: true })
+                .limit(80)
+            : Promise.resolve({ data: [] as AssignmentRow[] })
+        ]).then(([directRows, cohortRows]) => ({
+          data: Array.from(
+            new Map(
+              [
+                ...((directRows.data ?? []) as AssignmentRow[]),
+                ...((cohortRows.data ?? []) as AssignmentRow[])
+              ].map((item) => [item.id, item])
+            ).values()
+          )
+        }));
+      }
+
+      return Promise.all([
+        admin
+          .from("learning_assignments")
+          .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+          .eq("organization_id", organizationId)
+          .eq("assigned_user_id", userId)
+          .not("due_at", "is", null)
+          .gte("due_at", rangeStartIso)
+          .order("due_at", { ascending: true })
+          .limit(80),
+        ownCohortIds.length
+          ? admin
+              .from("learning_assignments")
+              .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+              .eq("organization_id", organizationId)
+              .in("cohort_id", ownCohortIds)
+              .not("due_at", "is", null)
+              .gte("due_at", rangeStartIso)
+              .order("due_at", { ascending: true })
+              .limit(80)
+          : Promise.resolve({ data: [] as AssignmentRow[] })
+      ]).then(([directRows, cohortRows]) => ({
+        data: Array.from(
+          new Map(
+            [
+              ...((directRows.data ?? []) as AssignmentRow[]),
+              ...((cohortRows.data ?? []) as AssignmentRow[])
+            ].map((item) => [item.id, item])
+          ).values()
+        )
+      }));
+    })()
+  ]);
+
+  const sessions = (sessionsResult.data ?? []) as Array<{
+    id: string;
+    coach_id: string;
+    coachee_id: string;
+    cohort_id: string | null;
+    starts_at: string;
+    ends_at: string | null;
+    status: string;
+    video_link: string | null;
+  }>;
+  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+
+  const contentIds = Array.from(new Set(assignments.map((assignment) => assignment.content_item_id).filter(Boolean))) as string[];
+  const quizIds = Array.from(new Set(assignments.map((assignment) => assignment.quiz_id).filter(Boolean))) as string[];
+
+  const [contentsResult, quizzesResult] = await Promise.all([
+    contentIds.length
+      ? admin.from("content_items").select("id, title, slug").in("id", contentIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string; slug: string }> }),
+    quizIds.length
+      ? admin.from("quizzes").select("id, title").in("id", quizIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string }> })
+  ]);
+
+  const contentById = new Map(((contentsResult.data ?? []) as Array<{ id: string; title: string; slug: string }>).map((item) => [item.id, item]));
+  const quizById = new Map(((quizzesResult.data ?? []) as Array<{ id: string; title: string }>).map((item) => [item.id, item]));
+
+  const showPlanner = context.role === "admin" || context.role === "coach";
+  const coachOptions = showPlanner
+    ? profiles
+        .filter((profile) => coachIds.has(profile.id) || (context.role === "coach" && profile.id === userId))
+        .map((profile) => ({
+          id: profile.id,
+          label: formatUserName(profile)
+        }))
+    : [];
+  const coacheeOptions = showPlanner
+    ? profiles
+        .filter((profile) => coacheeIds.has(profile.id))
+        .map((profile) => ({
+          id: profile.id,
+          label: formatUserName(profile),
+          cohortIds: visibleCohortRows.filter((item) => item.user_id === profile.id).map((item) => item.cohort_id),
+          cohortLabels: cohortLabelsByUserId.get(profile.id) ?? []
+        }))
+    : [];
+  const cohortOptions = showPlanner
+    ? cohortRows
+        .filter((cohort) => {
+          if (context.role === "admin") {
+            return true;
+          }
+
+          return (coachScope?.cohortIds ?? []).includes(cohort.id);
+        })
+        .map((cohort) => ({
+          id: cohort.id,
+          label: cohort.name,
+          memberCount: cohortCountById.get(cohort.id) ?? 0
+        }))
+    : [];
+
+  const sessionEvents = sessions.map((session) => {
+    const coacheeName = profileById.get(session.coachee_id)
+      ? formatUserName(profileById.get(session.coachee_id)!)
+      : "Coaché inconnu";
+    const coachName = profileById.get(session.coach_id)
+      ? formatUserName(profileById.get(session.coach_id)!)
+      : "Coach inconnu";
+    const relativeDay = getRelativeDayLabel(session.starts_at, now);
+
+    return {
+      id: `session-${session.id}`,
+      type: "session" as const,
+      timestamp: new Date(session.starts_at).getTime(),
+      dayLabel: relativeDay,
+      dateLabel: formatDateCompact(session.starts_at),
+      timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
+      title: context.role === "coachee" ? "Séance de coaching" : coacheeName,
+      subtitle:
+        context.role === "admin"
+          ? `Coach · ${coachName}`
+          : session.cohort_id
+            ? `Cohorte · ${cohortNameById.get(session.cohort_id) ?? "groupe"}`
+            : "Séance individuelle",
+      statusLabel: session.status,
+      statusTone:
+        session.status === "completed"
+          ? ("success" as const)
+          : session.status === "cancelled"
+            ? ("warning" as const)
+            : ("accent" as const),
+      audienceLabel:
+        context.role === "coachee"
+          ? coachName
+          : session.cohort_id
+            ? `${cohortNameById.get(session.cohort_id) ?? "Cohorte"}`
+            : "1:1",
+      href: session.video_link || null,
+      ctaLabel: session.video_link ? "Rejoindre" : null,
+      isOverdue: new Date(session.starts_at).getTime() < now && session.status === "planned",
+      isToday: relativeDay === "Aujourd'hui"
+    };
+  });
+
+  const deadlineEvents = assignments.map((assignment) => {
+    const dueState = getDeadlineState(assignment.due_at, false, now);
+    const dueTimestamp = assignment.due_at ? new Date(assignment.due_at).getTime() : now;
+    const content = assignment.content_item_id ? contentById.get(assignment.content_item_id) : null;
+    const quiz = assignment.quiz_id ? quizById.get(assignment.quiz_id) : null;
+
+    return {
+      id: `deadline-${assignment.id}`,
+      type: "deadline" as const,
+      timestamp: dueTimestamp,
+      dayLabel: getRelativeDayLabel(assignment.due_at, now),
+      dateLabel: formatDateCompact(assignment.due_at),
+      timeLabel: formatTimeOnly(assignment.due_at),
+      title: assignment.title,
+      subtitle:
+        assignment.quiz_id
+          ? `Quiz · ${quiz?.title ?? "quiz"}`
+          : `Contenu · ${content?.title ?? "ressource"}`,
+      statusLabel: getDeadlineStateLabel(dueState),
+      statusTone: getDeadlineStateTone(dueState),
+      audienceLabel:
+        context.role === "coachee"
+          ? assignment.cohort_id
+            ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
+            : "Assignation individuelle"
+          : assignment.assigned_user_id
+            ? profileById.get(assignment.assigned_user_id)
+              ? formatUserName(profileById.get(assignment.assigned_user_id)!)
+              : "Coaché"
+            : `Cohorte · ${cohortNameById.get(assignment.cohort_id ?? "") ?? "groupe"}`,
+      href: assignment.quiz_id
+        ? `/quiz/${assignment.quiz_id}${context.role === "coachee" ? `?assignment=${assignment.id}` : ""}`
+        : context.role === "coachee"
+          ? `/assignments/${assignment.id}`
+          : content
+            ? `/library/${content.slug}`
+            : null,
+      ctaLabel: assignment.quiz_id ? "Ouvrir le quiz" : context.role === "coachee" ? "Ouvrir l'assignation" : "Ouvrir la ressource",
+      isOverdue: dueState === "overdue",
+      isToday: getRelativeDayLabel(assignment.due_at, now) === "Aujourd'hui"
+    };
+  });
+
+  const events = [...sessionEvents, ...deadlineEvents].sort((left, right) => left.timestamp - right.timestamp);
+  const upcomingSessions = sessionEvents.filter((event) => event.timestamp >= now && event.statusLabel === "planned").length;
+  const weekEnd = now + 7 * 24 * 60 * 60 * 1000;
+  const dueThisWeek = deadlineEvents.filter((event) => event.timestamp >= now && event.timestamp <= weekEnd).length;
+  const overdueCount = deadlineEvents.filter((event) => event.isOverdue).length;
+  const todayCount = events.filter((event) => event.isToday).length;
+  const nextEvent = events.find((event) => event.timestamp >= now) ?? events[0] ?? null;
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Événements à venir",
+        value: events.filter((event) => event.timestamp >= now).length.toString(),
+        delta: nextEvent ? `Prochain temps fort · ${nextEvent.title}` : "Aucun événement planifié"
+      },
+      {
+        label: "Séances prévues",
+        value: upcomingSessions.toString(),
+        delta: context.role === "coachee" ? "Tes créneaux coach remontent ici" : "Planning de coaching unifié"
+      },
+      {
+        label: "Deadlines 7 jours",
+        value: dueThisWeek.toString(),
+        delta: overdueCount ? `${overdueCount} en retard` : "Aucun retard détecté"
+      },
+      {
+        label: "Aujourd'hui",
+        value: todayCount.toString(),
+        delta: todayCount ? "Journée déjà chargée" : "Rien de bloquant aujourd'hui"
+      }
+    ],
+    events,
+    planner:
+      showPlanner
+        ? {
+            allowCoachSelection: context.role === "admin",
+            coachOptions,
+            cohortOptions,
+            coacheeOptions
+          }
+        : null
   };
 }
 
