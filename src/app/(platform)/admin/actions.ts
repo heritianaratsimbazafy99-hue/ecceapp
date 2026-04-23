@@ -14,6 +14,7 @@ export type AdminActionState = {
 };
 
 const VALID_ROLES: AppRole[] = ["admin", "professor", "coach", "coachee"];
+const VALID_MEMBERSHIP_STATUSES = ["invited", "active", "suspended"] as const;
 const VALID_CONTENT_TYPES = [
   "document",
   "video",
@@ -231,6 +232,7 @@ export async function createUserAction(
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/users");
   revalidatePath("/coach");
   revalidatePath("/admin/learners");
 
@@ -269,11 +271,158 @@ export async function assignRoleAction(
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/users");
   revalidatePath("/coach");
   revalidatePath("/dashboard");
   revalidatePath("/admin/learners");
 
   return ok(`Rôle ${role} attribué.`);
+}
+
+export async function updateUserProfileAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const userId = String(formData.get("user_id") ?? "").trim();
+  const firstName = String(formData.get("first_name") ?? "").trim();
+  const lastName = String(formData.get("last_name") ?? "").trim();
+  const timezone = String(formData.get("timezone") ?? "").trim();
+  const bio = String(formData.get("bio") ?? "").trim();
+
+  if (!userId || !firstName || !lastName || !timezone) {
+    return fail("Le prénom, le nom et le fuseau sont obligatoires.");
+  }
+
+  const profileResult = await admin
+    .from("profiles")
+    .select("id, first_name, last_name")
+    .eq("organization_id", organizationId)
+    .eq("id", userId)
+    .maybeSingle<{ id: string; first_name: string; last_name: string }>();
+
+  if (profileResult.error || !profileResult.data) {
+    return fail("Utilisateur introuvable dans cette organisation.");
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update({
+      first_name: firstName,
+      last_name: lastName,
+      timezone,
+      bio: bio || null
+    })
+    .eq("organization_id", organizationId)
+    .eq("id", userId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/users");
+  revalidatePath("/coach");
+  revalidatePath("/dashboard");
+  revalidatePath("/messages");
+  revalidatePath("/notifications");
+  revalidatePath("/agenda");
+
+  return ok(`Le profil de ${firstName} ${lastName} a été mis à jour.`);
+}
+
+export async function updateUserStatusAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const userId = String(formData.get("user_id") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+
+  if (!userId || !VALID_MEMBERSHIP_STATUSES.includes(status as (typeof VALID_MEMBERSHIP_STATUSES)[number])) {
+    return fail("Le statut demandé n'est pas valide.");
+  }
+
+  const profileResult = await admin
+    .from("profiles")
+    .select("id, first_name, last_name, status, user_roles(role)")
+    .eq("organization_id", organizationId)
+    .eq("id", userId)
+    .maybeSingle<{
+      id: string;
+      first_name: string;
+      last_name: string;
+      status: (typeof VALID_MEMBERSHIP_STATUSES)[number];
+      user_roles: Array<{ role: AppRole }>;
+    }>();
+
+  if (profileResult.error || !profileResult.data) {
+    return fail("Utilisateur introuvable dans cette organisation.");
+  }
+
+  const targetProfile = profileResult.data;
+  const nextStatus = status as (typeof VALID_MEMBERSHIP_STATUSES)[number];
+  const isSelf = targetProfile.id === context.user.id;
+  const targetRoles = (targetProfile.user_roles ?? []).map((item) => item.role);
+
+  if (targetProfile.status === nextStatus) {
+    return ok(`Le statut de ${targetProfile.first_name} ${targetProfile.last_name} était déjà ${nextStatus}.`);
+  }
+
+  if (isSelf) {
+    return fail("Modifie le statut de ton propre compte ailleurs pour éviter de te bloquer dans l'admin.");
+  }
+
+  if (targetRoles.includes("admin") && targetProfile.status === "active" && nextStatus !== "active") {
+    const activeAdminsResult = await admin
+      .from("profiles")
+      .select("id, user_roles!inner(role)")
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      .eq("user_roles.role", "admin");
+
+    if ((activeAdminsResult.data?.length ?? 0) <= 1) {
+      return fail("Impossible de désactiver le dernier admin actif de l'organisation.");
+    }
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update({ status: nextStatus })
+    .eq("organization_id", organizationId)
+    .eq("id", userId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/users");
+  revalidatePath("/coach");
+  revalidatePath("/dashboard");
+  revalidatePath("/messages");
+  revalidatePath("/notifications");
+  revalidatePath("/agenda");
+  revalidatePath("/auth/sign-in");
+  revalidatePath("/auth/onboarding");
+
+  const displayName = `${targetProfile.first_name} ${targetProfile.last_name}`.trim();
+
+  if (nextStatus === "active") {
+    return ok(`${displayName} est maintenant actif(ve) sur ECCE.`);
+  }
+
+  if (nextStatus === "invited") {
+    return ok(`${displayName} repassera par l'onboarding à la prochaine connexion.`);
+  }
+
+  return ok(`L'accès de ${displayName} est suspendu jusqu'à réactivation.`);
 }
 
 export async function assignCoacheeToCohortAction(

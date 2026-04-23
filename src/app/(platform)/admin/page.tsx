@@ -21,6 +21,11 @@ function roleTone(role: string) {
 
 const studios = [
   {
+    href: "/admin/users",
+    title: "Utilisateurs & accès",
+    description: "Piloter les profils, les statuts invited/active/suspended et les rôles depuis une vue dédiée."
+  },
+  {
     href: "/admin/learners",
     title: "Parcours coachés",
     description: "Relances, cohortes, portefeuilles coach et visibilité pédagogique."
@@ -87,10 +92,16 @@ export default async function AdminPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-header">
-            <h3>Derniers utilisateurs</h3>
-            <p>Accès rapide aux profils actifs, aux rôles et à la montée en charge de l&apos;organisation.</p>
-          </div>
+        <div className="panel-header">
+          <h3>Derniers utilisateurs</h3>
+          <p>Accès rapide aux profils actifs, aux rôles et à la montée en charge de l&apos;organisation.</p>
+        </div>
+
+        <div className="topbar-actions">
+          <Link className="button button-secondary button-small" href="/admin/users">
+            Ouvrir le workspace utilisateurs
+          </Link>
+        </div>
 
           {users.length ? (
             <div className="stack-list">

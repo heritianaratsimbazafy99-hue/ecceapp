@@ -5,10 +5,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ProfileRow = {
   id: string;
+  bio?: string | null;
   first_name: string;
   last_name: string;
   status: "invited" | "active" | "suspended";
   created_at?: string;
+  timezone?: string | null;
   user_roles?: Array<{ role: AppRole }>;
 };
 
@@ -202,6 +204,9 @@ type SessionAnalyticsRow = {
   starts_at: string;
   status: string;
 };
+
+const VALID_ROLES: AppRole[] = ["admin", "professor", "coach", "coachee"];
+const VALID_MEMBERSHIP_STATUSES: ProfileRow["status"][] = ["invited", "active", "suspended"];
 
 type EngagementTrend = "up" | "steady" | "down";
 type EngagementBand = "strong" | "watch" | "risk";
@@ -1465,6 +1470,252 @@ export async function getAdminOverviewPageData() {
       id: user.id,
       label: `${user.name} · ${user.email}`
     }))
+  };
+}
+
+export async function getAdminUsersPageData(filters?: {
+  search?: string;
+  role?: string;
+  status?: string;
+  userId?: string;
+}) {
+  const context = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const search = String(filters?.search ?? "").trim();
+  const normalizedSearch = search.toLowerCase();
+  const roleFilter = VALID_ROLES.includes(String(filters?.role ?? "").trim() as AppRole)
+    ? (String(filters?.role ?? "").trim() as AppRole)
+    : "all";
+  const statusFilter = VALID_MEMBERSHIP_STATUSES.includes(
+    String(filters?.status ?? "").trim() as ProfileRow["status"]
+  )
+    ? (String(filters?.status ?? "").trim() as ProfileRow["status"])
+    : "all";
+  const requestedUserId = String(filters?.userId ?? "").trim();
+
+  const [
+    profilesResult,
+    authUsersResult,
+    cohortsResult,
+    cohortMembersResult,
+    coachAssignmentsResult,
+    assignmentsResult,
+    notificationPreferencesResult
+  ] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, bio, timezone, status, created_at, user_roles(role)")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 200
+    }),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin.from("cohort_members").select("user_id, cohort_id"),
+    admin
+      .from("coach_assignments")
+      .select("coach_id, coachee_id, cohort_id")
+      .eq("organization_id", organizationId),
+    admin
+      .from("learning_assignments")
+      .select("assigned_user_id, cohort_id")
+      .eq("organization_id", organizationId),
+    admin
+      .from("user_notification_preferences")
+      .select(
+        `
+          user_id,
+          allow_learning_notifications,
+          allow_message_notifications,
+          allow_review_notifications,
+          allow_reward_notifications,
+          allow_session_notifications
+        `
+      )
+      .eq("organization_id", organizationId)
+  ]);
+
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const authUsers = authUsersResult.data?.users ?? [];
+  const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const profileIds = new Set(profiles.map((profile) => profile.id));
+  const cohortNameById = new Map(cohorts.map((cohort) => [cohort.id, cohort.name]));
+  const cohortIds = new Set(cohorts.map((cohort) => cohort.id));
+  const cohortMembers = ((cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>).filter(
+    (item) => profileIds.has(item.user_id) && cohortIds.has(item.cohort_id)
+  );
+  const coachAssignments = (coachAssignmentsResult.data ?? []) as Array<{
+    coach_id: string;
+    coachee_id: string | null;
+    cohort_id: string | null;
+  }>;
+  const assignments = (assignmentsResult.data ?? []) as Array<{
+    assigned_user_id: string | null;
+    cohort_id: string | null;
+  }>;
+  const notificationPreferences = (notificationPreferencesResult.data ?? []) as Array<{
+    user_id: string;
+    allow_learning_notifications: boolean;
+    allow_message_notifications: boolean;
+    allow_review_notifications: boolean;
+    allow_reward_notifications: boolean;
+    allow_session_notifications: boolean;
+  }>;
+
+  const emailByUserId = new Map(authUsers.map((item) => [item.id, item.email ?? "email indisponible"]));
+  const cohortNamesByUserId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    const cohortName = cohortNameById.get(item.cohort_id);
+    if (cohortName) {
+      current.push(cohortName);
+    }
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const cohortMemberIdsByCohortId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.cohort_id) ?? [];
+    current.push(item.user_id);
+    map.set(item.cohort_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const directAssignmentsCountByUserId = assignments.reduce((map, item) => {
+    if (!item.assigned_user_id) {
+      return map;
+    }
+
+    map.set(item.assigned_user_id, (map.get(item.assigned_user_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const cohortAssignmentsCountByUserId = assignments.reduce((map, item) => {
+    if (!item.cohort_id) {
+      return map;
+    }
+
+    for (const userId of cohortMemberIdsByCohortId.get(item.cohort_id) ?? []) {
+      map.set(userId, (map.get(userId) ?? 0) + 1);
+    }
+
+    return map;
+  }, new Map<string, number>());
+  const directCoacheeCountByCoachId = coachAssignments.reduce((map, item) => {
+    if (!item.coachee_id) {
+      return map;
+    }
+
+    map.set(item.coach_id, (map.get(item.coach_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const cohortPortfolioCountByCoachId = coachAssignments.reduce((map, item) => {
+    if (!item.cohort_id) {
+      return map;
+    }
+
+    map.set(item.coach_id, (map.get(item.coach_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const notificationEnabledCountByUserId = new Map(
+    notificationPreferences.map(
+      (preference) =>
+        [
+          preference.user_id,
+          [
+            preference.allow_learning_notifications,
+            preference.allow_message_notifications,
+            preference.allow_review_notifications,
+            preference.allow_reward_notifications,
+            preference.allow_session_notifications
+          ].filter(Boolean).length
+        ] as const
+    )
+  );
+
+  const users = profiles
+    .map((profile) => {
+      const roles = (profile.user_roles ?? []).map((item) => item.role);
+      const directAssignmentsCount = directAssignmentsCountByUserId.get(profile.id) ?? 0;
+      const cohortAssignmentsCount = cohortAssignmentsCountByUserId.get(profile.id) ?? 0;
+      const directCoacheeCount = directCoacheeCountByCoachId.get(profile.id) ?? 0;
+      const cohortPortfolioCount = cohortPortfolioCountByCoachId.get(profile.id) ?? 0;
+
+      return {
+        id: profile.id,
+        name: formatUserName(profile),
+        firstName: profile.first_name,
+        lastName: profile.last_name,
+        email: emailByUserId.get(profile.id) ?? "email indisponible",
+        bio: profile.bio ?? "",
+        timezone: profile.timezone ?? "Indian/Antananarivo",
+        status: profile.status,
+        roles,
+        createdAtLabel: profile.created_at ? formatDate(profile.created_at) : "date indisponible",
+        cohorts: cohortNamesByUserId.get(profile.id) ?? [],
+        directAssignmentsCount,
+        cohortAssignmentsCount,
+        assignmentLoad: directAssignmentsCount + cohortAssignmentsCount,
+        directCoacheeCount,
+        cohortPortfolioCount,
+        enabledNotificationCount: notificationEnabledCountByUserId.get(profile.id) ?? 5,
+        isCurrentUser: profile.id === context.user.id
+      };
+    })
+    .filter((user) => {
+      const matchesRole = roleFilter === "all" ? true : user.roles.includes(roleFilter);
+      const matchesStatus = statusFilter === "all" ? true : user.status === statusFilter;
+      const matchesSearch = normalizedSearch
+        ? `${user.name} ${user.email}`.toLowerCase().includes(normalizedSearch)
+        : true;
+
+      return matchesRole && matchesStatus && matchesSearch;
+    });
+
+  const activeAdminCount = profiles.filter(
+    (profile) => profile.status === "active" && (profile.user_roles ?? []).some((item) => item.role === "admin")
+  ).length;
+  const selectedUser =
+    users.find((user) => user.id === requestedUserId) ??
+    users[0] ??
+    null;
+
+  return {
+    context,
+    filters: {
+      search,
+      role: roleFilter,
+      status: statusFilter
+    },
+    metrics: [
+      {
+        label: "Profils ECCE",
+        value: profiles.length.toString(),
+        delta: `${users.length} visible(s) dans la vue actuelle`
+      },
+      {
+        label: "Invitations en attente",
+        value: profiles.filter((profile) => profile.status === "invited").length.toString(),
+        delta: `${profiles.filter((profile) => profile.status === "active").length} accès actifs`
+      },
+      {
+        label: "Comptes suspendus",
+        value: profiles.filter((profile) => profile.status === "suspended").length.toString(),
+        delta: "Accès temporairement bloqués"
+      },
+      {
+        label: "Admins actifs",
+        value: activeAdminCount.toString(),
+        delta: `${profiles.filter((profile) => (profile.user_roles ?? []).some((item) => item.role === "coach")).length} coach(s) configurés`
+      }
+    ],
+    users,
+    selectedUser: selectedUser
+      ? {
+          ...selectedUser,
+          availableRoles: VALID_ROLES.filter((role) => !selectedUser.roles.includes(role)),
+          isLastActiveAdmin:
+            selectedUser.roles.includes("admin") && selectedUser.status === "active" && activeAdminCount === 1
+        }
+      : null
   };
 }
 

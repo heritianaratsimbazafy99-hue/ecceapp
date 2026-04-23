@@ -18,6 +18,7 @@ const navigation = [
   { href: "/account", label: "Mon compte", shortLabel: "MC", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/coach", label: "Espace coach", shortLabel: "CO", match: "exact", roles: ["admin", "coach"] },
   { href: "/admin", label: "Hub admin", shortLabel: "AD", match: "exact", roles: ["admin"] },
+  { href: "/admin/users", label: "Utilisateurs", shortLabel: "US", match: "prefix", roles: ["admin"] },
   { href: "/admin/learners", label: "Parcours coachés", shortLabel: "PC", match: "prefix", roles: ["admin"] },
   { href: "/admin/settings", label: "Réglages", shortLabel: "RG", match: "prefix", roles: ["admin"] },
   { href: "/admin/programs", label: "Studio parcours", shortLabel: "SP", match: "prefix", roles: ["admin"] },
