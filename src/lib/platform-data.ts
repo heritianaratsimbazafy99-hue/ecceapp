@@ -131,6 +131,8 @@ type QuizAttemptResultRow = {
     | null;
 };
 
+type BadgeTone = "neutral" | "accent" | "warning" | "success";
+
 type SubmissionRow = {
   id: string;
   assignment_id: string | null;
@@ -1420,83 +1422,421 @@ export async function getAdminPageData() {
 }
 
 export async function getAdminOverviewPageData() {
-  const context = await requireRole(["admin"]);
+  const base = await getAdminPageData();
   const admin = createSupabaseAdminClient();
-  const organizationId = context.profile.organization_id;
+  const organizationId = base.context.profile.organization_id;
 
-  const [profilesResult, authUsersResult, contentsResult, quizzesResult, assignmentsResult, cohortsResult] =
-    await Promise.all([
-      admin
-        .from("profiles")
-        .select("id, first_name, last_name, status, created_at, user_roles(role)")
-        .eq("organization_id", organizationId)
-        .order("created_at", { ascending: false }),
-      admin.auth.admin.listUsers({
-        page: 1,
-        perPage: 200
-      }),
-      admin
-        .from("content_items")
-        .select("id, status", { count: "exact" })
-        .eq("organization_id", organizationId),
-      admin
-        .from("quizzes")
-        .select("id, status", { count: "exact" })
-        .eq("organization_id", organizationId),
-      admin
-        .from("learning_assignments")
-        .select("id", { count: "exact" })
-        .eq("organization_id", organizationId),
-      admin
-        .from("cohorts")
-        .select("id", { count: "exact" })
-        .eq("organization_id", organizationId)
-    ]);
+  const [
+    branding,
+    coachAssignmentsResult,
+    cohortMembersResult,
+    assignmentStateResult,
+    programsResult,
+    auditEventsResult
+  ] = await Promise.all([
+    getOrganizationBrandingById(organizationId),
+    admin
+      .from("coach_assignments")
+      .select("id, coach_id, coachee_id, cohort_id, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin.from("cohort_members").select("user_id, cohort_id"),
+    admin
+      .from("learning_assignments")
+      .select("id, due_at, assigned_user_id, cohort_id, published_at")
+      .eq("organization_id", organizationId),
+    admin.from("programs").select("id, status").eq("organization_id", organizationId),
+    admin
+      .from("audit_events")
+      .select("id, actor_id, category, summary, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(6)
+  ]);
 
-  const profiles = (profilesResult.data ?? []) as ProfileRow[];
-  const authUsers = authUsersResult.data?.users ?? [];
-  const emailByUserId = new Map(authUsers.map((item) => [item.id, item.email ?? "email indisponible"]));
-  const users = profiles.map((profile) => ({
-    id: profile.id,
-    name: formatUserName(profile),
-    email: emailByUserId.get(profile.id) ?? "email indisponible",
-    status: profile.status,
-    roles: (profile.user_roles ?? []).map((item) => item.role)
+  const users = base.users;
+  const coacheeIds = new Set(
+    users.filter((user) => user.roles.includes("coachee")).map((user) => user.id)
+  );
+  const coachIds = new Set(users.filter((user) => user.roles.includes("coach")).map((user) => user.id));
+  const coachAssignments = (coachAssignmentsResult.data ?? []) as Array<{
+    id: string;
+    coach_id: string;
+    coachee_id: string | null;
+    cohort_id: string | null;
+    created_at: string;
+  }>;
+  const cohortMembers = ((cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>).filter(
+    (item) => coacheeIds.has(item.user_id)
+  );
+  const assignmentStates = (assignmentStateResult.data ?? []) as Array<{
+    id: string;
+    due_at: string | null;
+    assigned_user_id: string | null;
+    cohort_id: string | null;
+    published_at: string | null;
+  }>;
+  const programs = (programsResult.data ?? []) as Array<{ id: string; status: string }>;
+  const programIds = programs.map((program) => program.id);
+  const modulesResult = programIds.length
+    ? await admin.from("program_modules").select("id, status, program_id").in("program_id", programIds)
+    : { data: [] as Array<{ id: string; status: string; program_id: string }> };
+  const modules = (modulesResult.data ?? []) as Array<{ id: string; status: string; program_id: string }>;
+  const userById = new Map(users.map((user) => [user.id, user]));
+  const cohortIdsByLearnerId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    current.push(item.cohort_id);
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const learnerIdsByCohortId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.cohort_id) ?? [];
+    current.push(item.user_id);
+    map.set(item.cohort_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const coachIdsByLearnerId = new Map<string, string[]>();
+  for (const assignment of coachAssignments) {
+    if (assignment.coachee_id) {
+      const current = coachIdsByLearnerId.get(assignment.coachee_id) ?? [];
+      if (!current.includes(assignment.coach_id)) {
+        current.push(assignment.coach_id);
+        coachIdsByLearnerId.set(assignment.coachee_id, current);
+      }
+    }
+
+    if (assignment.cohort_id) {
+      for (const learnerId of learnerIdsByCohortId.get(assignment.cohort_id) ?? []) {
+        const current = coachIdsByLearnerId.get(learnerId) ?? [];
+        if (!current.includes(assignment.coach_id)) {
+          current.push(assignment.coach_id);
+          coachIdsByLearnerId.set(learnerId, current);
+        }
+      }
+    }
+  }
+
+  const activeUsers = users.filter((user) => user.status === "active").length;
+  const invitedUsers = users.filter((user) => user.status === "invited").length;
+  const suspendedUsers = users.filter((user) => user.status === "suspended").length;
+  const roleCounts = {
+    admin: users.filter((user) => user.roles.includes("admin")).length,
+    professor: users.filter((user) => user.roles.includes("professor")).length,
+    coach: users.filter((user) => user.roles.includes("coach")).length,
+    coachee: users.filter((user) => user.roles.includes("coachee")).length
+  };
+  const publishedContents = base.contents.filter((content) => content.status === "published").length;
+  const draftContents = base.contents.length - publishedContents;
+  const requiredContents = base.contents.filter((content) => content.is_required).length;
+  const publishedQuizzes = base.quizzes.filter((quiz) => quiz.status === "published").length;
+  const draftQuizzes = base.quizzes.length - publishedQuizzes;
+  const quizQuestionCount = base.quizzes.reduce((total, quiz) => total + (quiz.quiz_questions?.length ?? 0), 0);
+  const overdueAssignments = assignmentStates.filter((assignment) => getDeadlineState(assignment.due_at) === "overdue").length;
+  const dueSoonAssignments = assignmentStates.filter((assignment) => getDeadlineState(assignment.due_at) === "soon").length;
+  const openAssignments = assignmentStates.filter((assignment) => getDeadlineState(assignment.due_at) === "open").length;
+  const learnerCoverageCount = base.engagementSignals.filter(
+    (signal) => (coachIdsByLearnerId.get(signal.id) ?? []).length > 0
+  ).length;
+  const learnersWithoutCoach = base.engagementSignals.filter(
+    (signal) => !(coachIdsByLearnerId.get(signal.id) ?? []).length
+  ).length;
+  const learnersWithoutCohort = base.engagementSignals.filter(
+    (signal) => !(cohortIdsByLearnerId.get(signal.id) ?? []).length
+  ).length;
+  const activeCoachPortfolios = Array.from(coachIds).filter((coachId) =>
+    base.engagementSignals.some((signal) => (coachIdsByLearnerId.get(signal.id) ?? []).includes(coachId))
+  ).length;
+  const activePrograms = programs.filter((program) => program.status === "active").length;
+  const draftPrograms = programs.filter((program) => program.status !== "active").length;
+  const activeModules = modules.filter((module) => module.status === "published" || module.status === "active").length;
+
+  const auditEnabled = !auditEventsResult.error;
+  const recentAuditEvents = auditEnabled
+    ? ((auditEventsResult.data ?? []) as Array<{
+        id: string;
+        actor_id: string | null;
+        category: AuditEventCategory;
+        summary: string;
+        created_at: string;
+      }>).map((event) => ({
+        id: event.id,
+        category: event.category,
+        categoryLabel: AUDIT_CATEGORY_LABELS[event.category],
+        actorName: event.actor_id ? userById.get(event.actor_id)?.name ?? "Profil supprimé" : "Système ECCE",
+        summary: event.summary,
+        createdAtLabel: formatDateCompact(event.created_at),
+        createdAtFull: formatDate(event.created_at)
+      }))
+    : [];
+  const latestAudit = recentAuditEvents[0] ?? null;
+  const auditErrorMessage =
+    auditEventsResult.error?.code === "42P01" || auditEventsResult.error?.code === "PGRST205"
+      ? "Le journal d'audit n'est pas encore initialisé côté Supabase."
+      : auditEventsResult.error?.message ?? null;
+  const learnerAlerts = base.attentionLearners.slice(0, 5).map((signal) => ({
+    id: signal.id,
+    name: signal.name,
+    band: signal.band,
+    bandLabel: signal.bandLabel,
+    score: signal.score,
+    nextFocus: signal.nextFocus,
+    lastActivityLabel: signal.lastActivityLabel,
+    coachCount: (coachIdsByLearnerId.get(signal.id) ?? []).length,
+    cohortCount: (cohortIdsByLearnerId.get(signal.id) ?? []).length
   }));
 
+  const studioCards: Array<{
+    href: string;
+    eyebrow: string;
+    title: string;
+    tone: BadgeTone;
+    status: string;
+    description: string;
+    highlights: string[];
+  }> = [
+    {
+      href: "/admin/users",
+      eyebrow: "Access ops",
+      title: "Utilisateurs & accès",
+      tone: invitedUsers > 0 || suspendedUsers > 0 ? "warning" : "success",
+      status: invitedUsers > 0 ? `${invitedUsers} invitation(s) à finaliser` : `${activeUsers} accès actifs`,
+      description: "Piloter les statuts, les rôles et les ouvertures d'accès sans quitter le command center.",
+      highlights: [
+        `${roleCounts.admin} admin`,
+        `${roleCounts.coach} coach(s)`,
+        `${suspendedUsers} suspendu(s)`
+      ]
+    },
+    {
+      href: "/admin/learners",
+      eyebrow: "Learner ops",
+      title: "Parcours coachés",
+      tone: learnersWithoutCoach > 0 || learnersWithoutCohort > 0 ? "warning" : "accent",
+      status:
+        learnersWithoutCoach > 0
+          ? `${learnersWithoutCoach} coaché(s) sans coach`
+          : `${learnerCoverageCount}/${base.engagementSignals.length} coaché(s) couverts`,
+      description: "Voir immédiatement les manques de couverture, les cohortes fragiles et la charge coach.",
+      highlights: [
+        `${learnersWithoutCohort} sans cohorte`,
+        `${activeCoachPortfolios} portefeuille(s) actifs`,
+        `${base.attentionLearners.length} signal(s) faibles`
+      ]
+    },
+    {
+      href: "/admin/programs",
+      eyebrow: "Curriculum",
+      title: "Studio parcours",
+      tone: activePrograms > 0 ? "success" : "accent",
+      status: activePrograms > 0 ? `${activePrograms} programme(s) actif(s)` : `${draftPrograms} programme(s) à activer`,
+      description: "Structurer les parcours, les modules et l'activation pédagogique sans repasser par le hub brut.",
+      highlights: [
+        `${programs.length} programme(s)`,
+        `${modules.length} module(s)`,
+        `${activeModules} module(s) actifs`
+      ]
+    },
+    {
+      href: "/admin/content",
+      eyebrow: "Library ops",
+      title: "Studio contenus",
+      tone: draftContents > 0 ? "accent" : "success",
+      status: `${publishedContents} contenu(s) publiés`,
+      description: "Suivre l'état réel de la bibliothèque, des drafts et des ressources obligatoires.",
+      highlights: [
+        `${draftContents} brouillon(s)`,
+        `${requiredContents} ressource(s) obligatoires`,
+        `${base.contents.length} au total`
+      ]
+    },
+    {
+      href: "/admin/quizzes",
+      eyebrow: "Assessment",
+      title: "Studio quiz",
+      tone: publishedQuizzes > 0 ? "success" : "accent",
+      status: `${publishedQuizzes} quiz publiés`,
+      description: "Contrôler le catalogue d'évaluation, la densité de questions et les prochaines mises en ligne.",
+      highlights: [
+        `${draftQuizzes} draft(s)`,
+        `${quizQuestionCount} question(s)`,
+        `${base.analyticsOverview.averageQuizScore ?? 0}% score moyen`
+      ]
+    },
+    {
+      href: "/admin/assignments",
+      eyebrow: "Execution",
+      title: "Assignations",
+      tone: overdueAssignments > 0 ? "warning" : dueSoonAssignments > 0 ? "accent" : "success",
+      status:
+        overdueAssignments > 0
+          ? `${overdueAssignments} deadline(s) en retard`
+          : `${dueSoonAssignments} deadline(s) cette semaine`,
+      description: "Lire la tension d'exécution avant qu'elle ne se transforme en dette de suivi ou d'engagement.",
+      highlights: [
+        `${openAssignments} sans date`,
+        `${base.analyticsOverview.totalAssignments} assignation(s)`,
+        `${dueSoonAssignments} à venir`
+      ]
+    },
+    {
+      href: "/admin/settings",
+      eyebrow: "Platform settings",
+      title: "Réglages organisation",
+      tone: branding.supportEmail ? "success" : "accent",
+      status: `${branding.displayName} · ${branding.defaultTimezone}`,
+      description: "Piloter le branding, le support et les paramètres transverses depuis un module dédié.",
+      highlights: [
+        branding.platformTagline,
+        branding.allowCoachSelfSchedule ? "auto-planification coach active" : "auto-planification coach coupée",
+        branding.supportEmail ?? "email support à définir"
+      ]
+    },
+    {
+      href: "/admin/audit",
+      eyebrow: "Traceability",
+      title: "Journal d'audit",
+      tone: auditEnabled ? "success" : "warning",
+      status: latestAudit ? latestAudit.summary : "Audit non initialisé",
+      description: "Relire rapidement les changements sensibles opérés dans ECCE avant d'enchaîner sur un studio.",
+      highlights: auditEnabled
+        ? [
+            `${recentAuditEvents.length} événement(s) récents`,
+            latestAudit?.categoryLabel ?? "Aucune catégorie",
+            latestAudit?.createdAtLabel ?? "Aucun horodatage"
+          ]
+        : [auditErrorMessage ?? "Table audit_events manquante", "Appliquer le SQL", "Puis recharger"]
+    }
+  ];
+
+  const priorityActions: Array<{
+    id: string;
+    title: string;
+    description: string;
+    href: string;
+    ctaLabel: string;
+    tone: BadgeTone;
+  }> = [
+    invitedUsers > 0
+      ? {
+          id: "invite",
+          title: `${invitedUsers} invitation(s) attendent encore leur activation`,
+          description: "La friction actuelle n'est pas produit, mais l'ouverture effective des accès et des rôles.",
+          href: "/admin/users",
+          ctaLabel: "Ouvrir les accès",
+          tone: "warning" as const
+        }
+      : {
+          id: "invite",
+          title: "Le flux d'accès est stable",
+          description: "Les derniers comptes visibles ont déjà franchi l'étape d'activation.",
+          href: "/admin/users",
+          ctaLabel: "Voir les profils",
+          tone: "success" as const
+        },
+    learnersWithoutCoach > 0 || learnersWithoutCohort > 0
+      ? {
+          id: "coverage",
+          title: `${learnersWithoutCoach} sans coach · ${learnersWithoutCohort} sans cohorte`,
+          description: "Le vrai risque côté plateforme reste la structure de suivi, pas seulement les contenus publiés.",
+          href: "/admin/learners",
+          ctaLabel: "Structurer les coachés",
+          tone: "accent" as const
+        }
+      : {
+          id: "coverage",
+          title: "Population coachée structurée",
+          description: "Les coachés visibles sont couverts par un coach et une cohorte utilisable.",
+          href: "/admin/learners",
+          ctaLabel: "Vérifier learner ops",
+          tone: "success" as const
+        },
+    overdueAssignments > 0
+      ? {
+          id: "execution",
+          title: `${overdueAssignments} assignation(s) ont dépassé leur deadline`,
+          description: "Le backlog d'exécution mérite une lecture immédiate avant d'impacter l'engagement.",
+          href: "/admin/assignments",
+          ctaLabel: "Traiter les deadlines",
+          tone: "warning" as const
+        }
+      : {
+          id: "execution",
+          title: "Exécution pédagogique maîtrisée",
+          description: dueSoonAssignments > 0
+            ? `${dueSoonAssignments} échéance(s) arrivent, sans retard ouvert pour le moment.`
+            : "Aucune échéance critique ne remonte actuellement.",
+          href: "/admin/assignments",
+          ctaLabel: "Voir les assignations",
+          tone: dueSoonAssignments > 0 ? ("accent" as const) : ("success" as const)
+        },
+    draftContents + draftQuizzes + draftPrograms > 0
+      ? {
+          id: "catalog",
+          title: `${draftContents + draftQuizzes + draftPrograms} élément(s) de catalogue encore en draft`,
+          description: "Le prochain gain rapide est probablement dans la mise en ligne des contenus, quiz ou parcours déjà préparés.",
+          href: draftPrograms > 0 ? "/admin/programs" : draftContents > 0 ? "/admin/content" : "/admin/quizzes",
+          ctaLabel: "Ouvrir le studio",
+          tone: "accent" as const
+        }
+      : {
+          id: "catalog",
+          title: "Catalogue pédagogique bien diffusé",
+          description: "Les principaux assets sont déjà publiés ou actifs dans ECCE.",
+          href: "/library",
+          ctaLabel: "Contrôler la bibliothèque",
+          tone: "success" as const
+        }
+  ];
+
   return {
-    context,
+    context: base.context,
+    branding,
     metrics: [
       {
         label: "Utilisateurs actifs",
-        value: users.filter((user) => user.status === "active").length.toString(),
+        value: activeUsers.toString(),
         delta: `${users.length} profils ECCE`
       },
       {
-        label: "Cohortes",
-        value: String(cohortsResult.count ?? 0),
-        delta: `${users.filter((user) => user.roles.includes("coachee")).length} coaché(s) disponibles`
+        label: "Engagement coachés",
+        value: `${base.analyticsOverview.averageScore}%`,
+        delta: `${base.analyticsOverview.atRiskCount} à risque · ${base.analyticsOverview.watchCount} à surveiller`
       },
       {
-        label: "Contenus publiés",
-        value: String(
-          ((contentsResult.data ?? []) as Array<{ status: string }>).filter((item) => item.status === "published").length
-        ),
-        delta: `${String(contentsResult.count ?? 0)} contenus au total`
+        label: "Couverture coach",
+        value: `${learnerCoverageCount}/${base.engagementSignals.length}`,
+        delta: `${activeCoachPortfolios}/${coachIds.size} coach(s) avec portefeuille actif`
       },
       {
-        label: "Quiz publiés",
-        value: String(
-          ((quizzesResult.data ?? []) as Array<{ status: string }>).filter((item) => item.status === "published").length
-        ),
-        delta: `${String(assignmentsResult.count ?? 0)} assignation(s) créées`
+        label: "Catalogue live",
+        value: `${publishedContents + publishedQuizzes}`,
+        delta: `${draftContents + draftQuizzes + draftPrograms} draft(s) encore à diffuser`
       }
     ],
-    users,
-    userOptions: users.map((user) => ({
-      id: user.id,
-      label: `${user.name} · ${user.email}`
-    }))
+    hero: {
+      title: branding.displayName,
+      subtitle: branding.platformTagline,
+      summary: `${branding.marketingHeadline} ${branding.marketingSubheadline}`
+    },
+    systemPulse: {
+      invitedUsers,
+      suspendedUsers,
+      activeUsers,
+      roleCounts,
+      overdueAssignments,
+      dueSoonAssignments,
+      learnersWithoutCoach,
+      learnersWithoutCohort
+    },
+    priorityActions,
+    studioCards,
+    learnerAlerts,
+    recentUsers: users.slice(0, 6),
+    recentAuditEvents,
+    auditEnabled,
+    auditMessage: auditEnabled ? null : auditErrorMessage,
+    latestAudit,
+    userOptions: base.userOptions
   };
 }
 
