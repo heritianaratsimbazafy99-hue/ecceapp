@@ -1417,6 +1417,325 @@ export async function getAdminLearnerOpsPageData() {
   };
 }
 
+export async function getProfessorPageData() {
+  const context = await requireRole(["admin", "professor"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const [
+    coacheeRolesResult,
+    profilesResult,
+    cohortMembersResult,
+    cohortsResult,
+    contentsResult,
+    quizzesResult,
+    assignmentsResult
+  ] = await Promise.all([
+    admin
+      .from("user_roles")
+      .select("user_id, role")
+      .eq("organization_id", organizationId)
+      .eq("role", "coachee"),
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, status")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin.from("cohort_members").select("user_id, cohort_id"),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin
+      .from("content_items")
+      .select(
+        "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+      )
+      .eq("organization_id", organizationId)
+      .eq("status", "published")
+      .order("created_at", { ascending: false }),
+    admin
+      .from("quizzes")
+      .select(
+        `
+          id,
+          title,
+          description,
+          kind,
+          status,
+          attempts_allowed,
+          time_limit_minutes,
+          passing_score,
+          content_item_id,
+          quiz_questions ( id )
+        `
+      )
+      .eq("organization_id", organizationId)
+      .eq("status", "published")
+      .order("created_at", { ascending: false }),
+    admin
+      .from("learning_assignments")
+      .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+  ]);
+
+  const coacheeIds = new Set((coacheeRolesResult.data ?? []).map((item) => item.user_id));
+  const profiles = ((profilesResult.data ?? []) as ProfileRow[]).filter((profile) => coacheeIds.has(profile.id));
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
+  const cohortRows = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const cohortNameById = new Map(cohortRows.map((item) => [item.id, item.name]));
+  const cohortNamesByUserId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    const cohortName = cohortNameById.get(item.cohort_id);
+    if (cohortName) {
+      current.push(cohortName);
+    }
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const learnerIds = profiles.map((profile) => profile.id);
+
+  const [
+    analyticsAttemptsResult,
+    analyticsSubmissionsResult,
+    analyticsSessionsResult,
+    analyticsNotificationsResult,
+    analyticsBadgesResult
+  ] = learnerIds.length
+    ? await Promise.all([
+        admin
+          .from("quiz_attempts")
+          .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+          .in("user_id", learnerIds)
+          .order("submitted_at", { ascending: false }),
+        admin
+          .from("submissions")
+          .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+          .in("user_id", learnerIds)
+          .order("submitted_at", { ascending: false }),
+        admin
+          .from("coaching_sessions")
+          .select("coachee_id, starts_at, status")
+          .eq("organization_id", organizationId)
+          .in("coachee_id", learnerIds)
+          .order("starts_at", { ascending: false }),
+        admin
+          .from("notifications")
+          .select("recipient_id, created_at, read_at")
+          .eq("organization_id", organizationId)
+          .in("recipient_id", learnerIds)
+          .order("created_at", { ascending: false }),
+        admin
+          .from("user_badges")
+          .select("user_id, awarded_at")
+          .in("user_id", learnerIds)
+          .order("awarded_at", { ascending: false })
+      ])
+    : [
+        { data: [] as QuizAttemptResultRow[] },
+        { data: [] as SubmissionRow[] },
+        { data: [] as SessionAnalyticsRow[] },
+        { data: [] as NotificationAnalyticsRow[] },
+        { data: [] as BadgeAwardAnalyticsRow[] }
+      ];
+
+  const contents = (contentsResult.data ?? []) as ContentRow[];
+  const quizzes = (quizzesResult.data ?? []) as Array<
+    QuizRow & {
+      content_item_id?: string | null;
+      quiz_questions?: Array<{ id: string }>;
+    }
+  >;
+  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const attempts = (analyticsAttemptsResult.data ?? []) as QuizAttemptResultRow[];
+  const submissions = (analyticsSubmissionsResult.data ?? []) as SubmissionRow[];
+
+  const engagementSignals = buildEngagementSignals({
+    learnerIds,
+    profiles,
+    cohortNamesByUserId,
+    assignments,
+    cohortMembers,
+    attempts,
+    submissions,
+    sessions: (analyticsSessionsResult.data ?? []) as SessionAnalyticsRow[],
+    notifications: (analyticsNotificationsResult.data ?? []) as NotificationAnalyticsRow[],
+    badges: (analyticsBadgesResult.data ?? []) as BadgeAwardAnalyticsRow[]
+  });
+  const engagementOverview = buildEngagementOverview(engagementSignals);
+  const attentionLearners = [...engagementSignals]
+    .filter((signal) => signal.band !== "strong")
+    .sort((left, right) => right.overdueCount - left.overdueCount || left.score - right.score)
+    .slice(0, 6);
+  const engagementSignalById = new Map(engagementSignals.map((signal) => [signal.id, signal]));
+
+  const cohortHealth = cohortRows
+    .map((cohort) => {
+      const memberIds = cohortMembers
+        .filter((member) => member.cohort_id === cohort.id)
+        .map((member) => member.user_id)
+        .filter((memberId) => coacheeIds.has(memberId));
+      const signals = memberIds
+        .map((memberId) => engagementSignalById.get(memberId))
+        .filter(Boolean) as LearnerEngagementSignal[];
+      const averageScore = signals.length
+        ? roundMetric(signals.reduce((total, signal) => total + signal.score, 0) / signals.length)
+        : 0;
+      const completionSignals = signals.filter((signal) => signal.completionRate !== null);
+      const completionRate = completionSignals.length
+        ? roundMetric(
+            completionSignals.reduce((total, signal) => total + (signal.completionRate ?? 0), 0) /
+              completionSignals.length
+          )
+        : null;
+      const atRiskCount = signals.filter((signal) => signal.band === "risk").length;
+      const watchCount = signals.filter((signal) => signal.band === "watch").length;
+      const topFocus = [...signals]
+        .sort((left, right) => right.overdueCount - left.overdueCount || left.score - right.score)[0]?.nextFocus ??
+        "Aucun signal remonté pour le moment";
+
+      return {
+        id: cohort.id,
+        name: cohort.name,
+        memberCount: memberIds.length,
+        averageScore,
+        completionRate,
+        atRiskCount,
+        watchCount,
+        strongCount: signals.filter((signal) => signal.band === "strong").length,
+        tone: (averageScore >= 75 ? "success" : averageScore >= 45 ? "accent" : "warning") as
+          | "success"
+          | "accent"
+          | "warning",
+        topFocus
+      };
+    })
+    .sort((left, right) => right.atRiskCount - left.atRiskCount || left.averageScore - right.averageScore);
+
+  const quizById = new Map(quizzes.map((quiz) => [quiz.id, quiz]));
+  const attemptCountByQuizId = attempts.reduce((map, attempt) => {
+    map.set(attempt.quiz_id, (map.get(attempt.quiz_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const gradedAttemptsByQuizId = attempts.reduce((map, attempt) => {
+    if (attempt.status !== "graded" || attempt.score === null) {
+      return map;
+    }
+
+    const current = map.get(attempt.quiz_id) ?? [];
+    current.push(attempt.score);
+    map.set(attempt.quiz_id, current);
+    return map;
+  }, new Map<string, number[]>());
+  const quizPulse = quizzes
+    .map((quiz) => {
+      const grades = gradedAttemptsByQuizId.get(quiz.id) ?? [];
+      return {
+        id: quiz.id,
+        title: quiz.title,
+        kind: quiz.kind ?? "quiz",
+        questionCount: quiz.quiz_questions?.length ?? 0,
+        attemptCount: attemptCountByQuizId.get(quiz.id) ?? 0,
+        averageScore: grades.length ? roundMetric(grades.reduce((total, score) => total + score, 0) / grades.length) : null,
+        timeLimitMinutes: quiz.time_limit_minutes ?? null
+      };
+    })
+    .sort((left, right) => right.attemptCount - left.attemptCount || (right.averageScore ?? 0) - (left.averageScore ?? 0))
+    .slice(0, 6);
+
+  const assignmentCountByContentId = assignments.reduce((map, assignment) => {
+    if (!assignment.content_item_id) {
+      return map;
+    }
+
+    map.set(assignment.content_item_id, (map.get(assignment.content_item_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const linkedQuizCountByContentId = quizzes.reduce((map, quiz) => {
+    if (!quiz.content_item_id) {
+      return map;
+    }
+
+    map.set(quiz.content_item_id, (map.get(quiz.content_item_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const contentSpotlight = [...contents]
+    .sort(
+      (left, right) =>
+        (assignmentCountByContentId.get(right.id) ?? 0) - (assignmentCountByContentId.get(left.id) ?? 0) ||
+        (linkedQuizCountByContentId.get(right.id) ?? 0) - (linkedQuizCountByContentId.get(left.id) ?? 0)
+    )
+    .slice(0, 6)
+    .map((content) => ({
+      id: content.id,
+      title: content.title,
+      slug: content.slug,
+      summary: content.summary ?? "Ressource publiée dans la bibliothèque ECCE.",
+      category: content.category || "Bibliothèque",
+      contentType: content.content_type,
+      estimatedMinutes: content.estimated_minutes,
+      assignmentCount: assignmentCountByContentId.get(content.id) ?? 0,
+      linkedQuizCount: linkedQuizCountByContentId.get(content.id) ?? 0
+    }));
+
+  const recentQuizResults = attempts
+    .slice(0, 8)
+    .map((attempt) => {
+      const learner = profileById.get(attempt.user_id);
+      const quiz = quizById.get(attempt.quiz_id);
+      const tone: "success" | "accent" = attempt.status === "graded" ? "success" : "accent";
+
+      return {
+        id: attempt.id,
+        learner: learner ? formatUserName(learner) : "Coaché inconnu",
+        quizTitle: quiz?.title ?? "Quiz",
+        submittedAt: formatDate(attempt.submitted_at),
+        attemptLabel: `Tentative ${attempt.attempt_number}`,
+        score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
+        tone
+      };
+    });
+
+  const learnersWithoutCohort = profiles.filter((profile) => !(cohortNamesByUserId.get(profile.id) ?? []).length).length;
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Cohortes actives",
+        value: cohortRows.length.toString(),
+        delta: `${learnersWithoutCohort} coaché(s) sans cohorte`
+      },
+      {
+        label: "Engagement moyen",
+        value: `${engagementOverview.averageScore}%`,
+        delta: `${engagementOverview.recentlyActiveCount} actifs cette semaine`
+      },
+      {
+        label: "Coachés à surveiller",
+        value: engagementOverview.atRiskCount.toString(),
+        delta: `${engagementOverview.watchCount} à suivre de près`
+      },
+      {
+        label: "Quiz moyen",
+        value: engagementOverview.averageQuizScore !== null ? `${engagementOverview.averageQuizScore}%` : "n/a",
+        delta: `${quizzes.length} quiz publiés`
+      }
+    ],
+    analyticsOverview: {
+      ...engagementOverview,
+      totalPublishedContents: contents.length,
+      totalQuizzes: quizzes.length,
+      totalAssignments: assignments.length,
+      totalLearners: profiles.length
+    },
+    cohortHealth,
+    attentionLearners,
+    recentQuizResults,
+    quizPulse,
+    contentSpotlight
+  };
+}
+
 export async function getAdminContentStudioPageData() {
   const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();

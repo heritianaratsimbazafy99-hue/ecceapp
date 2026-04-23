@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { href: "/dashboard", label: "Dashboard", shortLabel: "DB", match: "exact", roles: ["admin", "coachee"] },
   { href: "/library", label: "Bibliothèque", shortLabel: "BI", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
+  { href: "/professor", label: "Insights prof", shortLabel: "PR", match: "exact", roles: ["admin", "professor"] },
   { href: "/messages", label: "Messages", shortLabel: "MS", match: "exact", roles: ["coach", "coachee"] },
   { href: "/notifications", label: "Notifications", shortLabel: "NT", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/coach", label: "Espace coach", shortLabel: "CO", match: "exact", roles: ["admin", "coach"] },

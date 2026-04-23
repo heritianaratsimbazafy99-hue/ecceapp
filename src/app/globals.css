@@ -2139,6 +2139,99 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   color: rgba(16, 24, 32, 0.56);
 }
 
+.professor-hero-panel,
+.professor-summary-panel,
+.professor-summary-list,
+.professor-cohort-grid,
+.professor-cohort-kpis,
+.professor-pulse-list,
+.professor-content-grid,
+.professor-content-meta {
+  display: grid;
+  gap: 16px;
+}
+
+.professor-hero-panel {
+  background:
+    radial-gradient(circle at top right, rgba(53, 104, 151, 0.14), transparent 24%),
+    radial-gradient(circle at 14% 20%, rgba(247, 138, 73, 0.16), transparent 28%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 255, 0.95));
+}
+
+.professor-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.professor-summary-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.professor-summary-list article,
+.professor-cohort-kpis div {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.professor-summary-list strong,
+.professor-cohort-kpis strong {
+  font-size: 1.45rem;
+}
+
+.professor-summary-list span,
+.professor-cohort-kpis span,
+.professor-content-meta span,
+.professor-pulse-item p {
+  color: var(--muted);
+}
+
+.professor-cohort-grid,
+.professor-content-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.professor-cohort-card,
+.professor-content-card {
+  min-height: 250px;
+}
+
+.professor-cohort-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.professor-pulse-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.professor-pulse-item p {
+  margin: 8px 0 0;
+}
+
+.professor-content-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.professor-content-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.06);
+}
+
 .assignment-studio-shell {
   display: grid;
   grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
@@ -3922,6 +4015,11 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .content-reader-hero,
   .content-reader-layout,
   .content-reader-support-grid,
+  .professor-summary-list,
+  .professor-cohort-grid,
+  .professor-cohort-kpis,
+  .professor-content-grid,
+  .professor-content-meta,
   .content-briefing-layout,
   .assignment-studio-shell,
   .assignment-planner-layout,
@@ -4025,6 +4123,11 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .content-reader-hero,
   .content-reader-layout,
   .content-reader-support-grid,
+  .professor-summary-list,
+  .professor-cohort-grid,
+  .professor-cohort-kpis,
+  .professor-content-grid,
+  .professor-content-meta,
   .content-catalog-grid,
   .library-showcase-grid,
   .assignment-studio-shell,
@@ -4125,7 +4228,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .dashboard-session-card,
   .dashboard-attempt-card,
   .notification-feed-card,
-  .conversation-panel-head {
+  .conversation-panel-head,
+  .professor-pulse-item {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -4174,6 +4278,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
   .notification-feed-card-actions {
     justify-content: flex-start;
+  }
+
+  .professor-pulse-item {
+    grid-template-columns: 1fr;
   }
 
   .notification-filter-tabs,

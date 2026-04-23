@@ -79,7 +79,7 @@ export function getRouteForRole(role: AppRole | string | null) {
     case "coach":
       return "/coach";
     case "professor":
-      return "/library";
+      return "/professor";
     case "coachee":
       return "/dashboard";
     default:
