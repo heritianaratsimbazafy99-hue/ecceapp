@@ -134,6 +134,7 @@ type QuizAttemptResultRow = {
 };
 
 type BadgeTone = "neutral" | "accent" | "warning" | "success";
+type MessageInboxLane = "reply" | "watch" | "aligned";
 
 type SubmissionRow = {
   id: string;
@@ -457,6 +458,47 @@ function formatMessagePreview(value: string | null) {
   }
 
   return value.length > 96 ? `${value.slice(0, 93)}...` : value;
+}
+
+function getMessageLaneMeta(params: {
+  unreadCount: number;
+  lastMessageAt: string | null;
+}): {
+  lane: MessageInboxLane;
+  laneLabel: string;
+  tone: BadgeTone;
+  nextAction: string;
+  priorityRank: number;
+} {
+  const daysSinceLastMessage = getDaysSince(params.lastMessageAt);
+
+  if (params.unreadCount > 0) {
+    return {
+      lane: "reply",
+      laneLabel: "Réponse attendue",
+      tone: "warning",
+      nextAction: "Une réponse t'attend déjà ici, mieux vaut reprendre ce fil avant qu'il se refroidisse.",
+      priorityRank: 0
+    };
+  }
+
+  if (daysSinceLastMessage !== null && daysSinceLastMessage > 5) {
+    return {
+      lane: "watch",
+      laneLabel: "A relancer",
+      tone: "accent",
+      nextAction: "Le fil s'est calmé depuis plusieurs jours, une relance courte peut recréer le rythme.",
+      priorityRank: 1
+    };
+  }
+
+  return {
+    lane: "aligned",
+    laneLabel: "Cadencé",
+    tone: "success",
+    nextAction: "Le fil reste vivant et maîtrisé, garde ce tempo avec des messages courts et contextualisés.",
+    priorityRank: 2
+  };
 }
 
 function getAuditHighlights(metadata: Record<string, unknown> | null | undefined) {
@@ -943,7 +985,8 @@ async function getMessagingWorkspace(params: {
       contacts: params.contactOptions,
       conversations: [],
       initialConversationId: null,
-      initialMessages: []
+      initialMessages: [],
+      recentMessages: []
     };
   }
 
@@ -1019,19 +1062,24 @@ async function getMessagingWorkspace(params: {
     contacts: params.contactOptions,
     conversations,
     initialConversationId,
-    initialMessages
+    initialMessages,
+    recentMessages: messageRows
   };
 }
 
-export async function getMessagesPageData() {
+export async function getMessagesPageData(filters?: {
+  lane?: string;
+  conversationId?: string;
+}) {
   const context = await requireRole(["coach", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
   const userId = context.user.id;
+  const viewerIsCoach = context.roles.includes("coach");
 
   let contactOptions: Array<{ id: string; label: string }> = [];
 
-  if (context.roles.includes("coach")) {
+  if (viewerIsCoach) {
     const scope = await getCoachAssignmentScope({
       organizationId,
       coachId: userId
@@ -1081,44 +1129,339 @@ export async function getMessagesPageData() {
   const messagingWorkspace = await getMessagingWorkspace({
     organizationId,
     userId,
-    viewerRole: context.roles.includes("coach") ? "coach" : "coachee",
+    viewerRole: viewerIsCoach ? "coach" : "coachee",
     contactOptions,
-    conversationLimit: 16,
-    recentMessageLimit: 160,
+    conversationLimit: 18,
+    recentMessageLimit: 240,
     initialMessageLimit: 80,
     includeInitialMessages: true
   });
 
-  const unreadCount = messagingWorkspace.conversations.reduce(
+  const laneFilter =
+    filters?.lane === "reply" || filters?.lane === "watch" || filters?.lane === "aligned"
+      ? filters.lane
+      : "all";
+  const selectedConversationId = filters?.conversationId ?? null;
+  const unreadConversationCount = messagingWorkspace.conversations.filter(
+    (conversation) => conversation.unreadCount > 0
+  ).length;
+  const messageCountByConversationId = messagingWorkspace.recentMessages.reduce((map, message) => {
+    map.set(message.conversation_id, (map.get(message.conversation_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+
+  const conversationsWithSignals = messagingWorkspace.conversations.map((conversation) => {
+    const laneMeta = getMessageLaneMeta({
+      unreadCount: conversation.unreadCount,
+      lastMessageAt: conversation.lastMessageAt
+    });
+    const lastMessageValue = getDateValue(conversation.lastMessageAt) ?? 0;
+    const daysSinceLastMessage = getDaysSince(conversation.lastMessageAt);
+
+    return {
+      ...conversation,
+      ...laneMeta,
+      lastMessageValue,
+      daysSinceLastMessage,
+      recentMessageCount: messageCountByConversationId.get(conversation.id) ?? 0,
+      lastTouchpointLabel: conversation.lastMessageAt
+        ? formatDate(conversation.lastMessageAt)
+        : "Aucun échange lancé"
+    };
+  });
+
+  const laneCounts = {
+    reply: conversationsWithSignals.filter((conversation) => conversation.lane === "reply").length,
+    watch: conversationsWithSignals.filter((conversation) => conversation.lane === "watch").length,
+    aligned: conversationsWithSignals.filter((conversation) => conversation.lane === "aligned").length
+  };
+  const visibleConversations = conversationsWithSignals.filter((conversation) =>
+    laneFilter === "all" ? true : conversation.lane === laneFilter
+  );
+  const sortedVisibleConversations = visibleConversations
+    .slice()
+    .sort((left, right) => {
+      return (
+        left.priorityRank - right.priorityRank ||
+        right.unreadCount - left.unreadCount ||
+        (right.daysSinceLastMessage ?? -1) - (left.daysSinceLastMessage ?? -1) ||
+        right.recentMessageCount - left.recentMessageCount ||
+        right.lastMessageValue - left.lastMessageValue
+      );
+    });
+  const focusThread =
+    (selectedConversationId
+      ? sortedVisibleConversations.find((conversation) => conversation.id === selectedConversationId)
+      : null) ??
+    sortedVisibleConversations[0] ??
+    null;
+  const visibleUnreadCount = visibleConversations.reduce(
     (total, conversation) => total + conversation.unreadCount,
     0
   );
-  const latestConversation = messagingWorkspace.conversations[0] ?? null;
+  const visibleReplyCount = visibleConversations.filter(
+    (conversation) => conversation.lane === "reply"
+  ).length;
+  const visibleQuietCount = visibleConversations.filter(
+    (conversation) => conversation.lane === "watch"
+  ).length;
+  const now = Date.now();
+  const recentSevenDayMessages = messagingWorkspace.recentMessages.filter((message) => {
+    const value = getDateValue(message.created_at);
+    return value !== null && value >= now - 7 * 24 * 60 * 60 * 1000;
+  }).length;
+  const previousSevenDayMessages = messagingWorkspace.recentMessages.filter((message) => {
+    const value = getDateValue(message.created_at);
+    return (
+      value !== null &&
+      value < now - 7 * 24 * 60 * 60 * 1000 &&
+      value >= now - 14 * 24 * 60 * 60 * 1000
+    );
+  }).length;
+  const pulseTrend: EngagementTrend =
+    recentSevenDayMessages > previousSevenDayMessages + 2
+      ? "up"
+      : previousSevenDayMessages > recentSevenDayMessages + 2
+        ? "down"
+        : "steady";
+  const pulseScore = conversationsWithSignals.length
+    ? clamp(
+        roundMetric(
+          100 -
+            unreadConversationCount * 12 -
+            laneCounts.watch * 10 +
+            Math.min(laneCounts.aligned, 4) * 4 +
+            Math.min(recentSevenDayMessages, 24)
+        ),
+        18,
+        96
+      )
+    : 24;
+  const pulseBand: EngagementBand =
+    pulseScore >= 76 && unreadConversationCount === 0 && laneCounts.watch <= 1
+      ? "strong"
+      : unreadConversationCount >= 2 || laneCounts.watch >= 3 || pulseScore < 45
+        ? "risk"
+        : "watch";
+  const filtersSummary =
+    laneFilter === "all"
+      ? `${visibleConversations.length} fil(s) visibles sans filtre de lane.`
+      : `${visibleConversations.length} fil(s) dans ${
+          laneFilter === "reply"
+            ? "les réponses attendues"
+            : laneFilter === "watch"
+              ? "les fils à relancer"
+              : "les fils cadencés"
+        }.`;
+  const heroTitle = viewerIsCoach
+    ? visibleReplyCount
+      ? `${visibleReplyCount} fil(s) coach à reprendre maintenant`
+      : "Inbox coach sous contrôle"
+    : visibleReplyCount
+      ? `${visibleReplyCount} réponse(s) coach à traiter maintenant`
+      : "Conversation fluide avec tes coachs";
+  const heroSummary = viewerIsCoach
+    ? focusThread
+      ? `Le fil focus est ${focusThread.counterpartName}. ${focusThread.nextAction}`
+      : "Ta messagerie est prête à absorber de nouveaux échanges dès qu'un coaché entre dans ton portefeuille."
+    : focusThread
+      ? `Le fil focus est ${focusThread.counterpartName}. ${focusThread.nextAction}`
+      : "La messagerie reste prête pour suivre ton coach, poser une question et confirmer ta prochaine étape.";
+
+  const contactSpotlights = Array.from(
+    visibleConversations.reduce((map, conversation) => {
+      const current =
+        map.get(conversation.counterpartId) ??
+        {
+          id: conversation.counterpartId,
+          name: conversation.counterpartName,
+          threadCount: 0,
+          unreadCount: 0,
+          recentMessageCount: 0,
+          lastMessageValue: 0,
+          lastTouchpointLabel: "Aucun échange",
+          laneLabel: "Cadencé",
+          tone: "success" as BadgeTone,
+          priorityRank: 2,
+          nextAction:
+            "Le fil reste vivant et maîtrisé, garde ce tempo avec des messages courts et contextualisés."
+        };
+
+      current.threadCount += 1;
+      current.unreadCount += conversation.unreadCount;
+      current.recentMessageCount += conversation.recentMessageCount;
+
+      if (conversation.lastMessageValue >= current.lastMessageValue) {
+        current.lastMessageValue = conversation.lastMessageValue;
+        current.lastTouchpointLabel = conversation.lastTouchpointLabel;
+      }
+
+      if (conversation.priorityRank < current.priorityRank) {
+        current.priorityRank = conversation.priorityRank;
+        current.laneLabel = conversation.laneLabel;
+        current.tone = conversation.tone;
+        current.nextAction = conversation.nextAction;
+      }
+
+      map.set(conversation.counterpartId, current);
+      return map;
+    }, new Map<string, {
+      id: string;
+      name: string;
+      threadCount: number;
+      unreadCount: number;
+      recentMessageCount: number;
+      lastMessageValue: number;
+      lastTouchpointLabel: string;
+      laneLabel: string;
+      tone: BadgeTone;
+      priorityRank: number;
+      nextAction: string;
+    }>())
+      .values()
+  )
+    .sort((left, right) => {
+      return (
+        left.priorityRank - right.priorityRank ||
+        right.unreadCount - left.unreadCount ||
+        right.recentMessageCount - left.recentMessageCount ||
+        right.lastMessageValue - left.lastMessageValue
+      );
+    })
+    .slice(0, 4);
 
   return {
     context,
     messagingWorkspace,
     metrics: [
       {
-        label: "Conversations actives",
-        value: messagingWorkspace.conversations.length.toString(),
-        delta: latestConversation
-          ? `Dernier échange · ${formatDate(latestConversation.lastMessageAt)}`
-          : "Aucun échange démarré"
+        label: "Fils visibles",
+        value: visibleConversations.length.toString(),
+        delta: filtersSummary
       },
       {
-        label: "Contacts disponibles",
-        value: messagingWorkspace.contacts.length.toString(),
-        delta: context.roles.includes("coach")
-          ? "Portefeuille coach visible ici"
-          : "Coachs rattachés à ton parcours"
+        label: "Réponses attendues",
+        value: visibleReplyCount.toString(),
+        delta: focusThread ? `Focus · ${focusThread.counterpartName}` : "Aucun fil prioritaire"
       },
       {
         label: "Messages non lus",
-        value: unreadCount.toString(),
-        delta: unreadCount ? "Des réponses attendent ton attention" : "Inbox à jour"
+        value: visibleUnreadCount.toString(),
+        delta: visibleUnreadCount ? "Des réponses attendent ton attention" : "Inbox à jour"
+      },
+      {
+        label: "Fils à relancer",
+        value: visibleQuietCount.toString(),
+        delta: `${recentSevenDayMessages} message(s) visibles sur 7 jours`
       }
-    ]
+    ],
+    hero: {
+      eyebrow: viewerIsCoach ? "Messaging ops coach" : "Messaging ops coachee",
+      title: heroTitle,
+      summary: heroSummary
+    },
+    pulse: {
+      score: pulseScore,
+      band: pulseBand,
+      bandLabel:
+        pulseBand === "strong"
+          ? "Inbox maîtrisée"
+          : pulseBand === "watch"
+            ? "A surveiller"
+            : "A relancer",
+      caption:
+        recentSevenDayMessages > 0
+          ? `${recentSevenDayMessages} message(s) échangé(s) sur 7 jours, ${laneCounts.watch} fil(s) calmes à réactiver.`
+          : "Aucun signal récent, la messagerie mérite un premier élan.",
+      trend: pulseTrend,
+      trendLabel:
+        pulseTrend === "up"
+          ? "cadence en hausse"
+          : pulseTrend === "down"
+            ? "cadence plus calme"
+            : "rythme stable"
+    },
+    filters: {
+      lane: laneFilter,
+      summary: filtersSummary,
+      selectedConversationId
+    },
+    laneBreakdown: [
+      {
+        id: "reply",
+        label: "Réponse attendue",
+        count: laneCounts.reply,
+        isActive: laneFilter === "reply"
+      },
+      {
+        id: "watch",
+        label: "A relancer",
+        count: laneCounts.watch,
+        isActive: laneFilter === "watch"
+      },
+      {
+        id: "aligned",
+        label: "Cadencé",
+        count: laneCounts.aligned,
+        isActive: laneFilter === "aligned"
+      }
+    ],
+    focusThread,
+    priorityThreads: sortedVisibleConversations.slice(0, 4),
+    contactSpotlights,
+    responsePlaybook: viewerIsCoach
+      ? [
+          {
+            title: "Répondre d'abord aux fils en attente",
+            body:
+              visibleReplyCount > 0
+                ? `${visibleReplyCount} fil(s) demandent déjà une réponse claire ou une prochaine action.`
+                : "Aucun fil bloqué, tu peux garder la pression sur les conversations les plus silencieuses.",
+            href: focusThread ? `/messages?conversation=${focusThread.id}` : "#messages-hub",
+            cta: "Ouvrir le fil focus",
+            tone: "warning" as BadgeTone
+          },
+          {
+            title: "Transformer les relances en rendez-vous",
+            body: "Quand un échange devient concret, bascule rapidement vers une séance planifiée dans l'agenda.",
+            href: "/agenda",
+            cta: "Ouvrir l'agenda",
+            tone: "accent" as BadgeTone
+          },
+          {
+            title: "Nettoyer les signaux secondaires",
+            body: "Les notifications gardent la vue sur les deadlines et reviews pour éviter de multiplier les allers-retours.",
+            href: "/notifications",
+            cta: "Voir les notifications",
+            tone: "success" as BadgeTone
+          }
+        ]
+      : [
+          {
+            title: "Débloquer le prochain point avec ton coach",
+            body:
+              visibleReplyCount > 0
+                ? `${visibleReplyCount} réponse(s) de coach t'attendent ici, reprends le fil sans attendre.`
+                : "L'inbox est calme, tu peux envoyer un point d'avancement ou un blocage précis.",
+            href: focusThread ? `/messages?conversation=${focusThread.id}` : "#messages-hub",
+            cta: "Reprendre le fil",
+            tone: "warning" as BadgeTone
+          },
+          {
+            title: "Garder le tempo sur les deadlines",
+            body: "Si un échange débouche sur une prochaine action, l'agenda te montre immédiatement ce qui arrive.",
+            href: "/agenda",
+            cta: "Voir l'agenda",
+            tone: "accent" as BadgeTone
+          },
+          {
+            title: "Croiser les messages avec les alertes",
+            body: "Les notifications centralisent les reviews, badges et échéances pour garder le contexte complet.",
+            href: "/notifications",
+            cta: "Ouvrir les notifications",
+            tone: "success" as BadgeTone
+          }
+        ]
   };
 }
 
