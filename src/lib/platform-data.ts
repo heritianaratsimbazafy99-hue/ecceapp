@@ -3539,7 +3539,12 @@ export async function getProfessorPageData(params?: {
   };
 }
 
-export async function getAdminContentStudioPageData() {
+export async function getAdminContentStudioPageData(filters?: {
+  query?: string;
+  category?: string;
+  status?: string;
+  lane?: string;
+}) {
   const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
@@ -3551,7 +3556,7 @@ export async function getAdminContentStudioPageData() {
   const programs = (programsResult.data ?? []) as ProgramRow[];
   const programIds = programs.map((program) => program.id);
 
-  const [contentsResult, modulesResult] = await Promise.all([
+  const [contentsResult, modulesResult, quizzesResult, assignmentsResult] = await Promise.all([
     admin
       .from("content_items")
       .select(
@@ -3564,28 +3569,476 @@ export async function getAdminContentStudioPageData() {
           .from("program_modules")
           .select("id, program_id, title, description, position, status, available_at")
           .in("program_id", programIds)
-      : Promise.resolve({ data: [] as ProgramModuleRow[] })
+      : Promise.resolve({ data: [] as ProgramModuleRow[] }),
+    admin
+      .from("quizzes")
+      .select("id, title, content_item_id, status")
+      .eq("organization_id", organizationId),
+    admin
+      .from("learning_assignments")
+      .select("id, content_item_id, due_at, published_at")
+      .eq("organization_id", organizationId)
   ]);
 
   const contents = (contentsResult.data ?? []) as ContentRow[];
   const modules = (modulesResult.data ?? []) as ProgramModuleRow[];
+  const quizzes = (quizzesResult.data ?? []) as Array<{
+    id: string;
+    title: string;
+    content_item_id: string | null;
+    status: string;
+  }>;
+  const assignments = (assignmentsResult.data ?? []) as Array<{
+    id: string;
+    content_item_id: string | null;
+    due_at: string | null;
+    published_at: string | null;
+  }>;
   const moduleOptions = buildProgramModuleOptions(programs, modules);
+  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  const assignmentStatsByContentId = assignments.reduce((map, assignment) => {
+    if (!assignment.content_item_id) {
+      return map;
+    }
+
+    const current =
+      map.get(assignment.content_item_id) ??
+      ({
+        assignmentCount: 0,
+        overdueCount: 0,
+        dueSoonCount: 0
+      } as {
+        assignmentCount: number;
+        overdueCount: number;
+        dueSoonCount: number;
+      });
+    const state = getDeadlineState(assignment.due_at, false);
+
+    current.assignmentCount += 1;
+    if (state === "overdue") {
+      current.overdueCount += 1;
+    } else if (state === "soon") {
+      current.dueSoonCount += 1;
+    }
+
+    map.set(assignment.content_item_id, current);
+    return map;
+  }, new Map<
+    string,
+    {
+      assignmentCount: number;
+      overdueCount: number;
+      dueSoonCount: number;
+    }
+  >());
+  const linkedQuizCountByContentId = quizzes.reduce((map, quiz) => {
+    if (!quiz.content_item_id) {
+      return map;
+    }
+
+    map.set(quiz.content_item_id, (map.get(quiz.content_item_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const normalizedQuery = String(filters?.query ?? "").trim().toLowerCase();
+  const selectedStatus = filters?.status ? String(filters.status).trim().toLowerCase() : "all";
+  const availableStatuses = new Set(contents.map((content) => content.status));
+  const resolvedStatus = selectedStatus !== "all" && availableStatuses.has(selectedStatus) ? selectedStatus : "all";
+  const categories = Array.from(
+    new Set(contents.map((content) => content.category?.trim()).filter(Boolean) as string[])
+  ).sort((left, right) => left.localeCompare(right));
+  const selectedCategory =
+    filters?.category && categories.includes(String(filters.category)) ? String(filters.category) : "";
+  const laneFilter =
+    filters?.lane === "priority" ||
+    filters?.lane === "connected" ||
+    filters?.lane === "draft" ||
+    filters?.lane === "library"
+      ? filters.lane
+      : "all";
+
+  const contentRows = contents.map((content) => {
+    const programModule = content.module_id ? moduleById.get(content.module_id) ?? null : null;
+    const programTitle = programModule ? programTitleById.get(programModule.program_id) ?? "Parcours" : null;
+    const assignmentStats = assignmentStatsByContentId.get(content.id) ?? {
+      assignmentCount: 0,
+      overdueCount: 0,
+      dueSoonCount: 0
+    };
+    const linkedQuizCount = linkedQuizCountByContentId.get(content.id) ?? 0;
+    const taxonomyScore = [
+      Boolean(content.summary?.trim()),
+      Boolean(content.category?.trim()),
+      Boolean(content.subcategory?.trim()),
+      Boolean(content.tags?.length)
+    ].filter(Boolean).length;
+    const lane: "priority" | "connected" | "draft" | "library" =
+      content.status !== "published"
+        ? "draft"
+        : content.is_required || assignmentStats.assignmentCount > 0
+          ? "priority"
+          : linkedQuizCount > 0 || Boolean(content.module_id)
+            ? "connected"
+            : "library";
+    const tone: BadgeTone =
+      lane === "draft" ? "warning" : lane === "priority" ? "accent" : lane === "connected" ? "success" : "neutral";
+    const statusTone: BadgeTone =
+      content.status === "published"
+        ? "success"
+        : content.status === "scheduled"
+          ? "accent"
+          : content.status === "draft"
+            ? "warning"
+            : "neutral";
+
+    return {
+      ...content,
+      lane,
+      tone,
+      statusTone,
+      taxonomyScore,
+      assignmentCount: assignmentStats.assignmentCount,
+      overdueCount: assignmentStats.overdueCount,
+      dueSoonCount: assignmentStats.dueSoonCount,
+      linkedQuizCount,
+      moduleLabel: programModule
+        ? `${programTitle} · Module ${programModule.position + 1} · ${programModule.title}`
+        : "Hors parcours",
+      previewHref: content.status === "published" ? `/library/${content.slug}` : "#content-studio",
+      ctaLabel: content.status === "published" ? "Voir dans la bibliothèque" : "Compléter dans le studio",
+      laneLabel:
+        lane === "priority"
+          ? "Prioritaire"
+          : lane === "connected"
+            ? "Connecté"
+            : lane === "draft"
+              ? "Brouillon"
+              : "Bibliothèque",
+      nextNeed:
+        lane === "draft"
+          ? "Finaliser puis publier pour rendre la ressource exploitable."
+          : lane === "priority"
+            ? assignmentStats.overdueCount > 0
+              ? "La ressource diffuse déjà, mais la dette de deadline mérite une lecture."
+              : "Capitaliser sur cette ressource pivot dans les assignations et les parcours."
+            : lane === "connected"
+              ? "Bonne base éditoriale, peut être diffusée davantage dans les missions."
+              : "Ressource propre mais encore peu branchée sur l’exécution pédagogique."
+    };
+  });
+
+  const scopedContents = contentRows.filter((content) => {
+    const matchesQuery = normalizedQuery
+      ? `${content.title} ${content.summary ?? ""} ${content.category ?? ""} ${content.subcategory ?? ""} ${content.moduleLabel}`.toLowerCase().includes(normalizedQuery)
+      : true;
+    const matchesCategory = selectedCategory ? content.category === selectedCategory : true;
+    const matchesStatus = resolvedStatus === "all" ? true : content.status === resolvedStatus;
+    return matchesQuery && matchesCategory && matchesStatus;
+  });
+
+  const laneCounts = {
+    priority: scopedContents.filter((content) => content.lane === "priority").length,
+    connected: scopedContents.filter((content) => content.lane === "connected").length,
+    draft: scopedContents.filter((content) => content.lane === "draft").length,
+    library: scopedContents.filter((content) => content.lane === "library").length
+  };
+
+  const visibleContents = scopedContents.filter((content) => (laneFilter === "all" ? true : content.lane === laneFilter));
+  const publishedVisibleCount = visibleContents.filter((content) => content.status === "published").length;
+  const activationCount = visibleContents.filter(
+    (content) => content.assignmentCount > 0 || content.linkedQuizCount > 0
+  ).length;
+  const pathwayLinkedCount = visibleContents.filter((content) => Boolean(content.module_id)).length;
+  const taxonomyReadyCount = visibleContents.filter((content) => content.taxonomyScore >= 3).length;
+  const averageTaxonomyScore = visibleContents.length
+    ? roundMetric(
+        (visibleContents.reduce((total, content) => total + content.taxonomyScore, 0) /
+          (visibleContents.length * 4)) *
+          100
+      )
+    : 0;
+  const activationScore = visibleContents.length
+    ? roundMetric(
+        (publishedVisibleCount / visibleContents.length) * 35 +
+          (activationCount / visibleContents.length) * 35 +
+          (pathwayLinkedCount / visibleContents.length) * 15 +
+          (averageTaxonomyScore / 100) * 15
+      )
+    : 0;
+  const activationBand: EngagementBand =
+    activationScore >= 75 ? "strong" : activationScore >= 45 ? "watch" : "risk";
+  const sortedVisibleContents = visibleContents
+    .slice()
+    .sort((left, right) => {
+      const laneRank = { priority: 0, draft: 1, connected: 2, library: 3 } as const;
+      return (
+        laneRank[left.lane] - laneRank[right.lane] ||
+        right.assignmentCount - left.assignmentCount ||
+        right.linkedQuizCount - left.linkedQuizCount ||
+        right.taxonomyScore - left.taxonomyScore ||
+        (getDateValue(right.created_at) ?? 0) - (getDateValue(left.created_at) ?? 0)
+      );
+    });
+  const focusContent = sortedVisibleContents[0] ?? null;
+  const categoryRadar = Array.from(
+    visibleContents.reduce((map, content) => {
+      const key = content.category?.trim() || "Sans catégorie";
+      const current =
+        map.get(key) ??
+        ({
+          id: key,
+          label: key,
+          count: 0,
+          requiredCount: 0,
+          assignmentLoad: 0,
+          linkedQuizCount: 0
+        } as {
+          id: string;
+          label: string;
+          count: number;
+          requiredCount: number;
+          assignmentLoad: number;
+          linkedQuizCount: number;
+        });
+
+      current.count += 1;
+      current.assignmentLoad += content.assignmentCount;
+      current.linkedQuizCount += content.linkedQuizCount;
+      if (content.is_required) {
+        current.requiredCount += 1;
+      }
+
+      map.set(key, current);
+      return map;
+    }, new Map<
+      string,
+      {
+        id: string;
+        label: string;
+        count: number;
+        requiredCount: number;
+        assignmentLoad: number;
+        linkedQuizCount: number;
+      }
+    >()).values()
+  )
+    .map((category) => ({
+      ...category,
+      tone:
+        category.requiredCount > 0
+          ? ("warning" as const)
+          : category.assignmentLoad > 0 || category.linkedQuizCount > 0
+            ? ("accent" as const)
+            : ("neutral" as const)
+    }))
+    .sort((left, right) => {
+      return (
+        right.requiredCount - left.requiredCount ||
+        right.assignmentLoad - left.assignmentLoad ||
+        right.count - left.count
+      );
+    })
+    .slice(0, 6);
+  const editorialFeed = visibleContents
+    .slice()
+    .sort((left, right) => (getDateValue(right.created_at) ?? 0) - (getDateValue(left.created_at) ?? 0))
+    .slice(0, 6)
+    .map((content) => ({
+      id: content.id,
+      title: content.title,
+      createdAt: formatDate(content.created_at),
+      laneLabel: content.laneLabel,
+      status: content.status,
+      tone: content.tone,
+      moduleLabel: content.moduleLabel
+    }));
+  const activeFilterParts = [
+    selectedCategory ? `catégorie ${selectedCategory}` : null,
+    resolvedStatus !== "all" ? `statut ${resolvedStatus}` : null,
+    laneFilter !== "all"
+      ? laneFilter === "priority"
+        ? "lane prioritaire"
+        : laneFilter === "connected"
+          ? "lane connectée"
+          : laneFilter === "draft"
+            ? "lane brouillon"
+            : "lane bibliothèque"
+      : null,
+    normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
+  ].filter(Boolean) as string[];
+  const priorityActions = [
+    laneCounts.draft > 0
+      ? {
+          id: "drafts",
+          title: `${laneCounts.draft} ressource(s) restent encore en brouillon`,
+          description: "Le prochain gain rapide est souvent éditorial : finaliser, publier puis diffuser.",
+          href: "#content-studio",
+          ctaLabel: "Compléter le studio",
+          tone: "warning" as const
+        }
+      : {
+          id: "drafts",
+          title: "Le catalogue visible est déjà publié",
+          description: "Le studio peut se concentrer sur la diffusion et la connexion pédagogique.",
+          href: "/library",
+          ctaLabel: "Voir la bibliothèque",
+          tone: "success" as const
+        },
+    visibleContents.filter((content) => content.assignmentCount === 0 && content.linkedQuizCount === 0 && content.status === "published").length > 0
+      ? {
+          id: "distribution",
+          title: `${visibleContents.filter((content) => content.assignmentCount === 0 && content.linkedQuizCount === 0 && content.status === "published").length} ressource(s) publiées restent peu branchées`,
+          description: "La vraie dette n'est pas la création, mais la connexion aux assignations, quiz et parcours.",
+          href: "/admin/assignments",
+          ctaLabel: "Ouvrir les assignations",
+          tone: "accent" as const
+        }
+      : {
+          id: "distribution",
+          title: "Diffusion éditoriale bien branchée",
+          description: "Les ressources visibles sont déjà connectées au runtime pédagogique.",
+          href: "/admin/assignments",
+          ctaLabel: "Vérifier l'exécution",
+          tone: "success" as const
+        },
+    visibleContents.filter((content) => content.taxonomyScore < 3).length > 0
+      ? {
+          id: "taxonomy",
+          title: `${visibleContents.filter((content) => content.taxonomyScore < 3).length} ressource(s) demandent encore un cadrage éditorial`,
+          description: "Catégorie, résumé et tags restent essentiels pour rendre la bibliothèque navigable.",
+          href: "#content-studio",
+          ctaLabel: "Renforcer la taxonomie",
+          tone: "accent" as const
+        }
+      : {
+          id: "taxonomy",
+          title: "Taxonomie éditoriale cohérente",
+          description: "Les ressources visibles sont correctement positionnées dans la bibliothèque ECCE.",
+          href: "/library",
+          ctaLabel: "Explorer la bibliothèque",
+          tone: "success" as const
+        },
+    focusContent
+      ? {
+          id: "pivot",
+          title: `Ressource pivot · ${focusContent.title}`,
+          description:
+            focusContent.assignmentCount > 0 || focusContent.linkedQuizCount > 0
+              ? `${focusContent.assignmentCount} assignation(s) · ${focusContent.linkedQuizCount} quiz lié(s).`
+              : "Bonne candidate pour une prochaine diffusion dans les parcours ou les missions.",
+          href: focusContent.previewHref,
+          ctaLabel: focusContent.ctaLabel,
+          tone: focusContent.tone
+        }
+      : {
+          id: "pivot",
+          title: "Aucune ressource focus",
+          description: "Crée ou élargis la vue pour faire remonter une ressource pivot.",
+          href: "#content-studio",
+          ctaLabel: "Créer un contenu",
+          tone: "neutral" as const
+        }
+  ];
 
   return {
     context,
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      category: selectedCategory,
+      status: resolvedStatus,
+      lane: laneFilter,
+      summary: activeFilterParts.length ? `Vue filtrée · ${activeFilterParts.join(" · ")}` : "Vue globale du studio contenus"
+    },
     metrics: [
       {
-        label: "Ressources",
-        value: contents.length.toString(),
-        delta: `${contents.filter((item) => item.status === "published").length} publiées`
+        label: "Ressources visibles",
+        value: visibleContents.length.toString(),
+        delta: `${publishedVisibleCount} publiées`
       },
       {
-        label: "Obligatoires",
-        value: contents.filter((item) => item.is_required).length.toString(),
-        delta: "parcours guidés"
+        label: "Activation éditoriale",
+        value: `${activationScore}%`,
+        delta: `${activationCount} déjà diffusées ou reliées`
+      },
+      {
+        label: "Taxonomie prête",
+        value: `${taxonomyReadyCount}/${visibleContents.length || 0}`,
+        delta: `${categories.length} catégorie(s)`
+      },
+      {
+        label: "Parcours branchés",
+        value: pathwayLinkedCount.toString(),
+        delta: `${moduleOptions.length} module(s) disponibles`
       }
     ],
-    contents,
+    hero: {
+      title: focusContent
+        ? `${focusContent.title} concentre le point d’attention éditorial principal`
+        : "Le studio contenus est prêt à piloter la bibliothèque ECCE",
+      summary: focusContent
+        ? `${focusContent.laneLabel} · ${focusContent.assignmentCount} assignation(s) · ${focusContent.linkedQuizCount} quiz lié(s). ${focusContent.nextNeed}`
+        : "La vue se remplira dès que des ressources seront visibles dans le studio."
+    },
+    activationPulse: {
+      score: activationScore,
+      band: activationBand,
+      bandLabel:
+        activationBand === "strong"
+          ? "Catalogue solide"
+          : activationBand === "watch"
+            ? "Diffusion à consolider"
+            : "Refonte éditoriale à pousser",
+      caption: `${visibleContents.length} ressource(s) visibles · ${categories.length} catégorie(s)`,
+      trend:
+        laneCounts.draft > 0
+          ? ("down" as const)
+          : laneCounts.priority > 0 || laneCounts.connected > 0
+            ? ("steady" as const)
+            : ("up" as const),
+      trendLabel:
+        laneCounts.draft > 0
+          ? `${laneCounts.draft} ressource(s) restent en brouillon`
+          : laneCounts.priority > 0 || laneCounts.connected > 0
+            ? `${laneCounts.priority + laneCounts.connected} ressource(s) déjà activées dans le produit`
+            : "bibliothèque propre mais encore peu diffusée"
+    },
+    laneBreakdown: [
+      {
+        id: "priority",
+        label: "Prioritaires",
+        count: laneCounts.priority,
+        tone: "accent" as const,
+        isActive: laneFilter === "priority"
+      },
+      {
+        id: "connected",
+        label: "Connectés",
+        count: laneCounts.connected,
+        tone: "success" as const,
+        isActive: laneFilter === "connected"
+      },
+      {
+        id: "draft",
+        label: "Brouillons",
+        count: laneCounts.draft,
+        tone: "warning" as const,
+        isActive: laneFilter === "draft"
+      },
+      {
+        id: "library",
+        label: "Bibliothèque",
+        count: laneCounts.library,
+        tone: "neutral" as const,
+        isActive: laneFilter === "library"
+      }
+    ],
+    focusContent,
+    priorityActions,
+    contentWatchlist: sortedVisibleContents.slice(0, 6),
+    categoryOptions: categories,
+    categoryRadar,
+    editorialFeed,
+    contents: visibleContents,
     moduleOptions
   };
 }
