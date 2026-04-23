@@ -77,6 +77,7 @@ type AssignmentRow = {
   cohort_id?: string | null;
   content_item_id: string | null;
   quiz_id: string | null;
+  created_at?: string;
   published_at?: string | null;
 };
 
@@ -3863,7 +3864,12 @@ export async function getAdminProgramStudioPageData() {
   };
 }
 
-export async function getAdminAssignmentStudioPageData() {
+export async function getAdminAssignmentStudioPageData(filters?: {
+  query?: string;
+  target?: string;
+  kind?: string;
+  lane?: string;
+}) {
   const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
@@ -3900,7 +3906,7 @@ export async function getAdminAssignmentStudioPageData() {
       .order("created_at", { ascending: false }),
     admin
       .from("learning_assignments")
-      .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+      .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at, created_at")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
   ]);
@@ -3926,6 +3932,41 @@ export async function getAdminAssignmentStudioPageData() {
     time_limit_minutes: number | null;
   }>;
   const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const coacheeProfiles = profiles.filter((profile) =>
+    (profile.user_roles ?? []).some((role) => role.role === "coachee")
+  );
+  const coacheeIds = new Set(coacheeProfiles.map((profile) => profile.id));
+
+  const [attemptsResult, submissionsResult] = coacheeProfiles.length
+    ? await Promise.all([
+        admin
+          .from("quiz_attempts")
+          .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+          .in(
+            "user_id",
+            coacheeProfiles.map((profile) => profile.id)
+          )
+          .order("submitted_at", { ascending: false }),
+        admin
+          .from("submissions")
+          .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+          .in(
+            "user_id",
+            coacheeProfiles.map((profile) => profile.id)
+          )
+          .order("submitted_at", { ascending: false })
+      ])
+    : [
+        {
+          data: [] as QuizAttemptResultRow[]
+        },
+        {
+          data: [] as SubmissionRow[]
+        }
+      ];
+
+  const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
+  const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
   const emailByUserId = new Map(authUsers.map((item) => [item.id, item.email ?? "email indisponible"]));
   const userNameById = new Map(profiles.map((profile) => [profile.id, formatUserName(profile)]));
   const contentById = new Map(contents.map((content) => [content.id, content]));
@@ -3935,43 +3976,543 @@ export async function getAdminAssignmentStudioPageData() {
     map.set(item.cohort_id, (map.get(item.cohort_id) ?? 0) + 1);
     return map;
   }, new Map<string, number>());
-
-  const coacheeUsers = profiles
-    .filter((profile) => (profile.user_roles ?? []).some((role) => role.role === "coachee"))
-    .map((profile) => ({
-      id: profile.id,
-      name: formatUserName(profile),
-      email: emailByUserId.get(profile.id) ?? "email indisponible"
-    }));
   const now = Date.now();
-  const overdueCount = assignments.filter((assignment) => getDeadlineState(assignment.due_at, false, now) === "overdue").length;
-  const dueSoonCount = assignments.filter((assignment) => getDeadlineState(assignment.due_at, false, now) === "soon").length;
-  const withoutDeadlineCount = assignments.filter((assignment) => getDeadlineState(assignment.due_at, false, now) === "open").length;
+  const deadlineSoonLimit = now + 7 * 24 * 60 * 60 * 1000;
+
+  const latestAttemptByAssignmentKey = new Map<string, QuizAttemptResultRow>();
+  const latestAttemptByQuizKey = new Map<string, QuizAttemptResultRow>();
+  for (const attempt of attempts) {
+    if (attempt.assignment_id) {
+      const assignmentKey = `${attempt.user_id}:${attempt.assignment_id}`;
+      if (!latestAttemptByAssignmentKey.has(assignmentKey)) {
+        latestAttemptByAssignmentKey.set(assignmentKey, attempt);
+      }
+    }
+
+    const quizKey = `${attempt.user_id}:${attempt.quiz_id}`;
+    if (!latestAttemptByQuizKey.has(quizKey)) {
+      latestAttemptByQuizKey.set(quizKey, attempt);
+    }
+  }
+
+  const latestSubmissionByAssignmentKey = new Map<string, SubmissionRow>();
+  for (const submission of submissions) {
+    if (!submission.assignment_id) {
+      continue;
+    }
+
+    const submissionKey = `${submission.user_id}:${submission.assignment_id}`;
+    if (!latestSubmissionByAssignmentKey.has(submissionKey)) {
+      latestSubmissionByAssignmentKey.set(submissionKey, submission);
+    }
+  }
+
+  const coacheeUsers = coacheeProfiles.map((profile) => ({
+    id: profile.id,
+    name: formatUserName(profile),
+    email: emailByUserId.get(profile.id) ?? "email indisponible"
+  }));
+
+  const expandedAssignments = buildAssignmentTargets(assignments, cohortMembers);
+
+  const assignmentRows = expandedAssignments.map((assignment) => {
+    const content = contentById.get(assignment.content_item_id ?? "");
+    const quiz = quizById.get(assignment.quiz_id ?? "");
+    const kind: "quiz" | "contenu" = assignment.quiz_id ? "quiz" : "contenu";
+    const targetIsCohort = Boolean(assignment.cohort_id);
+    const targetIds = assignment.targetIds.filter((targetId) => coacheeIds.has(targetId));
+    const dueAtValue = getDateValue(assignment.due_at);
+
+    let completedCount = 0;
+    let overdueTargetCount = 0;
+    let dueSoonTargetCount = 0;
+    let resolvedCount = 0;
+    let onTimeCount = 0;
+
+    for (const targetId of targetIds) {
+      const attempt =
+        latestAttemptByAssignmentKey.get(`${targetId}:${assignment.id}`) ??
+        (assignment.quiz_id ? latestAttemptByQuizKey.get(`${targetId}:${assignment.quiz_id}`) : undefined);
+      const submission = latestSubmissionByAssignmentKey.get(`${targetId}:${assignment.id}`);
+
+      const completedItem = assignment.content_item_id
+        ? Boolean(submission && submission.status !== "not_started")
+        : Boolean(attempt && attempt.status !== "in_progress" && attempt.status !== "expired");
+      const completedAt = assignment.content_item_id
+        ? submission?.submitted_at ?? submission?.reviewed_at ?? submission?.created_at ?? null
+        : attempt?.submitted_at ?? null;
+      const completedAtValue = getDateValue(completedAt);
+
+      if (completedItem) {
+        completedCount += 1;
+      }
+
+      if (dueAtValue !== null) {
+        if (!completedItem && dueAtValue < now) {
+          overdueTargetCount += 1;
+        }
+
+        if (!completedItem && dueAtValue >= now && dueAtValue <= deadlineSoonLimit) {
+          dueSoonTargetCount += 1;
+        }
+
+        if (completedItem && completedAtValue !== null) {
+          resolvedCount += 1;
+          if (completedAtValue <= dueAtValue) {
+            onTimeCount += 1;
+          }
+        } else if (!completedItem && dueAtValue < now) {
+          resolvedCount += 1;
+        }
+      }
+    }
+
+    const targetCount = targetIds.length;
+    const completionRate = targetCount ? roundMetric((completedCount / targetCount) * 100) : 0;
+    const onTimeRate = resolvedCount ? roundMetric((onTimeCount / resolvedCount) * 100) : null;
+    const isComplete = targetCount > 0 && completedCount >= targetCount;
+    const dueState = getDeadlineState(assignment.due_at, isComplete, now);
+    const scope: "individual" | "cohort" = targetIsCohort ? "cohort" : "individual";
+    const lane: "critical" | "watch" | "evergreen" | "aligned" =
+      dueState === "open"
+        ? "evergreen"
+        : overdueTargetCount > 0 || (dueState === "soon" && completionRate < 40)
+          ? "critical"
+          : dueSoonTargetCount > 0 || completionRate < 75
+            ? "watch"
+            : "aligned";
+    const tone: BadgeTone =
+      lane === "critical" ? "warning" : lane === "watch" ? "accent" : lane === "evergreen" ? "neutral" : "success";
+
+    return {
+      id: assignment.id,
+      title: assignment.title,
+      summary:
+        content?.summary ??
+        quiz?.description ??
+        (assignment.quiz_id ? "Quiz programmé dans le parcours ECCE." : "Ressource programmée dans le parcours ECCE."),
+      due: formatDate(assignment.due_at),
+      dueCompact: formatDateCompact(assignment.due_at),
+      dueRelativeLabel: getRelativeDayLabel(assignment.due_at, now),
+      dueState,
+      statusLabel: getDeadlineStateLabel(dueState),
+      statusTone: getDeadlineStateTone(dueState),
+      targetLabel:
+        userNameById.get(assignment.assigned_user_id ?? "") ??
+        cohortNameById.get(assignment.cohort_id ?? "") ??
+        "cible non résolue",
+      audienceLabel: targetIsCohort
+        ? `Cohorte · ${cohortSizeById.get(assignment.cohort_id ?? "") ?? 0} coaché(s)`
+        : "Assignation individuelle",
+      assetLabel: content?.title ?? quiz?.title ?? "élément non résolu",
+      kind,
+      scope,
+      lane,
+      tone,
+      completionRate,
+      completedCount,
+      targetCount,
+      overdueTargetCount,
+      dueSoonTargetCount,
+      onTimeRate,
+      createdAt: formatDate(assignment.created_at ?? assignment.published_at ?? null),
+      createdAtValue:
+        getDateValue(assignment.created_at ?? assignment.published_at ?? assignment.due_at) ??
+        0,
+      meta: content
+        ? `${content.content_type} · ${content.estimated_minutes ? `${content.estimated_minutes} min` : "durée libre"}`
+        : `${quiz?.kind ?? "quiz"} · ${quiz?.time_limit_minutes ? `${quiz.time_limit_minutes} min` : "temps libre"}`,
+      href: assignment.content_item_id
+        ? `/assignments/${assignment.id}`
+        : assignment.quiz_id
+          ? `/quiz/${assignment.quiz_id}?assignment=${assignment.id}`
+          : null,
+      ctaLabel: assignment.content_item_id ? "Ouvrir l'assignation" : "Ouvrir le quiz"
+    };
+  });
+
+  const normalizedQuery = String(filters?.query ?? "").trim().toLowerCase();
+  const selectedTarget = filters?.target === "individual" || filters?.target === "cohort" ? filters.target : "all";
+  const selectedKind = filters?.kind === "quiz" || filters?.kind === "contenu" ? filters.kind : "all";
+  const selectedLane =
+    filters?.lane === "critical" ||
+    filters?.lane === "watch" ||
+    filters?.lane === "evergreen" ||
+    filters?.lane === "aligned"
+      ? filters.lane
+      : "all";
+
+  const queryFilteredAssignments = assignmentRows.filter((assignment) => {
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return [
+      assignment.title,
+      assignment.summary ?? "",
+      assignment.targetLabel,
+      assignment.audienceLabel,
+      assignment.assetLabel,
+      assignment.meta
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
+
+  const typeFilteredAssignments = queryFilteredAssignments.filter((assignment) => {
+    const matchesTarget = selectedTarget === "all" ? true : assignment.scope === selectedTarget;
+    const matchesKind = selectedKind === "all" ? true : assignment.kind === selectedKind;
+    return matchesTarget && matchesKind;
+  });
+
+  const visibleAssignments = typeFilteredAssignments.filter((assignment) =>
+    selectedLane === "all" ? true : assignment.lane === selectedLane
+  );
+
+  const laneCounts = {
+    critical: typeFilteredAssignments.filter((assignment) => assignment.lane === "critical").length,
+    watch: typeFilteredAssignments.filter((assignment) => assignment.lane === "watch").length,
+    evergreen: typeFilteredAssignments.filter((assignment) => assignment.lane === "evergreen").length,
+    aligned: typeFilteredAssignments.filter((assignment) => assignment.lane === "aligned").length
+  };
+
+  const filteredTargetedLearners = new Set(visibleAssignments.flatMap((assignment) => {
+    const source = expandedAssignments.find((item) => item.id === assignment.id);
+    return source ? source.targetIds.filter((targetId) => coacheeIds.has(targetId)) : [];
+  }));
+  const filteredCohortCount = new Set(
+    visibleAssignments.map((assignment) => assignment.scope === "cohort" ? assignment.targetLabel : "").filter(Boolean)
+  ).size;
+  const averageCompletionRate = visibleAssignments.length
+    ? roundMetric(
+        visibleAssignments.reduce((total, assignment) => total + assignment.completionRate, 0) /
+          visibleAssignments.length
+      )
+    : 0;
+  const dueSoonCount = visibleAssignments.filter((assignment) => assignment.dueState === "soon").length;
+  const overdueCount = visibleAssignments.filter((assignment) => assignment.dueState === "overdue").length;
+  const withoutDeadlineCount = visibleAssignments.filter((assignment) => assignment.dueState === "open").length;
+  const quizCount = visibleAssignments.filter((assignment) => assignment.kind === "quiz").length;
+  const contentCount = visibleAssignments.filter((assignment) => assignment.kind === "contenu").length;
+  const completionBand: EngagementBand =
+    averageCompletionRate >= 75 ? "strong" : averageCompletionRate >= 45 ? "watch" : "risk";
+
+  const sortedAssignments = visibleAssignments
+    .slice()
+    .sort((left, right) => {
+      const leftPriority =
+        (left.lane === "critical" ? 400 : left.lane === "watch" ? 250 : left.lane === "evergreen" ? 150 : 50) +
+        left.overdueTargetCount * 80 +
+        left.dueSoonTargetCount * 30 +
+        (100 - left.completionRate);
+      const rightPriority =
+        (right.lane === "critical" ? 400 : right.lane === "watch" ? 250 : right.lane === "evergreen" ? 150 : 50) +
+        right.overdueTargetCount * 80 +
+        right.dueSoonTargetCount * 30 +
+        (100 - right.completionRate);
+
+      if (rightPriority !== leftPriority) {
+        return rightPriority - leftPriority;
+      }
+
+      return right.createdAtValue - left.createdAtValue;
+    });
+
+  const focusAssignment = sortedAssignments[0] ?? null;
+
+  const assetRadar = Array.from(
+    visibleAssignments.reduce((map, assignment) => {
+      const key = `${assignment.kind}:${assignment.assetLabel}`;
+      const current = map.get(key) ?? {
+        id: key,
+        title: assignment.assetLabel,
+        kind: assignment.kind,
+        assignmentCount: 0,
+        targetCount: 0,
+        completedCount: 0,
+        criticalCount: 0,
+        overdueTargetCount: 0
+      };
+
+      current.assignmentCount += 1;
+      current.targetCount += assignment.targetCount;
+      current.completedCount += assignment.completedCount;
+      current.overdueTargetCount += assignment.overdueTargetCount;
+      if (assignment.lane === "critical") {
+        current.criticalCount += 1;
+      }
+
+      map.set(key, current);
+      return map;
+    }, new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        kind: "quiz" | "contenu";
+        assignmentCount: number;
+        targetCount: number;
+        completedCount: number;
+        criticalCount: number;
+        overdueTargetCount: number;
+      }
+    >()).values()
+  )
+    .map((asset) => ({
+      id: asset.id,
+      title: asset.title,
+      kind: asset.kind,
+      tone:
+        asset.criticalCount > 0
+          ? ("warning" as const)
+          : asset.targetCount > 0 && asset.completedCount / asset.targetCount >= 0.8
+            ? ("success" as const)
+            : ("accent" as const),
+      assignmentCount: asset.assignmentCount,
+      targetCount: asset.targetCount,
+      averageCompletion: asset.targetCount ? roundMetric((asset.completedCount / asset.targetCount) * 100) : 0,
+      criticalCount: asset.criticalCount,
+      overdueTargetCount: asset.overdueTargetCount
+    }))
+    .sort((left, right) => {
+      if (right.criticalCount !== left.criticalCount) {
+        return right.criticalCount - left.criticalCount;
+      }
+
+      if (right.overdueTargetCount !== left.overdueTargetCount) {
+        return right.overdueTargetCount - left.overdueTargetCount;
+      }
+
+      return right.assignmentCount - left.assignmentCount;
+    })
+    .slice(0, 6);
+
+  const executionFeed = visibleAssignments
+    .slice()
+    .sort((left, right) => right.createdAtValue - left.createdAtValue)
+    .slice(0, 6)
+    .map((assignment) => ({
+      id: assignment.id,
+      title: assignment.title,
+      createdAt: assignment.createdAt,
+      dueLabel: assignment.dueRelativeLabel,
+      scopeLabel: assignment.scope === "cohort" ? "Cohorte" : "Individuel",
+      targetLabel: assignment.targetLabel,
+      tone: assignment.tone
+    }));
+
+  const priorityActions = [
+    overdueCount > 0
+      ? {
+          id: "deadline",
+          title: `${overdueCount} assignation(s) ont dépassé leur tempo`,
+          description: "Le vrai risque n'est plus la programmation, mais la dette de suivi déjà visible dans les deadlines.",
+          href: "#assignment-board",
+          ctaLabel: "Traiter le board",
+          tone: "warning" as const
+        }
+      : {
+          id: "deadline",
+          title: "Aucune dette de deadline immédiate",
+          description: "Le studio peut rester orienté orchestration plutôt qu'urgence pure.",
+          href: "#assignment-board",
+          ctaLabel: "Relire le board",
+          tone: "success" as const
+        },
+    withoutDeadlineCount > 0
+      ? {
+          id: "evergreen",
+          title: `${withoutDeadlineCount} assignation(s) restent sans échéance`,
+          description: "Le mode evergreen est utile, mais il faut l'assumer explicitement pour ne pas créer de zone grise pédagogique.",
+          href: "#assignment-board",
+          ctaLabel: "Voir les evergreen",
+          tone: "accent" as const
+        }
+      : {
+          id: "evergreen",
+          title: "Cadence explicite sur la vue active",
+          description: "Les missions visibles ont toutes un tempo lisible pour le coaché.",
+          href: "#assignment-studio",
+          ctaLabel: "Créer la suite",
+          tone: "success" as const
+        },
+    laneCounts.critical + laneCounts.watch > 0
+      ? {
+          id: "coverage",
+          title: `${laneCounts.critical + laneCounts.watch} mission(s) demandent une relance pédagogique`,
+          description: "Le signal principal remonte côté exécution: consigne, tempo ou cible doivent être réajustés.",
+          href: "/admin/learners",
+          ctaLabel: "Croiser avec learner ops",
+          tone: "accent" as const
+        }
+      : {
+          id: "coverage",
+          title: "Pipeline d'exécution bien équilibré",
+          description: "La vue active ne remonte ni dette forte ni glissement pédagogique majeur.",
+          href: "/agenda",
+          ctaLabel: "Ouvrir l'agenda",
+          tone: "success" as const
+        },
+    assetRadar[0]
+      ? {
+          id: "asset",
+          title: `Asset focus · ${assetRadar[0].title}`,
+          description:
+            assetRadar[0].criticalCount > 0
+              ? "Cet asset concentre actuellement la plus forte tension d'exécution sur la vue active."
+              : "Cet asset est le meilleur point d'observation pour décider d'une nouvelle diffusion ou d'une relance.",
+          href: assetRadar[0].kind === "quiz" ? "/admin/quizzes" : "/admin/content",
+          ctaLabel: "Ouvrir le studio lié",
+          tone: assetRadar[0].tone
+        }
+      : {
+          id: "asset",
+          title: "Aucun asset encore diffusé",
+          description: "Crée une première assignation pour lancer la lecture d'exécution dans ECCE.",
+          href: "#assignment-studio",
+          ctaLabel: "Créer une assignation",
+          tone: "neutral" as const
+        }
+  ];
+
+  const summaryBits = [
+    normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null,
+    selectedTarget === "cohort" ? "cibles cohortes" : selectedTarget === "individual" ? "cibles individuelles" : null,
+    selectedKind === "quiz" ? "quiz" : selectedKind === "contenu" ? "contenus" : null,
+    selectedLane === "critical"
+      ? "lane critique"
+      : selectedLane === "watch"
+        ? "lane à surveiller"
+        : selectedLane === "evergreen"
+          ? "lane sans deadline"
+          : selectedLane === "aligned"
+            ? "lane alignée"
+            : null
+  ].filter(Boolean);
 
   return {
     context,
     metrics: [
       {
-        label: "Assignations",
-        value: assignments.length.toString(),
-        delta: `${assignments.filter((item) => item.quiz_id).length} quiz`
+        label: "Assignations visibles",
+        value: visibleAssignments.length.toString(),
+        delta: `${quizCount} quiz · ${contentCount} contenus`
       },
       {
-        label: "Deadlines proches",
-        value: dueSoonCount.toString(),
-        delta: `${overdueCount} en retard`
+        label: "Complétion moyenne",
+        value: `${averageCompletionRate}%`,
+        delta: `${laneCounts.critical} critiques · ${laneCounts.watch} à surveiller`
       },
       {
-        label: "Sans échéance",
+        label: "Coachés touchés",
+        value: `${filteredTargetedLearners.size}/${coacheeUsers.length}`,
+        delta: `${filteredCohortCount} cohorte(s) actives`
+      },
+      {
+        label: "Cadence ouverte",
         value: withoutDeadlineCount.toString(),
-        delta: "parcours evergreen"
-      },
-      {
-        label: "Cibles disponibles",
-        value: coacheeUsers.length.toString(),
-        delta: `${cohorts.length} cohortes`
+        delta: `${dueSoonCount} à venir · ${overdueCount} en retard`
       }
     ],
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      target: selectedTarget,
+      kind: selectedKind,
+      lane: selectedLane,
+      summary: summaryBits.length ? `Vue filtrée · ${summaryBits.join(" · ")}` : "Vue globale du studio assignations"
+    },
+    hero: {
+      title: focusAssignment
+        ? `${focusAssignment.title} concentre le point d'attention principal`
+        : "Le studio assignations est prêt à piloter le tempo pédagogique",
+      summary: focusAssignment
+        ? `${focusAssignment.targetLabel} · ${focusAssignment.assetLabel}. ${focusAssignment.completedCount}/${focusAssignment.targetCount} complété(s), ${focusAssignment.statusLabel} côté deadline.`
+        : "La vue se remplira dès que des assignations seront visibles côté admin."
+    },
+    laneBreakdown: [
+      {
+        id: "critical",
+        label: "Critiques",
+        count: laneCounts.critical,
+        tone: "warning" as const,
+        isActive: selectedLane === "critical"
+      },
+      {
+        id: "watch",
+        label: "À surveiller",
+        count: laneCounts.watch,
+        tone: "accent" as const,
+        isActive: selectedLane === "watch"
+      },
+      {
+        id: "evergreen",
+        label: "Sans deadline",
+        count: laneCounts.evergreen,
+        tone: "neutral" as const,
+        isActive: selectedLane === "evergreen"
+      },
+      {
+        id: "aligned",
+        label: "Alignées",
+        count: laneCounts.aligned,
+        tone: "success" as const,
+        isActive: selectedLane === "aligned"
+      }
+    ],
+    completionPulse: {
+      score: averageCompletionRate,
+      band: completionBand,
+      bandLabel:
+        completionBand === "strong"
+          ? "Exécution solide"
+          : completionBand === "watch"
+            ? "Cadence à surveiller"
+            : "Relance prioritaire",
+      caption: `${filteredTargetedLearners.size} coaché(s) touchés · ${visibleAssignments.length} mission(s) visibles`,
+      trend: laneCounts.critical > 0 ? ("down" as const) : laneCounts.watch > 0 ? ("steady" as const) : ("up" as const),
+      trendLabel:
+        laneCounts.critical > 0
+          ? `${laneCounts.critical} mission(s) critiques demandent une action rapide`
+          : laneCounts.watch > 0
+            ? `${laneCounts.watch} mission(s) restent à stabiliser`
+            : "pipeline d'exécution propre sur la vue active"
+    },
+    focusAssignment: focusAssignment
+      ? {
+          ...focusAssignment,
+          laneLabel:
+            focusAssignment.lane === "critical"
+              ? "Critique"
+              : focusAssignment.lane === "watch"
+                ? "À surveiller"
+                : focusAssignment.lane === "evergreen"
+                  ? "Sans deadline"
+                  : "Alignée",
+          nextNeed:
+            focusAssignment.lane === "critical"
+              ? "Relance ou arbitrage immédiat conseillé."
+              : focusAssignment.lane === "watch"
+                ? "Surveiller la complétion avant glissement."
+                : focusAssignment.lane === "evergreen"
+                  ? "Assumer explicitement le mode evergreen."
+                  : "Exécution saine, peut servir de référence."
+        }
+      : null,
+    priorityActions,
+    assignmentWatchlist: sortedAssignments.slice(0, 6).map((assignment) => ({
+      ...assignment,
+      laneLabel:
+        assignment.lane === "critical"
+          ? "Critique"
+          : assignment.lane === "watch"
+            ? "À surveiller"
+            : assignment.lane === "evergreen"
+              ? "Sans deadline"
+              : "Alignée"
+    })),
+    assetRadar,
+    executionFeed,
     userOptions: coacheeUsers.map((user) => ({
       id: user.id,
       label: `${user.name} · ${user.email}`,
@@ -3994,38 +4535,22 @@ export async function getAdminAssignmentStudioPageData() {
       meta: `${quiz.kind ?? "quiz"} · ${quiz.time_limit_minutes ? `${quiz.time_limit_minutes} min` : "temps libre"} · ${quiz.status}`,
       summary: quiz.description
     })),
-    assignments: assignments.map((assignment) => {
-      const content = contentById.get(assignment.content_item_id ?? "");
-      const quiz = quizById.get(assignment.quiz_id ?? "");
-      const dueState = getDeadlineState(assignment.due_at, false, now);
-      const targetIsCohort = Boolean(assignment.cohort_id);
-      const kind: "quiz" | "contenu" = assignment.quiz_id ? "quiz" : "contenu";
-
-      return {
-        id: assignment.id,
-        title: assignment.title,
-        summary:
-          content?.summary ??
-          quiz?.description ??
-          (assignment.quiz_id ? "Quiz programmé dans le parcours ECCE." : "Ressource programmée dans le parcours ECCE."),
-        due: formatDate(assignment.due_at),
-        dueState,
-        statusLabel: getDeadlineStateLabel(dueState),
-        statusTone: getDeadlineStateTone(dueState),
-        targetLabel:
-          userNameById.get(assignment.assigned_user_id ?? "") ??
-          cohortNameById.get(assignment.cohort_id ?? "") ??
-          "cible non résolue",
-        audienceLabel: targetIsCohort
-          ? `Cohorte · ${cohortSizeById.get(assignment.cohort_id ?? "") ?? 0} coaché(s)`
-          : "Assignation individuelle",
-        assetLabel: content?.title ?? quiz?.title ?? "élément non résolu",
-        kind,
-        meta: content
-          ? `${content.content_type} · ${content.estimated_minutes ? `${content.estimated_minutes} min` : "durée libre"}`
-          : `${quiz?.kind ?? "quiz"} · ${quiz?.time_limit_minutes ? `${quiz.time_limit_minutes} min` : "temps libre"}`
-      };
-    })
+    assignments: visibleAssignments.map((assignment) => ({
+      id: assignment.id,
+      title: assignment.title,
+      summary: assignment.summary,
+      due: assignment.due,
+      dueState: assignment.dueState,
+      statusLabel: assignment.statusLabel,
+      statusTone: assignment.statusTone,
+      targetLabel: assignment.targetLabel,
+      audienceLabel: assignment.audienceLabel,
+      assetLabel: assignment.assetLabel,
+      kind: assignment.kind,
+      meta: `${assignment.meta} · ${assignment.completedCount}/${assignment.targetCount} complété(s)`,
+      href: assignment.href,
+      ctaLabel: assignment.ctaLabel
+    }))
   };
 }
 
