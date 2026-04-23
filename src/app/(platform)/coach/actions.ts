@@ -180,6 +180,7 @@ export async function scheduleCoachingSessionAction(
       organizationId,
       recipientId,
       actorId: context.user.id,
+      kind: "session" as const,
       title: "Nouvelle séance de coaching",
       body: cohortName
         ? `Une séance a été planifiée pour le ${new Date(startsAt).toLocaleString("fr-FR")} dans la cohorte ${cohortName}.`
@@ -261,6 +262,7 @@ export async function reviewSubmissionAction(
       organizationId: context.profile.organization_id,
       recipientId: submissionResult.data.user_id,
       actorId: context.user.id,
+      kind: "review" as const,
       title: "Ta soumission a été relue",
       body: grade !== null
         ? `${submissionResult.data.title} a reçu la note ${grade}/100.`
@@ -430,6 +432,7 @@ export async function gradeQuizTextAttemptAction(
       organizationId: quizResult.data.organization_id,
       recipientId: attemptResult.data.user_id,
       actorId: context.user.id,
+      kind: "review" as const,
       title: "Quiz corrigé",
       body: badgeTitle
         ? `${quizResult.data.title} a été corrigé avec un score de ${score}%. Badge obtenu: ${badgeTitle}.`

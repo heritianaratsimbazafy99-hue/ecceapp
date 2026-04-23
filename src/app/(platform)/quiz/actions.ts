@@ -183,6 +183,7 @@ export async function submitQuizAttemptAction(
       organizationId,
       recipientId: context.user.id,
       actorId: context.user.id,
+      kind: "learning" as const,
       title: requiresManualReview ? "Quiz envoyé pour correction" : "Quiz complété",
       body: requiresManualReview
         ? `Tes réponses pour "${quiz.title}" ont été envoyées. La correction coach est en attente.`
@@ -195,6 +196,7 @@ export async function submitQuizAttemptAction(
         organizationId,
         recipientId,
         actorId: context.user.id,
+        kind: "review" as const,
         title: requiresManualReview ? "Quiz à corriger" : "Nouveau résultat quiz",
         body: requiresManualReview
           ? `${quiz.title} vient d'être soumis avec des réponses textuelles à corriger.`
@@ -219,6 +221,7 @@ export async function submitQuizAttemptAction(
         organizationId,
         recipientId: context.user.id,
         actorId: context.user.id,
+        kind: "reward" as const,
         title: "Nouveau badge débloqué",
         body: `Tu viens d'obtenir le badge "${badgeTitle}".`,
         deeplink: "/dashboard"

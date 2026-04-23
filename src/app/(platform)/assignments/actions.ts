@@ -128,6 +128,7 @@ export async function submitAssignmentAction(
         organizationId,
         recipientId,
         actorId: context.user.id,
+        kind: "review" as const,
         title: "Nouvelle soumission à relire",
         body: `${assignment.title} attend un retour coach.`,
         deeplink: "/coach"

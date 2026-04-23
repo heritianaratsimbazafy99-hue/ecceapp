@@ -140,6 +140,7 @@ export async function sendConversationMessageAction(
       organizationId,
       recipientId,
       actorId: context.user.id,
+      kind: "message" as const,
       title: "Nouveau message ECCE",
       body: `${context.profile.first_name} ${context.profile.last_name} t'a envoyé un message.`,
       deeplink: `${recipientRoute}?conversation=${conversationId}`

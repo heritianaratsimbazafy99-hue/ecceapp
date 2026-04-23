@@ -345,6 +345,7 @@ export async function assignCoacheeToCohortAction(
       organizationId,
       recipientId: coacheeId,
       actorId: context.user.id,
+      kind: "learning" as const,
       title: "Nouvelle cohorte ECCE",
       body: `Tu as été ajouté(e) à la cohorte ${cohortResult.data.name}.`,
       deeplink: "/dashboard"
@@ -473,6 +474,7 @@ export async function assignCoachAction(
         organizationId,
         recipientId,
         actorId: context.user.id,
+        kind: "learning" as const,
         title: "Nouveau coach référent",
         body: `${coachProfile.first_name} ${coachProfile.last_name} suit désormais ton parcours.`,
         deeplink: "/dashboard"
@@ -1127,6 +1129,7 @@ export async function enrollProgramAction(
       organizationId,
       recipientId,
       actorId: context.user.id,
+      kind: "learning" as const,
       title: "Nouveau parcours ECCE",
       body: `${programResult.title} a été ajouté à ton espace de progression.`,
       deeplink: "/programs"
@@ -1208,6 +1211,7 @@ export async function createAssignmentAction(
       organizationId,
       recipientId,
       actorId: context.user.id,
+      kind: "learning" as const,
       title: "Nouvelle assignation ECCE",
       body: dueAt
         ? `${title} a été programmé avec une échéance au ${new Date(dueAt).toLocaleString("fr-FR")}.`

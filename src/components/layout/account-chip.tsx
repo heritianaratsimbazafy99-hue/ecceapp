@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { NotificationBell } from "@/components/notifications/realtime-notification-center";
 import { signOutAction } from "@/app/auth/actions";
 
@@ -20,6 +22,10 @@ export function AccountChip({ email, role, name, userId }: AccountChipProps) {
 
       <div className="account-chip-actions">
         <NotificationBell userId={userId} />
+
+        <Link className="button button-secondary button-small" href="/account">
+          Mon compte
+        </Link>
 
         <form action={signOutAction}>
           <button className="button button-secondary button-small" type="submit">

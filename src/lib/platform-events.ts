@@ -1,3 +1,8 @@
+import {
+  getNotificationPreferencesByUserIds,
+  isNotificationKindEnabled,
+  type NotificationKind
+} from "@/lib/account";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type NotificationInput = {
@@ -8,6 +13,7 @@ type NotificationInput = {
   body?: string | null;
   deeplink?: string | null;
   channel?: "in_app" | "email";
+  kind?: NotificationKind;
 };
 
 const FIRST_SUCCESS_BADGE = {
@@ -23,9 +29,34 @@ export async function createNotifications(notifications: NotificationInput[]) {
   }
 
   const admin = createSupabaseAdminClient();
+  const deliverableNotifications: Array<NotificationInput> = [];
+  const notificationsByOrganization = notifications.reduce((map, notification) => {
+    const current = map.get(notification.organizationId) ?? [];
+    current.push(notification);
+    map.set(notification.organizationId, current);
+    return map;
+  }, new Map<string, NotificationInput[]>());
+
+  for (const [organizationId, organizationNotifications] of notificationsByOrganization.entries()) {
+    const preferenceMap = await getNotificationPreferencesByUserIds({
+      organizationId,
+      userIds: organizationNotifications.map((notification) => notification.recipientId)
+    });
+
+    deliverableNotifications.push(
+      ...organizationNotifications.filter((notification) => {
+        const preferences = preferenceMap.get(notification.recipientId);
+        return !preferences || isNotificationKindEnabled(notification.kind, preferences);
+      })
+    );
+  }
+
+  if (!deliverableNotifications.length) {
+    return;
+  }
 
   await admin.from("notifications").insert(
-    notifications.map((notification) => ({
+    deliverableNotifications.map((notification) => ({
       organization_id: notification.organizationId,
       recipient_id: notification.recipientId,
       actor_id: notification.actorId ?? null,
