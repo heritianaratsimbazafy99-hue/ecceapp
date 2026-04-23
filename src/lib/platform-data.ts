@@ -4767,6 +4767,197 @@ export async function getProfessorCoachingOpsPageData(filters?: {
   };
 }
 
+export async function getProfessorCohortDetailPageData(cohortId: string) {
+  const professorData = await getProfessorPageData({ cohortId });
+  const cohort = professorData.cohortHealth.find((item) => item.id === cohortId) ?? null;
+
+  if (!cohort) {
+    return null;
+  }
+
+  const coachingData = await getProfessorCoachingOpsPageData({
+    cohortId,
+    period: "all"
+  });
+  const admin = createSupabaseAdminClient();
+  const organizationId = professorData.context.profile.organization_id;
+  const cohortMembersResult = await admin.from("cohort_members").select("user_id").eq("cohort_id", cohortId);
+  const cohortMemberIds = Array.from(
+    new Set(((cohortMembersResult.data ?? []) as Array<{ user_id: string }>).map((member) => member.user_id))
+  );
+  const coachAssignmentsResult = await (() => {
+    let query = admin
+      .from("coach_assignments")
+      .select("coach_id, coachee_id, cohort_id, created_at")
+      .eq("organization_id", organizationId);
+
+    if (cohortMemberIds.length) {
+      query = query.or(`cohort_id.eq.${cohortId},coachee_id.in.(${cohortMemberIds.join(",")})`);
+    } else {
+      query = query.eq("cohort_id", cohortId);
+    }
+
+    return query.order("created_at", { ascending: false });
+  })();
+  const coachAssignments = (coachAssignmentsResult.data ?? []) as Array<{
+    coach_id: string;
+    coachee_id: string | null;
+    cohort_id: string | null;
+    created_at: string;
+  }>;
+  const coachIds = Array.from(new Set(coachAssignments.map((assignment) => assignment.coach_id)));
+  const coachProfilesResult = coachIds.length
+    ? await admin
+        .from("profiles")
+        .select("id, first_name, last_name, status, bio, timezone")
+        .eq("organization_id", organizationId)
+        .in("id", coachIds)
+    : { data: [] as ProfileRow[] };
+  const coachProfileById = new Map(((coachProfilesResult.data ?? []) as ProfileRow[]).map((profile) => [profile.id, profile]));
+  const coachingLoadByCoachId = new Map(coachingData.coachLoads.map((coach) => [coach.id, coach]));
+  const directLearnerCountByCoachId = coachAssignments.reduce((map, assignment) => {
+    if (!assignment.coachee_id) {
+      return map;
+    }
+
+    map.set(assignment.coach_id, (map.get(assignment.coach_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const cohortPortfolioByCoachId = coachAssignments.reduce((map, assignment) => {
+    if (assignment.cohort_id !== cohortId) {
+      return map;
+    }
+
+    map.set(assignment.coach_id, true);
+    return map;
+  }, new Map<string, boolean>());
+  const responsibleCoaches = coachIds
+    .map((coachId) => {
+      const profile = coachProfileById.get(coachId);
+      const load = coachingLoadByCoachId.get(coachId);
+      const directLearnerCount = directLearnerCountByCoachId.get(coachId) ?? 0;
+      const ownsCohortPortfolio = cohortPortfolioByCoachId.get(coachId) ?? false;
+
+      return {
+        id: coachId,
+        name: profile ? formatUserName(profile) : "Coach inconnu",
+        status: profile?.status ?? "active",
+        scopeLabel: ownsCohortPortfolio
+          ? "Portefeuille cohorte"
+          : `${directLearnerCount} coaché(s) assigné(s)`,
+        directLearnerCount,
+        ownsCohortPortfolio,
+        sessionCount: load?.sessionCount ?? 0,
+        plannedCount: load?.plannedCount ?? 0,
+        completedCount: load?.completedCount ?? 0,
+        needsNoteCount: load?.needsNoteCount ?? 0,
+        learnerNames: load?.learnerNames ?? []
+      };
+    })
+    .sort(
+      (left, right) =>
+        Number(right.ownsCohortPortfolio) - Number(left.ownsCohortPortfolio) ||
+        right.needsNoteCount - left.needsNoteCount ||
+        right.sessionCount - left.sessionCount ||
+        left.name.localeCompare(right.name, "fr")
+    );
+  const focusCohort = professorData.focusCohort;
+  const attentionLearners = professorData.attentionLearners.slice(0, 6);
+  const learnerSpotlights = professorData.learnerSpotlights.slice(0, 8);
+  const championLearners = professorData.championLearners.slice(0, 5);
+  const fragileQuizzes = professorData.quizWatchlist.slice(0, 6);
+  const pivotContents = professorData.contentSpotlight.slice(0, 4);
+  const sessions = coachingData.sessions.slice(0, 8);
+  const coachingPriorities = coachingData.priorityActions.slice(0, 3);
+  const professorPriorities = professorData.priorityActions.slice(0, 3);
+  const priorities = [
+    ...coachingPriorities.map((priority) => ({
+      id: `coaching-${priority.id}`,
+      eyebrow: priority.eyebrow,
+      title: priority.title,
+      description: priority.description,
+      href: priority.href,
+      ctaLabel: priority.cta,
+      tone: priority.tone
+    })),
+    ...professorPriorities.map((priority) => ({
+      id: `professor-${priority.id}`,
+      eyebrow: priority.eyebrow,
+      title: priority.title,
+      description: priority.description,
+      href: priority.href,
+      ctaLabel: priority.ctaLabel,
+      tone: priority.tone
+    }))
+  ].slice(0, 5);
+  const riskCount = professorData.analyticsOverview.atRiskCount;
+  const watchCount = professorData.analyticsOverview.watchCount;
+  const noteCoverage = coachingData.focus.noteCoverage;
+  const recommendation =
+    riskCount > 0
+      ? "Priorité aux coachés à risque avant d'élargir les nouveaux contenus."
+      : noteCoverage < 60
+        ? "Renforcer la mémoire de séance pour fiabiliser le suivi coach."
+        : watchCount > 0
+          ? "Stabiliser les profils à surveiller avec une relance légère et ciblée."
+          : "Maintenir le rythme et capitaliser sur les contenus qui fonctionnent.";
+
+  return {
+    context: professorData.context,
+    canOpenSessionWorkspace: coachingData.canOpenSessionWorkspace,
+    cohort: {
+      id: cohort.id,
+      name: cohort.name,
+      memberCount: cohort.memberCount,
+      averageScore: cohort.averageScore,
+      completionRate: cohort.completionRate,
+      atRiskCount: cohort.atRiskCount,
+      watchCount: cohort.watchCount,
+      strongCount: cohort.strongCount,
+      tone: cohort.tone,
+      topFocus: cohort.topFocus,
+      shareOfPopulation: focusCohort?.shareOfPopulation ?? 0,
+      statusLabel: focusCohort?.statusLabel ?? "Cohorte à structurer"
+    },
+    analyticsOverview: professorData.analyticsOverview,
+    coachingFocus: coachingData.focus,
+    responsibleCoaches,
+    learnerSpotlights,
+    attentionLearners,
+    championLearners,
+    fragileQuizzes,
+    pivotContents,
+    sessions,
+    priorities,
+    recommendation,
+    metrics: [
+      {
+        label: "Engagement cohorte",
+        value: `${cohort.averageScore}%`,
+        delta: `${cohort.memberCount} coaché(s) · ${focusCohort?.shareOfPopulation ?? 0}% du portefeuille`
+      },
+      {
+        label: "Couverture notes",
+        value: `${noteCoverage}%`,
+        delta: `${coachingData.focus.needsNoteCount} note(s) à compléter`
+      },
+      {
+        label: "Coachs responsables",
+        value: responsibleCoaches.length.toString(),
+        delta: responsibleCoaches[0]?.name ?? "aucun coach assigné"
+      },
+      {
+        label: "Quiz à surveiller",
+        value: fragileQuizzes.length.toString(),
+        delta:
+          professorData.analyticsOverview.averageQuizScore !== null
+            ? `${professorData.analyticsOverview.averageQuizScore}% de moyenne`
+            : "score encore en construction"
+      }
+    ]
+  };
+}
+
 export async function getAdminContentStudioPageData(filters?: {
   query?: string;
   category?: string;

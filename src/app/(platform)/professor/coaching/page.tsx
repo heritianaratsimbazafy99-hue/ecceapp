@@ -390,6 +390,9 @@ export default async function ProfessorCoachingPage({
                       <span>{cohort.completedCount} réalisée(s)</span>
                       <span>{cohort.needsNoteCount} note(s)</span>
                     </div>
+                    <Link className="button button-secondary button-small" href={`/professor/cohorts/${cohort.id}`}>
+                      Détail cohorte
+                    </Link>
                   </article>
                 ))}
               </div>

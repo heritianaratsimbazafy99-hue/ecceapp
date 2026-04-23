@@ -355,11 +355,7 @@ export default async function ProfessorPage({
             {cohortHealth.map((cohort) => (
               <Link
                 className={cn("collection-card professor-cohort-card", cohort.isActive && "is-active")}
-                href={buildProfessorHref({
-                  query: filters.query,
-                  band: filters.band,
-                  cohortId: filters.cohortId === cohort.id ? "" : cohort.id
-                })}
+                href={`/professor/cohorts/${cohort.id}`}
                 key={cohort.id}
               >
                 <div className="tag-row">

@@ -3556,6 +3556,153 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   max-width: 320px;
 }
 
+.cohort-detail-hero,
+.cohort-detail-copy,
+.cohort-detail-meter,
+.cohort-detail-pulse-grid,
+.cohort-detail-stack,
+.cohort-detail-learner-grid,
+.cohort-detail-learner-meta,
+.cohort-detail-coach-list,
+.cohort-detail-coach-meta,
+.cohort-detail-session-list,
+.cohort-detail-quiz-list,
+.cohort-detail-content-grid,
+.cohort-detail-content-meta,
+.cohort-detail-priority-list {
+  display: grid;
+  gap: 18px;
+}
+
+.cohort-detail-hero {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: stretch;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(53, 104, 151, 0.15), transparent 28%),
+    radial-gradient(circle at top right, rgba(255, 106, 61, 0.16), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 255, 0.95));
+}
+
+.cohort-detail-copy,
+.cohort-detail-meter,
+.cohort-detail-stack {
+  align-content: start;
+}
+
+.cohort-detail-copy h3,
+.cohort-detail-copy p,
+.cohort-detail-learner-card p,
+.cohort-detail-coach-card p,
+.cohort-detail-session-card p,
+.cohort-detail-quiz-card p,
+.cohort-detail-content-card p,
+.cohort-detail-priority-card p {
+  margin: 0;
+}
+
+.cohort-detail-copy h3 {
+  max-width: 900px;
+  font-size: clamp(2rem, 4vw, 3.05rem);
+  line-height: 1.02;
+}
+
+.cohort-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cohort-detail-pulse-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cohort-detail-pulse-grid article,
+.cohort-detail-learner-card,
+.cohort-detail-coach-card,
+.cohort-detail-session-card,
+.cohort-detail-quiz-card,
+.cohort-detail-priority-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.cohort-detail-pulse-grid strong {
+  font-size: 1.35rem;
+}
+
+.cohort-detail-pulse-grid span,
+.cohort-detail-learner-meta span,
+.cohort-detail-coach-meta span,
+.cohort-detail-session-side span,
+.cohort-detail-content-meta span {
+  color: var(--muted);
+}
+
+.cohort-detail-learner-grid,
+.cohort-detail-content-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cohort-detail-learner-head,
+.cohort-detail-session-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cohort-detail-learner-meta,
+.cohort-detail-content-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cohort-detail-learner-meta span,
+.cohort-detail-coach-meta span,
+.cohort-detail-content-meta span {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.74);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.cohort-detail-coach-card {
+  gap: 14px;
+}
+
+.cohort-detail-coach-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cohort-detail-session-card.needs-note {
+  border-color: rgba(255, 106, 61, 0.22);
+  background: linear-gradient(180deg, rgba(255, 247, 240, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.cohort-detail-session-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cohort-detail-content-card {
+  gap: 14px;
+}
+
+.cohort-detail-content-card .button {
+  justify-self: start;
+}
+
 @media (max-width: 1080px) {
   .professor-command-hero,
   .professor-command-layout,
@@ -3575,6 +3722,12 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .coaching-ops-hero,
   .coaching-ops-layout,
   .coaching-ops-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cohort-detail-hero,
+  .cohort-detail-learner-grid,
+  .cohort-detail-content-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -3608,17 +3761,30 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
     grid-template-columns: 1fr;
   }
 
+  .cohort-detail-hero,
+  .cohort-detail-pulse-grid,
+  .cohort-detail-learner-grid,
+  .cohort-detail-learner-meta,
+  .cohort-detail-content-grid,
+  .cohort-detail-content-meta {
+    grid-template-columns: 1fr;
+  }
+
   .professor-command-actions,
   .professor-learner-card-head,
   .coaching-ops-actions,
   .coaching-ops-session-head,
-  .coaching-ops-load-card {
+  .coaching-ops-load-card,
+  .cohort-detail-actions,
+  .cohort-detail-learner-head,
+  .cohort-detail-session-card {
     flex-direction: column;
     align-items: flex-start;
   }
 
   .coaching-ops-session-actions,
-  .coaching-ops-load-metrics {
+  .coaching-ops-load-metrics,
+  .cohort-detail-session-side {
     justify-content: flex-start;
   }
 }
