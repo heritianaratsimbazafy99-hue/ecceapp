@@ -455,6 +455,51 @@ function getProgramProgressTone(progress: number): "neutral" | "accent" | "warni
   return "neutral";
 }
 
+type AdminProgramLane = "priority" | "scaffold" | "draft" | "active";
+
+function isAdminProgramLane(value: string | null | undefined): value is AdminProgramLane {
+  return ["priority", "scaffold", "draft", "active"].includes(value ?? "");
+}
+
+function getAdminProgramLaneLabel(lane: AdminProgramLane) {
+  switch (lane) {
+    case "priority":
+      return "A activer";
+    case "scaffold":
+      return "A brancher";
+    case "draft":
+      return "A finaliser";
+    default:
+      return "Deja deploye";
+  }
+}
+
+function getAdminProgramLaneTone(lane: AdminProgramLane): BadgeTone {
+  switch (lane) {
+    case "priority":
+      return "warning";
+    case "scaffold":
+      return "accent";
+    case "draft":
+      return "neutral";
+    default:
+      return "success";
+  }
+}
+
+function getProgramStatusTone(status: string): BadgeTone {
+  switch (status) {
+    case "published":
+      return "success";
+    case "scheduled":
+      return "accent";
+    case "draft":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
 function uniqueById<T extends { id: string }>(items: T[]) {
   return Array.from(new Map(items.map((item) => [item.id, item])).values());
 }
@@ -5188,7 +5233,11 @@ export async function getAdminQuizStudioPageData(filters?: {
   };
 }
 
-export async function getAdminProgramStudioPageData() {
+export async function getAdminProgramStudioPageData(filters?: {
+  query?: string;
+  status?: string;
+  lane?: string;
+}) {
   const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
@@ -5288,6 +5337,7 @@ export async function getAdminProgramStudioPageData() {
     roles: (profile.user_roles ?? []).map((item) => item.role),
     cohortIds: cohortIdsByUserId.get(profile.id) ?? []
   }));
+  const userById = new Map(users.map((user) => [user.id, user]));
 
   const coacheeOptions = users
     .filter((user) => user.roles.includes("coachee"))
@@ -5304,73 +5354,471 @@ export async function getAdminProgramStudioPageData() {
     } membre(s)`
   }));
 
+  const normalizedQuery = filters?.query?.trim().toLowerCase() ?? "";
+  const resolvedStatus =
+    filters?.status && ["published", "draft", "scheduled", "archived"].includes(filters.status)
+      ? filters.status
+      : "all";
+  const laneFilter: AdminProgramLane | "all" = isAdminProgramLane(filters?.lane) ? filters.lane : "all";
+
+  const allPrograms = programs.map((program) => {
+    const programModules = modules
+      .filter((module) => module.program_id === program.id)
+      .sort((left, right) => left.position - right.position);
+    const programEnrollments = enrollments.filter((enrollment) => enrollment.program_id === program.id);
+    const moduleCards = programModules.map((module) => {
+      const contentCount = contentCountByModuleId.get(module.id) ?? 0;
+      const quizCount = quizCountByModuleId.get(module.id) ?? 0;
+      const assetCount = contentCount + quizCount;
+
+      return {
+        id: module.id,
+        title: module.title,
+        description: module.description,
+        position: module.position,
+        status: module.status,
+        statusTone: getProgramStatusTone(module.status),
+        availableLabel: module.available_at ? formatDate(module.available_at) : "Disponible immédiatement",
+        contentCount,
+        quizCount,
+        assetCount,
+        assetLabel:
+          assetCount > 0
+            ? `${contentCount} contenu(x) · ${quizCount} quiz`
+            : "Aucun contenu ou quiz rattache",
+        tone: (assetCount > 0 ? (module.status === "published" ? "success" : "accent") : "warning") as BadgeTone
+      };
+    });
+
+    const moduleCount = moduleCards.length;
+    const modulesWithAssets = moduleCards.filter((module) => module.assetCount > 0).length;
+    const moduleCoverage = moduleCount ? roundMetric((modulesWithAssets / moduleCount) * 100) : 0;
+    const unwiredModuleCount = Math.max(moduleCount - modulesWithAssets, 0);
+    const contentCount = moduleCards.reduce((total, module) => total + module.contentCount, 0);
+    const quizCount = moduleCards.reduce((total, module) => total + module.quizCount, 0);
+    const assetCount = contentCount + quizCount;
+    const enrollmentCount = programEnrollments.length;
+    const learnerCount = new Set(programEnrollments.map((enrollment) => enrollment.user_id)).size;
+    const cohortActivationCount = new Set(
+      programEnrollments.map((enrollment) => enrollment.cohort_id).filter(Boolean)
+    ).size;
+    const individualActivationCount = programEnrollments.filter((enrollment) => !enrollment.cohort_id).length;
+    const latestEnrollmentAt = programEnrollments[0]?.enrolled_at ?? null;
+    const readyForRollout =
+      program.status === "published" && moduleCount > 0 && assetCount > 0 && moduleCoverage === 100;
+    const lane: AdminProgramLane =
+      program.status !== "published"
+        ? "draft"
+        : readyForRollout && enrollmentCount === 0
+          ? "priority"
+          : !readyForRollout
+            ? "scaffold"
+            : "active";
+    const tone = getAdminProgramLaneTone(lane);
+    const nextNeed =
+      lane === "draft"
+        ? moduleCount === 0
+          ? "Ajouter les premiers modules puis publier le parcours."
+          : "Finaliser la promesse et publier ce parcours pour le rendre diffusable."
+        : lane === "priority"
+          ? "Le parcours est pret: active-le vers un coache ou une cohorte."
+          : lane === "scaffold"
+            ? moduleCount === 0
+              ? "Ajouter au moins un module pour transformer le programme en parcours reel."
+              : assetCount === 0
+                ? "Relier des contenus ou des quiz aux modules avant la diffusion."
+                : `Brancher encore ${unwiredModuleCount} module(s) pour completer l'experience.`
+            : "Suivre les activations en cours et etendre la diffusion si besoin.";
+    const href =
+      lane === "priority"
+        ? "#program-rollout"
+        : lane === "draft"
+          ? "#program-studio"
+          : lane === "scaffold"
+            ? assetCount === 0 || unwiredModuleCount > 0
+              ? "/admin/content"
+              : "#program-catalog"
+            : "/programs";
+    const ctaLabel =
+      lane === "priority"
+        ? "Activer le parcours"
+        : lane === "draft"
+          ? "Reprendre le studio"
+          : lane === "scaffold"
+            ? assetCount === 0 || unwiredModuleCount > 0
+              ? "Brancher les contenus"
+              : "Voir le catalogue"
+            : "Voir cote coache";
+    const searchText = [
+      program.title,
+      program.slug,
+      program.description,
+      program.status,
+      ...moduleCards.flatMap((module) => [module.title, module.description, module.status])
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return {
+      id: program.id,
+      title: program.title,
+      description: program.description,
+      slug: program.slug,
+      status: program.status,
+      statusTone: getProgramStatusTone(program.status),
+      created_at: program.created_at,
+      createdAtLabel: formatDate(program.created_at),
+      lane,
+      laneLabel: getAdminProgramLaneLabel(lane),
+      tone,
+      nextNeed,
+      href,
+      ctaLabel,
+      readyForRollout,
+      moduleCount,
+      modulesWithAssets,
+      moduleCoverage,
+      unwiredModuleCount,
+      enrollmentCount,
+      learnerCount,
+      cohortActivationCount,
+      individualActivationCount,
+      contentCount,
+      quizCount,
+      assetCount,
+      latestEnrollmentAt,
+      latestEnrollmentLabel: latestEnrollmentAt ? formatDate(latestEnrollmentAt) : "Aucune activation",
+      searchText,
+      modules: moduleCards,
+      recentEnrollments: programEnrollments.slice(0, 4).map((enrollment) => ({
+        id: `${enrollment.program_id}-${enrollment.user_id}-${enrollment.cohort_id ?? "solo"}`,
+        learner: userById.get(enrollment.user_id)?.name ?? "Coaché",
+        context: enrollment.cohort_id
+          ? `via ${cohortNameById.get(enrollment.cohort_id) ?? "cohorte"}`
+          : "activation individuelle",
+        enrolledAt: formatDate(enrollment.enrolled_at),
+        programLabel: programTitleById.get(enrollment.program_id) ?? "Parcours"
+      }))
+    };
+  });
+
+  const basePrograms = allPrograms.filter((program) => {
+    if (resolvedStatus !== "all" && program.status !== resolvedStatus) {
+      return false;
+    }
+
+    if (normalizedQuery && !program.searchText.includes(normalizedQuery)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const laneCounts = basePrograms.reduce(
+    (counts, program) => {
+      counts[program.lane] += 1;
+      return counts;
+    },
+    {
+      priority: 0,
+      scaffold: 0,
+      draft: 0,
+      active: 0
+    } as Record<AdminProgramLane, number>
+  );
+
+  const visiblePrograms =
+    laneFilter === "all" ? basePrograms : basePrograms.filter((program) => program.lane === laneFilter);
+
+  const sortedVisiblePrograms = visiblePrograms.slice().sort((left, right) => {
+    const laneRank = { priority: 0, scaffold: 1, draft: 2, active: 3 } as const;
+
+    return (
+      laneRank[left.lane] - laneRank[right.lane] ||
+      right.unwiredModuleCount - left.unwiredModuleCount ||
+      left.enrollmentCount - right.enrollmentCount ||
+      right.learnerCount - left.learnerCount ||
+      (getDateValue(right.latestEnrollmentAt ?? right.created_at) ?? 0) -
+        (getDateValue(left.latestEnrollmentAt ?? left.created_at) ?? 0)
+    );
+  });
+
+  const focusProgram = sortedVisiblePrograms[0] ?? null;
+  const visibleProgramIds = new Set(visiblePrograms.map((program) => program.id));
+  const visibleEnrollments = enrollments.filter((enrollment) => visibleProgramIds.has(enrollment.program_id));
+  const publishedVisibleCount = visiblePrograms.filter((program) => program.status === "published").length;
+  const activatedVisibleCount = visiblePrograms.filter((program) => program.enrollmentCount > 0).length;
+  const readyVisibleCount = visiblePrograms.filter((program) => program.readyForRollout).length;
+  const totalVisibleModules = visiblePrograms.reduce((total, program) => total + program.moduleCount, 0);
+  const wiredVisibleModules = visiblePrograms.reduce((total, program) => total + program.modulesWithAssets, 0);
+  const averageModuleCoverage = visiblePrograms.length
+    ? roundMetric(
+        visiblePrograms.reduce((total, program) => total + program.moduleCoverage, 0) / visiblePrograms.length
+      )
+    : 0;
+  const deliveryScore = visiblePrograms.length
+    ? roundMetric(
+        (publishedVisibleCount / visiblePrograms.length) * 30 +
+          (readyVisibleCount / visiblePrograms.length) * 25 +
+          (activatedVisibleCount / visiblePrograms.length) * 25 +
+          (averageModuleCoverage / 100) * 20
+      )
+    : 0;
+  const activationBand: EngagementBand =
+    deliveryScore >= 75 ? "strong" : deliveryScore >= 45 ? "watch" : "risk";
+  const activeFilterParts = [
+    resolvedStatus !== "all" ? `statut ${resolvedStatus}` : null,
+    laneFilter !== "all"
+      ? laneFilter === "priority"
+        ? "lane a activer"
+        : laneFilter === "scaffold"
+          ? "lane a brancher"
+          : laneFilter === "draft"
+            ? "lane a finaliser"
+            : "lane deja deploye"
+      : null,
+    normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
+  ].filter(Boolean) as string[];
+  const priorityActions = [
+    laneCounts.draft > 0
+      ? {
+          id: "drafts",
+          title: `${laneCounts.draft} parcours restent encore a finaliser`,
+          description: "La dette la plus simple a resorber reste souvent la publication des parcours deja cadrees.",
+          href: "#program-studio",
+          ctaLabel: "Reprendre le studio",
+          tone: "warning" as const
+        }
+      : {
+          id: "drafts",
+          title: "Les parcours visibles sont deja sortis du brouillon",
+          description: "Le studio peut se concentrer sur la diffusion et la qualite de raccordement.",
+          href: "#program-catalog",
+          ctaLabel: "Voir le catalogue",
+          tone: "success" as const
+        },
+    laneCounts.priority > 0
+      ? {
+          id: "rollout",
+          title: `${laneCounts.priority} parcours sont prets mais encore peu deploies`,
+          description: "Le gain rapide est maintenant cote rollout: activer les parcours vers les bonnes cohortes.",
+          href: "#program-rollout",
+          ctaLabel: "Ouvrir l'activation",
+          tone: "accent" as const
+        }
+      : laneCounts.scaffold > 0
+        ? {
+            id: "rollout",
+            title: `${laneCounts.scaffold} parcours demandent encore des branchements`,
+            description: "Avant d'activer davantage, connecte les modules aux contenus et quiz qui manquent.",
+            href: "/admin/content",
+            ctaLabel: "Brancher les assets",
+            tone: "accent" as const
+          }
+        : {
+            id: "rollout",
+            title: "Diffusion parcours sous controle",
+            description: "Les parcours visibles sont deja diffuses ou suffisamment structures pour l'etre.",
+            href: "/programs",
+            ctaLabel: "Voir cote coache",
+            tone: "success" as const
+          },
+    focusProgram
+      ? {
+          id: "pivot",
+          title: `Programme pivot · ${focusProgram.title}`,
+          description: `${focusProgram.moduleCoverage}% de couverture modulaire · ${focusProgram.enrollmentCount} activation(s). ${focusProgram.nextNeed}`,
+          href: focusProgram.href,
+          ctaLabel: focusProgram.ctaLabel,
+          tone: focusProgram.tone
+        }
+      : {
+          id: "pivot",
+          title: "Aucun parcours focus",
+          description: "Crée un premier parcours ou elargis la vue pour faire remonter un programme pivot.",
+          href: "#program-studio",
+          ctaLabel: "Creer un parcours",
+          tone: "neutral" as const
+        }
+  ];
+
+  const rolloutRadar = Array.from(
+    visibleEnrollments.reduce((map, enrollment) => {
+      const key = enrollment.cohort_id ? `cohort:${enrollment.cohort_id}` : "individual";
+      const current =
+        map.get(key) ??
+        ({
+          id: key,
+          label: enrollment.cohort_id
+            ? cohortNameById.get(enrollment.cohort_id) ?? "Cohorte"
+            : "Activations individuelles",
+          count: 0,
+          programIds: new Set<string>(),
+          learnerIds: new Set<string>()
+        } as {
+          id: string;
+          label: string;
+          count: number;
+          programIds: Set<string>;
+          learnerIds: Set<string>;
+        });
+
+      current.count += 1;
+      current.programIds.add(enrollment.program_id);
+      current.learnerIds.add(enrollment.user_id);
+
+      map.set(key, current);
+      return map;
+    }, new Map<
+      string,
+      {
+        id: string;
+        label: string;
+        count: number;
+        programIds: Set<string>;
+        learnerIds: Set<string>;
+      }
+    >()).values()
+  )
+    .map((item) => ({
+      id: item.id,
+      label: item.label,
+      count: item.count,
+      programCount: item.programIds.size,
+      learnerCount: item.learnerIds.size,
+      tone:
+        item.id === "individual"
+          ? ("neutral" as const)
+          : item.count >= 3
+            ? ("success" as const)
+            : ("accent" as const),
+      summary: `${item.programIds.size} parcours · ${item.learnerIds.size} coache(s)`
+    }))
+    .sort((left, right) => {
+      return right.count - left.count || right.learnerCount - left.learnerCount || right.programCount - left.programCount;
+    })
+    .slice(0, 4);
+
+  const recentActivationFeed = visibleEnrollments
+    .slice()
+    .sort((left, right) => (getDateValue(right.enrolled_at) ?? 0) - (getDateValue(left.enrolled_at) ?? 0))
+    .slice(0, 6)
+    .map((enrollment) => ({
+      id: `${enrollment.program_id}-${enrollment.user_id}-${enrollment.cohort_id ?? "solo"}`,
+      learner: userById.get(enrollment.user_id)?.name ?? "Coaché",
+      program: programTitleById.get(enrollment.program_id) ?? "Parcours",
+      context: enrollment.cohort_id
+        ? `via ${cohortNameById.get(enrollment.cohort_id) ?? "cohorte"}`
+        : "activation individuelle",
+      enrolledAt: formatDate(enrollment.enrolled_at)
+    }));
+
   return {
     context,
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      status: resolvedStatus,
+      lane: laneFilter,
+      summary: activeFilterParts.length ? `Vue filtrée · ${activeFilterParts.join(" · ")}` : "Vue globale du studio parcours"
+    },
     metrics: [
       {
-        label: "Parcours",
-        value: programs.length.toString(),
-        delta: `${programs.filter((program) => program.status === "published").length} publiés`
+        label: "Parcours visibles",
+        value: visiblePrograms.length.toString(),
+        delta: `${publishedVisibleCount} publies`
       },
       {
-        label: "Modules",
-        value: modules.length.toString(),
-        delta: `${contents.filter((item) => item.module_id).length} contenus rattachés`
+        label: "Delivery score",
+        value: `${deliveryScore}%`,
+        delta: `${readyVisibleCount} pret(s) pour rollout`
       },
       {
-        label: "Activations",
-        value: enrollments.length.toString(),
-        delta: `${new Set(enrollments.map((enrollment) => enrollment.user_id)).size} coaché(s) concernés`
+        label: "Modules branches",
+        value: `${wiredVisibleModules}/${totalVisibleModules || 0}`,
+        delta: `${Math.max(totalVisibleModules - wiredVisibleModules, 0)} encore vides`
+      },
+      {
+        label: "Coaches touches",
+        value: new Set(visibleEnrollments.map((enrollment) => enrollment.user_id)).size.toString(),
+        delta: `${visibleEnrollments.length} activation(s) visibles`
       }
     ],
+    hero: {
+      title: focusProgram
+        ? `${focusProgram.title} concentre le prochain arbitrage parcours`
+        : "Le studio parcours est pret a piloter la diffusion ECCE",
+      summary: focusProgram
+        ? `${focusProgram.laneLabel} · ${focusProgram.moduleCount} module(s) · ${focusProgram.assetCount} asset(s) · ${focusProgram.enrollmentCount} activation(s). ${focusProgram.nextNeed}`
+        : "La vue se remplira des que des parcours, modules et activations seront visibles dans l'organisation."
+    },
+    activationPulse: {
+      score: deliveryScore,
+      band: activationBand,
+      bandLabel:
+        activationBand === "strong"
+          ? "Rollout solide"
+          : activationBand === "watch"
+            ? "Diffusion a consolider"
+            : "Execution a reprendre",
+      caption: `${visiblePrograms.length} parcours visibles · ${totalVisibleModules} module(s)`,
+      trend:
+        laneCounts.priority > 0
+          ? ("down" as const)
+          : laneCounts.scaffold > 0 || laneCounts.draft > 0
+            ? ("steady" as const)
+            : ("up" as const),
+      trendLabel:
+        laneCounts.priority > 0
+          ? `${laneCounts.priority} parcours attendent encore leur rollout`
+          : laneCounts.scaffold > 0
+            ? `${laneCounts.scaffold} parcours restent partiellement branches`
+            : laneCounts.draft > 0
+              ? `${laneCounts.draft} parcours restent a publier`
+              : "la diffusion visible est bien branchee"
+    },
+    laneBreakdown: [
+      {
+        id: "priority" as AdminProgramLane,
+        label: "A activer",
+        count: laneCounts.priority,
+        tone: "warning" as const,
+        isActive: laneFilter === "priority"
+      },
+      {
+        id: "scaffold" as AdminProgramLane,
+        label: "A brancher",
+        count: laneCounts.scaffold,
+        tone: "accent" as const,
+        isActive: laneFilter === "scaffold"
+      },
+      {
+        id: "draft" as AdminProgramLane,
+        label: "A finaliser",
+        count: laneCounts.draft,
+        tone: "neutral" as const,
+        isActive: laneFilter === "draft"
+      },
+      {
+        id: "active" as AdminProgramLane,
+        label: "Deja deployes",
+        count: laneCounts.active,
+        tone: "success" as const,
+        isActive: laneFilter === "active"
+      }
+    ],
+    focusProgram,
+    priorityActions,
+    rolloutRadar,
+    recentActivationFeed,
+    programWatchlist: sortedVisiblePrograms.slice(0, 6),
     programOptions: programs.map((program) => ({
       id: program.id,
       label: `${program.title} · ${program.status}`
     })),
     coacheeOptions,
     cohortOptions,
-    programs: programs.map((program) => {
-      const programModules = modules
-        .filter((module) => module.program_id === program.id)
-        .sort((left, right) => left.position - right.position);
-      const programEnrollments = enrollments.filter((enrollment) => enrollment.program_id === program.id);
-
-      return {
-        id: program.id,
-        title: program.title,
-        description: program.description,
-        slug: program.slug,
-        status: program.status,
-        moduleCount: programModules.length,
-        enrollmentCount: programEnrollments.length,
-        learnerCount: new Set(programEnrollments.map((enrollment) => enrollment.user_id)).size,
-        contentCount: programModules.reduce(
-          (total, module) => total + (contentCountByModuleId.get(module.id) ?? 0),
-          0
-        ),
-        quizCount: programModules.reduce((total, module) => total + (quizCountByModuleId.get(module.id) ?? 0), 0),
-        modules: programModules.map((module) => ({
-          id: module.id,
-          title: module.title,
-          description: module.description,
-          position: module.position,
-          status: module.status,
-          availableLabel: module.available_at ? formatDate(module.available_at) : "Disponible immédiatement",
-          contentCount: contentCountByModuleId.get(module.id) ?? 0,
-          quizCount: quizCountByModuleId.get(module.id) ?? 0
-        })),
-        recentEnrollments: programEnrollments.slice(0, 4).map((enrollment) => ({
-          id: `${enrollment.program_id}-${enrollment.user_id}`,
-          learner:
-            users.find((user) => user.id === enrollment.user_id)?.name ?? "Coaché",
-          context: enrollment.cohort_id
-            ? `via ${cohortNameById.get(enrollment.cohort_id) ?? "cohorte"}`
-            : "activation individuelle",
-          enrolledAt: formatDate(enrollment.enrolled_at),
-          programLabel: programTitleById.get(enrollment.program_id) ?? "Parcours"
-        }))
-      };
-    })
+    programs: sortedVisiblePrograms
   };
 }
 

@@ -2521,6 +2521,223 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   }
 }
 
+.admin-programs-hero,
+.admin-programs-copy,
+.admin-programs-side,
+.admin-programs-lane-grid,
+.admin-programs-layout,
+.admin-programs-side-stack,
+.admin-programs-filter-form,
+.admin-programs-summary,
+.admin-programs-focus-metrics,
+.admin-programs-playbook-grid,
+.admin-programs-watchlist,
+.admin-programs-watch-copy,
+.admin-programs-watch-meta,
+.admin-programs-radar-list,
+.admin-programs-radar-meta,
+.admin-programs-recent-list,
+.admin-programs-actions,
+.admin-programs-focus-copy {
+  display: grid;
+  gap: 24px;
+}
+
+.admin-programs-hero {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: stretch;
+  background:
+    radial-gradient(circle at top right, rgba(255, 206, 163, 0.28), transparent 30%),
+    radial-gradient(circle at 18% 18%, rgba(37, 99, 235, 0.12), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(248, 249, 252, 0.94));
+}
+
+.admin-programs-copy,
+.admin-programs-side,
+.admin-programs-side-stack {
+  align-content: start;
+}
+
+.admin-programs-copy {
+  gap: 16px;
+}
+
+.admin-programs-copy h3,
+.admin-programs-copy p,
+.admin-programs-playbook-card p,
+.admin-programs-watch-card p,
+.admin-programs-focus-copy p,
+.admin-programs-radar-item p,
+.admin-programs-focus-note {
+  margin: 0;
+}
+
+.admin-programs-copy h3 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.02;
+}
+
+.admin-programs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-programs-lane-grid,
+.admin-programs-summary,
+.admin-programs-focus-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.admin-programs-lane-card,
+.admin-programs-summary article,
+.admin-programs-focus-metrics article,
+.admin-programs-playbook-card,
+.admin-programs-watch-card,
+.admin-programs-radar-item,
+.admin-programs-recent-item {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.admin-programs-lane-card {
+  color: inherit;
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.admin-programs-lane-card:hover,
+.admin-programs-lane-card.is-active {
+  transform: translateY(-2px);
+  border-color: rgba(255, 106, 61, 0.24);
+  box-shadow: 0 22px 48px rgba(16, 24, 32, 0.08);
+}
+
+.admin-programs-lane-card span,
+.admin-programs-summary span,
+.admin-programs-focus-metrics span,
+.admin-programs-watch-copy small,
+.admin-programs-watch-meta small,
+.admin-programs-focus-copy small,
+.admin-programs-radar-meta small,
+.admin-programs-recent-item small {
+  color: var(--muted);
+}
+
+.admin-programs-lane-card strong,
+.admin-programs-summary strong,
+.admin-programs-focus-metrics strong {
+  font-size: 1.3rem;
+}
+
+.admin-programs-layout {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: start;
+}
+
+.admin-programs-filter-form {
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr) auto;
+  align-items: end;
+}
+
+.admin-programs-filter-actions {
+  align-self: end;
+}
+
+.admin-programs-playbook-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.admin-programs-watchlist,
+.admin-programs-radar-list,
+.admin-programs-recent-list {
+  gap: 16px;
+}
+
+.admin-programs-watch-card,
+.admin-programs-radar-item,
+.admin-programs-recent-item {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 239, 0.9));
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+}
+
+.admin-programs-watch-meta,
+.admin-programs-radar-meta {
+  justify-items: end;
+  gap: 10px;
+}
+
+.admin-programs-watch-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.05);
+}
+
+.admin-programs-watch-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-programs-focus-copy,
+.admin-programs-watch-copy {
+  gap: 10px;
+}
+
+.admin-programs-focus-note {
+  padding-top: 8px;
+  border-top: 1px solid rgba(16, 24, 32, 0.08);
+  color: rgba(16, 24, 32, 0.72);
+}
+
+@media (max-width: 1080px) {
+  .admin-programs-hero,
+  .admin-programs-layout,
+  .admin-programs-lane-grid,
+  .admin-programs-summary,
+  .admin-programs-focus-metrics,
+  .admin-programs-playbook-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-programs-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-programs-hero,
+  .admin-programs-layout,
+  .admin-programs-lane-grid,
+  .admin-programs-summary,
+  .admin-programs-focus-metrics,
+  .admin-programs-playbook-grid,
+  .admin-programs-filter-form,
+  .admin-programs-watch-card,
+  .admin-programs-radar-item,
+  .admin-programs-recent-item {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-programs-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .library-search-panel {
   display: grid;
   gap: 18px;
@@ -5363,6 +5580,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .program-admin-kpis,
 .program-card-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.program-admin-kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .program-studio-hero-metrics article,
