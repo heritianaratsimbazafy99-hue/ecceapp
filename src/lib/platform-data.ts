@@ -456,6 +456,8 @@ function getProgramProgressTone(progress: number): "neutral" | "accent" | "warni
 }
 
 type AdminProgramLane = "priority" | "scaffold" | "draft" | "active";
+type AgendaLane = "urgent" | "today" | "upcoming" | "recent";
+type AgendaScope = "sessions" | "deadlines";
 type LearnerProgramLane = "urgent" | "momentum" | "launch" | "completed";
 
 function isAdminProgramLane(value: string | null | undefined): value is AdminProgramLane {
@@ -525,6 +527,40 @@ function getLearnerProgramLaneTone(lane: LearnerProgramLane): BadgeTone {
     case "momentum":
       return "accent";
     case "launch":
+      return "neutral";
+    default:
+      return "success";
+  }
+}
+
+function isAgendaLane(value: string | null | undefined): value is AgendaLane {
+  return ["urgent", "today", "upcoming", "recent"].includes(value ?? "");
+}
+
+function isAgendaScope(value: string | null | undefined): value is AgendaScope {
+  return ["sessions", "deadlines"].includes(value ?? "");
+}
+
+function getAgendaLaneLabel(lane: AgendaLane) {
+  switch (lane) {
+    case "urgent":
+      return "A securiser";
+    case "today":
+      return "Aujourd'hui";
+    case "upcoming":
+      return "A venir";
+    default:
+      return "Recent";
+  }
+}
+
+function getAgendaLaneTone(lane: AgendaLane): BadgeTone {
+  switch (lane) {
+    case "urgent":
+      return "warning";
+    case "today":
+      return "accent";
+    case "upcoming":
       return "neutral";
     default:
       return "success";
@@ -7280,7 +7316,11 @@ export async function getCoachPageData() {
   };
 }
 
-export async function getAgendaPageData() {
+export async function getAgendaPageData(filters?: {
+  query?: string;
+  lane?: string;
+  scope?: string;
+}) {
   const context = await requireRole(["admin", "coach", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
@@ -7587,21 +7627,33 @@ export async function getAgendaPageData() {
       ? formatUserName(profileById.get(session.coach_id)!)
       : "Coach inconnu";
     const relativeDay = getRelativeDayLabel(session.starts_at, now);
+    const timestamp = new Date(session.starts_at).getTime();
+    const isToday = relativeDay === "Aujourd'hui";
+    const isOverdue = timestamp < now && session.status === "planned";
+    const lane: AgendaLane = isOverdue ? "urgent" : isToday ? "today" : timestamp >= now ? "upcoming" : "recent";
+    const title = context.role === "coachee" ? "Séance de coaching" : coacheeName;
+    const subtitle =
+      context.role === "admin"
+        ? `Coach · ${coachName}`
+        : session.cohort_id
+          ? `Cohorte · ${cohortNameById.get(session.cohort_id) ?? "groupe"}`
+          : "Séance individuelle";
+    const audienceLabel =
+      context.role === "coachee"
+        ? coachName
+        : session.cohort_id
+          ? `${cohortNameById.get(session.cohort_id) ?? "Cohorte"}`
+          : "1:1";
 
     return {
       id: `session-${session.id}`,
       type: "session" as const,
-      timestamp: new Date(session.starts_at).getTime(),
+      timestamp,
       dayLabel: relativeDay,
       dateLabel: formatDateCompact(session.starts_at),
       timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
-      title: context.role === "coachee" ? "Séance de coaching" : coacheeName,
-      subtitle:
-        context.role === "admin"
-          ? `Coach · ${coachName}`
-          : session.cohort_id
-            ? `Cohorte · ${cohortNameById.get(session.cohort_id) ?? "groupe"}`
-            : "Séance individuelle",
+      title,
+      subtitle,
       statusLabel: session.status,
       statusTone:
         session.status === "completed"
@@ -7609,16 +7661,26 @@ export async function getAgendaPageData() {
           : session.status === "cancelled"
             ? ("warning" as const)
             : ("accent" as const),
-      audienceLabel:
-        context.role === "coachee"
-          ? coachName
-          : session.cohort_id
-            ? `${cohortNameById.get(session.cohort_id) ?? "Cohorte"}`
-            : "1:1",
+      audienceLabel,
       href: session.video_link || null,
       ctaLabel: session.video_link ? "Rejoindre" : null,
-      isOverdue: new Date(session.starts_at).getTime() < now && session.status === "planned",
-      isToday: relativeDay === "Aujourd'hui"
+      isOverdue,
+      isToday,
+      lane,
+      laneLabel: getAgendaLaneLabel(lane),
+      tone: getAgendaLaneTone(lane),
+      nextAction:
+        session.video_link && timestamp >= now
+          ? "Le lien de séance est prêt: tu peux rejoindre ou préparer ce rendez-vous depuis l'agenda."
+          : session.video_link
+            ? "La séance est passée mais le lien reste utile pour reprendre le contexte."
+            : session.status === "planned"
+              ? "La séance est planifiée mais le lien n'est pas encore renseigné."
+              : session.status === "completed"
+                ? "La séance est terminée: tu peux relire le contexte avant la suite."
+                : "Vérifie le statut de cette séance avant de relancer le fil pédagogique.",
+      contextLabel: context.role === "coachee" ? `Coach · ${coachName}` : `Coaché · ${coacheeName}`,
+      searchText: [title, subtitle, audienceLabel, coachName, coacheeName, session.status].join(" ").toLowerCase()
     };
   });
 
@@ -7627,6 +7689,22 @@ export async function getAgendaPageData() {
     const dueTimestamp = assignment.due_at ? new Date(assignment.due_at).getTime() : now;
     const content = assignment.content_item_id ? contentById.get(assignment.content_item_id) : null;
     const quiz = assignment.quiz_id ? quizById.get(assignment.quiz_id) : null;
+    const isToday = getRelativeDayLabel(assignment.due_at, now) === "Aujourd'hui";
+    const lane: AgendaLane = dueState === "overdue" ? "urgent" : isToday ? "today" : dueTimestamp >= now ? "upcoming" : "recent";
+    const subtitle =
+      assignment.quiz_id
+        ? `Quiz · ${quiz?.title ?? "quiz"}`
+        : `Contenu · ${content?.title ?? "ressource"}`;
+    const audienceLabel =
+      context.role === "coachee"
+        ? assignment.cohort_id
+          ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
+          : "Assignation individuelle"
+        : assignment.assigned_user_id
+          ? profileById.get(assignment.assigned_user_id)
+            ? formatUserName(profileById.get(assignment.assigned_user_id)!)
+            : "Coaché"
+          : `Cohorte · ${cohortNameById.get(assignment.cohort_id ?? "") ?? "groupe"}`;
 
     return {
       id: `deadline-${assignment.id}`,
@@ -7636,22 +7714,10 @@ export async function getAgendaPageData() {
       dateLabel: formatDateCompact(assignment.due_at),
       timeLabel: formatTimeOnly(assignment.due_at),
       title: assignment.title,
-      subtitle:
-        assignment.quiz_id
-          ? `Quiz · ${quiz?.title ?? "quiz"}`
-          : `Contenu · ${content?.title ?? "ressource"}`,
+      subtitle,
       statusLabel: getDeadlineStateLabel(dueState),
       statusTone: getDeadlineStateTone(dueState),
-      audienceLabel:
-        context.role === "coachee"
-          ? assignment.cohort_id
-            ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
-            : "Assignation individuelle"
-          : assignment.assigned_user_id
-            ? profileById.get(assignment.assigned_user_id)
-              ? formatUserName(profileById.get(assignment.assigned_user_id)!)
-              : "Coaché"
-            : `Cohorte · ${cohortNameById.get(assignment.cohort_id ?? "") ?? "groupe"}`,
+      audienceLabel,
       href: assignment.quiz_id
         ? `/quiz/${assignment.quiz_id}${context.role === "coachee" ? `?assignment=${assignment.id}` : ""}`
         : context.role === "coachee"
@@ -7661,24 +7727,179 @@ export async function getAgendaPageData() {
             : null,
       ctaLabel: assignment.quiz_id ? "Ouvrir le quiz" : context.role === "coachee" ? "Ouvrir l'assignation" : "Ouvrir la ressource",
       isOverdue: dueState === "overdue",
-      isToday: getRelativeDayLabel(assignment.due_at, now) === "Aujourd'hui"
+      isToday,
+      lane,
+      laneLabel: getAgendaLaneLabel(lane),
+      tone: getAgendaLaneTone(lane),
+      nextAction:
+        dueState === "overdue"
+          ? "La deadline a basculé en retard: ouvre cette étape en priorité."
+          : dueState === "soon"
+            ? "La deadline arrive vite: mieux vaut lancer cette étape maintenant."
+            : assignment.quiz_id
+              ? "Le quiz est prêt à être repris directement depuis l'agenda."
+              : "La ressource reste accessible pour préparer la prochaine échéance.",
+      contextLabel: subtitle,
+      searchText: [assignment.title, subtitle, audienceLabel, getDeadlineStateLabel(dueState)].join(" ").toLowerCase()
     };
   });
 
-  const events = [...sessionEvents, ...deadlineEvents].sort((left, right) => left.timestamp - right.timestamp);
-  const upcomingSessions = sessionEvents.filter((event) => event.timestamp >= now && event.statusLabel === "planned").length;
+  const normalizedQuery = filters?.query?.trim().toLowerCase() ?? "";
+  const laneFilter: AgendaLane | "all" = isAgendaLane(filters?.lane) ? filters.lane : "all";
+  const scopeFilter: AgendaScope | "all" = isAgendaScope(filters?.scope) ? filters.scope : "all";
+  const allEvents = [...sessionEvents, ...deadlineEvents];
+  const baseEvents = allEvents.filter((event) => {
+    if (normalizedQuery && !event.searchText.includes(normalizedQuery)) {
+      return false;
+    }
+
+    if (scopeFilter === "sessions" && event.type !== "session") {
+      return false;
+    }
+
+    if (scopeFilter === "deadlines" && event.type !== "deadline") {
+      return false;
+    }
+
+    return true;
+  });
+  const laneCounts = baseEvents.reduce(
+    (counts, event) => {
+      counts[event.lane] += 1;
+      return counts;
+    },
+    {
+      urgent: 0,
+      today: 0,
+      upcoming: 0,
+      recent: 0
+    } as Record<AgendaLane, number>
+  );
+  const visibleEvents =
+    laneFilter === "all" ? baseEvents : baseEvents.filter((event) => event.lane === laneFilter);
+  const events = visibleEvents.slice().sort((left, right) => left.timestamp - right.timestamp);
+  const priorityEvents = visibleEvents
+    .slice()
+    .sort((left, right) => {
+      const laneRank = { urgent: 0, today: 1, upcoming: 2, recent: 3 } as const;
+
+      if (laneRank[left.lane] !== laneRank[right.lane]) {
+        return laneRank[left.lane] - laneRank[right.lane];
+      }
+
+      if (left.lane === "recent" && right.lane === "recent") {
+        return right.timestamp - left.timestamp;
+      }
+
+      return left.timestamp - right.timestamp;
+    });
+  const focusEvent = priorityEvents[0] ?? null;
+  const groupedEvents = events.reduce(
+    (map, event) => {
+      const key = `${event.dayLabel}-${event.dateLabel}`;
+      const current = map.get(key) ?? {
+        id: key,
+        label: `${event.dayLabel} · ${event.dateLabel}`,
+        events: [] as typeof events
+      };
+
+      current.events.push(event);
+      map.set(key, current);
+      return map;
+    },
+    new Map<string, { id: string; label: string; events: typeof events }>()
+  );
+  const daySpotlights = Array.from(groupedEvents.values())
+    .sort((left, right) => {
+      const leftUrgent = left.events.filter((event) => event.lane === "urgent").length;
+      const rightUrgent = right.events.filter((event) => event.lane === "urgent").length;
+
+      return rightUrgent - leftUrgent || left.events[0].timestamp - right.events[0].timestamp;
+    })
+    .slice(0, 4)
+    .map((group) => {
+      const urgentCount = group.events.filter((event) => event.lane === "urgent").length;
+      const todayCount = group.events.filter((event) => event.lane === "today").length;
+      const upcomingCount = group.events.filter((event) => event.lane === "upcoming").length;
+      const tone = urgentCount > 0 ? ("warning" as const) : todayCount > 0 ? ("accent" as const) : upcomingCount > 0 ? ("neutral" as const) : ("success" as const);
+
+      return {
+        id: group.id,
+        label: group.label,
+        count: group.events.length,
+        tone,
+        summary:
+          urgentCount > 0
+            ? `${urgentCount} point(s) à sécuriser · ${group.events[0].title}`
+            : todayCount > 0
+              ? `${todayCount} point(s) aujourd'hui · ${group.events[0].title}`
+              : upcomingCount > 0
+                ? `${upcomingCount} événement(s) à venir · ${group.events[0].title}`
+                : `Relecture récente · ${group.events[0].title}`,
+        href: group.events[0]?.href ?? "#agenda-timeline",
+        ctaLabel: group.events[0]?.ctaLabel ?? "Voir la timeline"
+      };
+    });
+
+  const upcomingSessions = visibleEvents.filter((event) => event.type === "session" && event.timestamp >= now && event.statusLabel === "planned").length;
   const weekEnd = now + 7 * 24 * 60 * 60 * 1000;
-  const dueThisWeek = deadlineEvents.filter((event) => event.timestamp >= now && event.timestamp <= weekEnd).length;
-  const overdueCount = deadlineEvents.filter((event) => event.isOverdue).length;
-  const todayCount = events.filter((event) => event.isToday).length;
-  const nextEvent = events.find((event) => event.timestamp >= now) ?? events[0] ?? null;
+  const dueThisWeek = visibleEvents.filter((event) => event.type === "deadline" && event.timestamp >= now && event.timestamp <= weekEnd).length;
+  const overdueCount = visibleEvents.filter((event) => event.isOverdue).length;
+  const todayCount = visibleEvents.filter((event) => event.isToday).length;
+  const nextEvent = events.find((event) => event.timestamp >= now) ?? priorityEvents[0] ?? null;
+  const activeFilterParts = [
+    scopeFilter === "sessions" ? "séances" : scopeFilter === "deadlines" ? "deadlines" : null,
+    laneFilter !== "all" ? getAgendaLaneLabel(laneFilter) : null,
+    normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
+  ].filter(Boolean) as string[];
+  const responsePlaybook = [
+    focusEvent
+      ? {
+          id: "focus",
+          title: focusEvent.lane === "urgent" ? "Sécuriser le temps fort critique" : "Ouvrir le prochain temps fort",
+          body: focusEvent.nextAction,
+          href: focusEvent.href ?? "#agenda-timeline",
+          ctaLabel: focusEvent.href ? focusEvent.ctaLabel ?? "Ouvrir l'événement" : "Voir la timeline",
+          tone: focusEvent.tone
+        }
+      : {
+          id: "focus",
+          title: "Aucun temps fort dans cette vue",
+          body: "L'agenda remontera ici la prochaine séance ou la prochaine deadline utile dès qu'elle deviendra visible.",
+          href: "/dashboard",
+          ctaLabel: "Retour au dashboard",
+          tone: "neutral" as const
+        },
+    {
+      id: "messages",
+      title: "Relier l'agenda aux messages",
+      body: "Quand un événement demande une coordination rapide, la messagerie garde le bon contexte de reprise.",
+      href: "/messages",
+      ctaLabel: "Ouvrir les messages",
+      tone: "accent" as const
+    },
+    {
+      id: "programs",
+      title: "Croiser les échéances avec les parcours",
+      body: "Les deadlines et quiz prennent plus de sens quand tu les relis au parcours actif et à la prochaine étape utile.",
+      href: "/programs",
+      ctaLabel: "Voir les parcours",
+      tone: "success" as const
+    }
+  ];
 
   return {
     context,
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      lane: laneFilter,
+      scope: scopeFilter,
+      summary: activeFilterParts.length ? `Vue filtrée · ${activeFilterParts.join(" · ")}` : "Vue globale de l'agenda"
+    },
     metrics: [
       {
-        label: "Événements à venir",
-        value: events.filter((event) => event.timestamp >= now).length.toString(),
+        label: "Événements visibles",
+        value: visibleEvents.length.toString(),
         delta: nextEvent ? `Prochain temps fort · ${nextEvent.title}` : "Aucun événement planifié"
       },
       {
@@ -7697,6 +7918,48 @@ export async function getAgendaPageData() {
         delta: todayCount ? "Journée déjà chargée" : "Rien de bloquant aujourd'hui"
       }
     ],
+    hero: {
+      title: focusEvent
+        ? `${focusEvent.title} donne le tempo du prochain mouvement`
+        : "L'agenda reste prêt à remonter le prochain temps fort utile",
+      summary: focusEvent
+        ? `${focusEvent.laneLabel} · ${focusEvent.timeLabel} · ${focusEvent.nextAction}`
+        : "Séances, deadlines et reprises récentes remonteront ici dès qu'un événement devient visible dans ton périmètre ECCE."
+    },
+    laneBreakdown: [
+      {
+        id: "urgent" as AgendaLane,
+        label: "A securiser",
+        count: laneCounts.urgent,
+        tone: "warning" as const,
+        isActive: laneFilter === "urgent"
+      },
+      {
+        id: "today" as AgendaLane,
+        label: "Aujourd'hui",
+        count: laneCounts.today,
+        tone: "accent" as const,
+        isActive: laneFilter === "today"
+      },
+      {
+        id: "upcoming" as AgendaLane,
+        label: "A venir",
+        count: laneCounts.upcoming,
+        tone: "neutral" as const,
+        isActive: laneFilter === "upcoming"
+      },
+      {
+        id: "recent" as AgendaLane,
+        label: "Recent",
+        count: laneCounts.recent,
+        tone: "success" as const,
+        isActive: laneFilter === "recent"
+      }
+    ],
+    focusEvent,
+    priorityEvents: priorityEvents.slice(0, 6),
+    daySpotlights,
+    responsePlaybook,
     events,
     planner:
       showPlanner
