@@ -7873,14 +7873,38 @@ export async function getLibraryPageData() {
     }>).map((item) => [item.id, item])
   );
 
+  const normalizeTopics = (topics: string[] | null | undefined) =>
+    Array.from(
+      new Set(
+        (topics ?? [])
+          .map((topic) => topic.trim().replace(/\s+/g, " "))
+          .filter(Boolean)
+      )
+    );
+  const getTopLabels = (labels: string[], limit = 8) =>
+    Array.from(
+      labels.reduce((map, label) => {
+        const normalizedLabel = label.trim();
+        if (!normalizedLabel) {
+          return map;
+        }
+
+        map.set(normalizedLabel, (map.get(normalizedLabel) ?? 0) + 1);
+        return map;
+      }, new Map<string, number>())
+    )
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, limit)
+      .map(([label]) => label);
+
   const resources = [
     ...contents.map((item) => ({
       id: item.id,
       title: item.title,
       summary: item.summary,
       category: item.category?.trim() || "Bibliothèque",
-      subcategory: item.subcategory,
-      tags: item.tags ?? [],
+      subcategory: item.subcategory?.trim() || null,
+      tags: normalizeTopics(item.tags),
       badge: item.content_type,
       secondaryBadge: item.is_required ? "obligatoire" : null,
       meta: item.estimated_minutes ? `${item.estimated_minutes} min` : "durée libre",
@@ -7897,8 +7921,8 @@ export async function getLibraryPageData() {
         title: quiz.title,
         summary: quiz.description ?? "Quiz publié dans la bibliothèque ECCE.",
         category: linkedContent?.category?.trim() || "Quiz",
-        subcategory: linkedContent?.subcategory ?? quiz.kind ?? "quiz",
-        tags: linkedContent?.tags ?? [],
+        subcategory: linkedContent?.subcategory?.trim() || quiz.kind || "quiz",
+        tags: normalizeTopics(linkedContent?.tags),
         badge: quiz.kind ?? "quiz",
         secondaryBadge: `${questionCount} question(s)`,
         meta: quiz.time_limit_minutes ? `${quiz.time_limit_minutes} min` : `${quiz.attempts_allowed ?? 1} tentative(s)`,
@@ -7922,6 +7946,33 @@ export async function getLibraryPageData() {
     items
   }));
 
+  const themeMap = groups.map((group) => {
+    const subthemes = Array.from(
+      group.items.reduce((map, item) => {
+        const key = item.subcategory?.trim() || "Sans sous-thème";
+        const current = map.get(key) ?? [];
+        current.push(item);
+        map.set(key, current);
+        return map;
+      }, new Map<string, Array<(typeof resources)[number]>>())
+    )
+      .map(([label, items]) => ({
+        label,
+        count: items.length,
+        topics: getTopLabels(items.flatMap((item) => item.tags), 5)
+      }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+
+    return {
+      category: group.category,
+      count: group.items.length,
+      contentCount: group.items.filter((item) => item.type === "content").length,
+      quizCount: group.items.filter((item) => item.type === "quiz").length,
+      subthemes,
+      topics: getTopLabels(group.items.flatMap((item) => item.tags), 8)
+    };
+  });
+
   const taxonomy = Array.from(
     new Set(
       resources.flatMap((item) =>
@@ -7934,6 +7985,7 @@ export async function getLibraryPageData() {
     context,
     resources,
     groups,
+    themeMap,
     taxonomy
   };
 }

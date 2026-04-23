@@ -13,6 +13,85 @@ type ModuleOption = {
 
 const initialState: AdminActionState = {};
 
+const CONTENT_TAXONOMY_PRESETS = [
+  {
+    id: "fondamentaux",
+    theme: "Fondamentaux",
+    description: "Cadre, vocabulaire et posture de base pour sécuriser les premières séances.",
+    subthemes: [
+      {
+        label: "Cadre de séance",
+        topics: ["contrat", "objectif", "alliance", "cadre", "séance"]
+      },
+      {
+        label: "Posture coach",
+        topics: ["écoute", "questionnement", "neutralité", "présence", "éthique"]
+      }
+    ]
+  },
+  {
+    id: "pratique",
+    theme: "Pratique coach",
+    description: "Ressources directement activables avant, pendant ou après une séance.",
+    subthemes: [
+      {
+        label: "Diagnostic",
+        topics: ["besoin", "blocage", "objectif", "priorisation", "diagnostic"]
+      },
+      {
+        label: "Outils et scripts",
+        topics: ["template", "script", "exercice", "trame", "support"]
+      }
+    ]
+  },
+  {
+    id: "business",
+    theme: "Business coaching",
+    description: "Contenus pour structurer l'offre, la prospection et la conversion.",
+    subthemes: [
+      {
+        label: "Offre et positionnement",
+        topics: ["niche", "promesse", "offre", "positionnement", "prix"]
+      },
+      {
+        label: "Acquisition client",
+        topics: ["prospection", "contenu", "vente", "conversion", "rendez-vous"]
+      }
+    ]
+  },
+  {
+    id: "progression",
+    theme: "Progression apprenant",
+    description: "Repères pour suivre les coachés, repérer les risques et consolider les acquis.",
+    subthemes: [
+      {
+        label: "Engagement",
+        topics: ["assiduité", "motivation", "deadline", "relance", "engagement"]
+      },
+      {
+        label: "Évaluation",
+        topics: ["quiz", "feedback", "preuve", "compétence", "maîtrise"]
+      }
+    ]
+  }
+] as const;
+
+function normalizeTag(tag: string) {
+  return tag.trim().replace(/\s+/g, " ");
+}
+
+function mergeTags(currentTags: string, nextTags: readonly string[]) {
+  return Array.from(
+    new Set([
+      ...currentTags
+        .split(",")
+        .map(normalizeTag)
+        .filter(Boolean),
+      ...nextTags.map(normalizeTag).filter(Boolean)
+    ])
+  ).join(", ");
+}
+
 function ctaLabel(contentType: string) {
   switch (contentType) {
     case "youtube":
@@ -48,19 +127,42 @@ export function ContentStudioComposer({
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState("30");
   const [isRequired, setIsRequired] = useState(false);
+  const [selectedThemeId, setSelectedThemeId] = useState<string>(CONTENT_TAXONOMY_PRESETS[0].id);
 
   const tagList = tags
     .split(",")
-    .map((tag) => tag.trim())
+    .map(normalizeTag)
     .filter(Boolean);
+  const selectedTheme =
+    CONTENT_TAXONOMY_PRESETS.find((preset) => preset.id === selectedThemeId) ??
+    CONTENT_TAXONOMY_PRESETS[0];
+  const selectedSubtheme =
+    selectedTheme.subthemes.find((item) => item.label === subcategory) ??
+    selectedTheme.subthemes[0];
   const hasPrimaryLink = Boolean((contentType === "youtube" ? youtubeUrl : externalUrl).trim());
   const readinessScore = [
     Boolean(title.trim()),
     Boolean(summary.trim()),
     Boolean(category.trim()),
     Boolean(subcategory.trim()),
+    tagList.length >= 3,
     hasPrimaryLink || contentType === "document" || contentType === "template"
   ].filter(Boolean).length;
+  const taxonomyReady = Boolean(category.trim() && subcategory.trim() && tagList.length >= 3);
+
+  function applyTheme(preset: (typeof CONTENT_TAXONOMY_PRESETS)[number]) {
+    const firstSubtheme = preset.subthemes[0];
+
+    setSelectedThemeId(preset.id);
+    setCategory(preset.theme);
+    setSubcategory(firstSubtheme.label);
+    setTags((currentTags) => mergeTags(currentTags, firstSubtheme.topics));
+  }
+
+  function applySubtheme(subtheme: (typeof CONTENT_TAXONOMY_PRESETS)[number]["subthemes"][number]) {
+    setSubcategory(subtheme.label);
+    setTags((currentTags) => mergeTags(currentTags, subtheme.topics));
+  }
 
   return (
     <form action={formAction} className="content-studio-shell admin-form">
@@ -105,7 +207,7 @@ export function ContentStudioComposer({
               <span>minutes estimées</span>
             </article>
             <article>
-              <strong>{readinessScore}/5</strong>
+              <strong>{readinessScore}/6</strong>
               <span>niveau de préparation</span>
             </article>
           </div>
@@ -153,6 +255,51 @@ export function ContentStudioComposer({
                 <div className="content-briefing-card-head">
                   <span className="eyebrow">Taxonomie</span>
                   <strong>Organisation éditoriale</strong>
+                  <p>Classe chaque ressource par thème, sous-thème et sujets abordés pour une bibliothèque vraiment pilotable.</p>
+                </div>
+
+                <div className="content-taxonomy-presets">
+                  <div className="content-taxonomy-theme-grid">
+                    {CONTENT_TAXONOMY_PRESETS.map((preset) => (
+                      <button
+                        className={`content-taxonomy-theme-button${selectedThemeId === preset.id ? " is-active" : ""}`}
+                        key={preset.id}
+                        onClick={() => applyTheme(preset)}
+                        type="button"
+                      >
+                        <strong>{preset.theme}</strong>
+                        <span>{preset.description}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="content-taxonomy-subtheme-grid">
+                    {selectedTheme.subthemes.map((subtheme) => (
+                      <button
+                        className={`content-taxonomy-subtheme-button${subcategory === subtheme.label ? " is-active" : ""}`}
+                        key={subtheme.label}
+                        onClick={() => applySubtheme(subtheme)}
+                        type="button"
+                      >
+                        <strong>{subtheme.label}</strong>
+                        <span>{subtheme.topics.slice(0, 3).join(" · ")}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="content-topic-strip">
+                    <span>Suggestions</span>
+                    {selectedSubtheme.topics.map((topic) => (
+                      <button
+                        className="content-topic-chip"
+                        key={topic}
+                        onClick={() => setTags((currentTags) => mergeTags(currentTags, [topic]))}
+                        type="button"
+                      >
+                        {topic}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="content-studio-grid">
@@ -165,13 +312,14 @@ export function ContentStudioComposer({
                     <input onChange={(event) => setSubcategory(event.target.value)} placeholder="Cadre de séance" type="text" value={subcategory} />
                   </label>
                   <label className="form-grid-span">
-                    Tags
+                    Contenus abordés
                     <input
                       onChange={(event) => setTags(event.target.value)}
-                      placeholder="coaching, posture, business"
+                      placeholder="contrat, objectif, alliance, cadre"
                       type="text"
                       value={tags}
                     />
+                    <small>Ces sujets deviennent les tags utilisés par les coachs pour retrouver les ressources.</small>
                   </label>
                   <label className="form-grid-span">
                     Module de parcours
@@ -258,7 +406,7 @@ export function ContentStudioComposer({
 
           <div className="content-readiness-grid">
             <div>
-              <strong>{readinessScore}/5</strong>
+              <strong>{readinessScore}/6</strong>
               <span>critères remplis</span>
             </div>
             <div>
@@ -266,8 +414,8 @@ export function ContentStudioComposer({
               <span>tag(s)</span>
             </div>
             <div>
-              <strong>{isRequired ? "Oui" : "Non"}</strong>
-              <span>priorité parcours</span>
+              <strong>{taxonomyReady ? "Oui" : "À cadrer"}</strong>
+              <span>taxonomie exploitable</span>
             </div>
           </div>
 
@@ -341,7 +489,7 @@ export function ContentStudioComposer({
             </article>
             <article>
               <strong>Repérage</strong>
-              <p>Une bonne catégorie et quelques tags rendent le contenu retrouvable instantanément.</p>
+              <p>Un thème, un sous-thème et trois sujets abordés rendent le contenu retrouvable instantanément.</p>
             </article>
           </div>
         </section>

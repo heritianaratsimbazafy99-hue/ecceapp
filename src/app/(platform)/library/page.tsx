@@ -3,7 +3,7 @@ import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { getLibraryPageData } from "@/lib/platform-data";
 
 export default async function LibraryPage() {
-  const { resources, groups, taxonomy } = await getLibraryPageData();
+  const { resources, groups, taxonomy, themeMap } = await getLibraryPageData();
 
   return (
     <div className="page-shell">
@@ -13,7 +13,7 @@ export default async function LibraryPage() {
       />
 
       {resources.length ? (
-        <LibraryExplorer groups={groups} taxonomy={taxonomy} />
+        <LibraryExplorer groups={groups} taxonomy={taxonomy} themeMap={themeMap} />
       ) : (
         <section className="panel">
           <div className="empty-state">
