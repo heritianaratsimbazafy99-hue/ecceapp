@@ -1947,16 +1947,37 @@ export async function getAdminAuditPageData(filters?: {
   };
 }
 
-export async function getAdminLearnerOpsPageData() {
+export async function getAdminLearnerOpsPageData(filters?: {
+  query?: string;
+  cohortId?: string;
+  coachId?: string;
+  lane?: string;
+}) {
   const base = await getAdminPageData();
   const admin = createSupabaseAdminClient();
   const organizationId = base.context.profile.organization_id;
+  const query = String(filters?.query ?? "").trim();
+  const normalizedQuery = query.toLowerCase();
+  const selectedCohortId =
+    base.cohortOptions.some((option) => option.id === String(filters?.cohortId ?? "").trim())
+      ? String(filters?.cohortId ?? "").trim()
+      : "";
+  const selectedCoachId =
+    base.coachOptions.some((option) => option.id === String(filters?.coachId ?? "").trim())
+      ? String(filters?.coachId ?? "").trim()
+      : "";
+  const laneFilter = ["all", "uncovered", "alert", "aligned"].includes(String(filters?.lane ?? "").trim())
+    ? String(filters?.lane ?? "").trim()
+    : "all";
 
-  const coachAssignmentsResult = await admin
-    .from("coach_assignments")
-    .select("id, coach_id, coachee_id, cohort_id, created_at")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false });
+  const [coachAssignmentsResult, cohortMembersResult] = await Promise.all([
+    admin
+      .from("coach_assignments")
+      .select("id, coach_id, coachee_id, cohort_id, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin.from("cohort_members").select("user_id, cohort_id")
+  ]);
 
   const assignments = (coachAssignmentsResult.data ?? []) as Array<{
     id: string;
@@ -1965,47 +1986,544 @@ export async function getAdminLearnerOpsPageData() {
     cohort_id: string | null;
     created_at: string;
   }>;
-
-  const coachLabelById = new Map(base.coachOptions.map((item) => [item.id, item.label]));
-  const coacheeLabelById = new Map(base.coacheeOptions.map((item) => [item.id, item.label]));
+  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
+  const learnerSignalById = new Map(base.engagementSignals.map((signal) => [signal.id, signal]));
+  const learnerIds = new Set(base.engagementSignals.map((signal) => signal.id));
   const cohortLabelById = new Map(base.cohortOptions.map((item) => [item.id, item.label]));
+  const coachById = new Map(
+    base.users
+      .filter((user) => user.roles.includes("coach"))
+      .map((user) => [
+        user.id,
+        {
+          name: user.name,
+          email: user.email
+        }
+      ])
+  );
+  const cohortIdsByLearnerId = cohortMembers.reduce((map, item) => {
+    if (!learnerIds.has(item.user_id)) {
+      return map;
+    }
 
-  const coachPortfolios = base.coachOptions.map((coach) => {
-    const coachRows = assignments.filter((item) => item.coach_id === coach.id);
-    const directCoachees = coachRows
-      .map((item) => item.coachee_id)
-      .filter(Boolean)
-      .map((item) => coacheeLabelById.get(item as string) ?? "Coaché")
-      .slice(0, 6);
-    const cohorts = coachRows
-      .map((item) => item.cohort_id)
-      .filter(Boolean)
-      .map((item) => cohortLabelById.get(item as string) ?? "Cohorte")
-      .slice(0, 6);
+    const current = map.get(item.user_id) ?? [];
+    current.push(item.cohort_id);
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const learnerIdsByCohortId = cohortMembers.reduce((map, item) => {
+    if (!learnerIds.has(item.user_id)) {
+      return map;
+    }
+
+    const current = map.get(item.cohort_id) ?? [];
+    current.push(item.user_id);
+    map.set(item.cohort_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const coachIdsByLearnerId = new Map<string, string[]>();
+  const directCoachIdsByLearnerId = new Map<string, string[]>();
+  const coachIdsByCohortId = new Map<string, string[]>();
+
+  for (const assignment of assignments) {
+    if (assignment.coachee_id) {
+      const direct = directCoachIdsByLearnerId.get(assignment.coachee_id) ?? [];
+      if (!direct.includes(assignment.coach_id)) {
+        direct.push(assignment.coach_id);
+        directCoachIdsByLearnerId.set(assignment.coachee_id, direct);
+      }
+
+      const all = coachIdsByLearnerId.get(assignment.coachee_id) ?? [];
+      if (!all.includes(assignment.coach_id)) {
+        all.push(assignment.coach_id);
+        coachIdsByLearnerId.set(assignment.coachee_id, all);
+      }
+    }
+
+    if (assignment.cohort_id) {
+      const cohortCoachIds = coachIdsByCohortId.get(assignment.cohort_id) ?? [];
+      if (!cohortCoachIds.includes(assignment.coach_id)) {
+        cohortCoachIds.push(assignment.coach_id);
+        coachIdsByCohortId.set(assignment.cohort_id, cohortCoachIds);
+      }
+
+      for (const learnerId of learnerIdsByCohortId.get(assignment.cohort_id) ?? []) {
+        const current = coachIdsByLearnerId.get(learnerId) ?? [];
+        if (!current.includes(assignment.coach_id)) {
+          current.push(assignment.coach_id);
+          coachIdsByLearnerId.set(learnerId, current);
+        }
+      }
+    }
+  }
+
+  const coveredLearnerIdsByCoachId = base.coachOptions.reduce((map, coach) => {
+    map.set(
+      coach.id,
+      Array.from(
+        new Set(
+          base.engagementSignals
+            .map((signal) => signal.id)
+            .filter((learnerId) => (coachIdsByLearnerId.get(learnerId) ?? []).includes(coach.id))
+        )
+      )
+    );
+    return map;
+  }, new Map<string, string[]>());
+  const coachNameListForLearner = (learnerId: string) =>
+    (coachIdsByLearnerId.get(learnerId) ?? [])
+      .map((coachId) => coachById.get(coachId)?.name ?? "Coach")
+      .filter(Boolean);
+  const hasCoachCoverage = (learnerId: string) => (coachIdsByLearnerId.get(learnerId) ?? []).length > 0;
+  const hasCohortCoverage = (learnerId: string) => (cohortIdsByLearnerId.get(learnerId) ?? []).length > 0;
+  const matchesLane = (signal: LearnerEngagementSignal, lane: string) => {
+    const uncovered = !hasCoachCoverage(signal.id) || !hasCohortCoverage(signal.id);
+    const alert = signal.band !== "strong" || signal.overdueCount > 0 || uncovered;
+    const aligned = signal.band === "strong" && hasCoachCoverage(signal.id) && hasCohortCoverage(signal.id);
+
+    switch (lane) {
+      case "uncovered":
+        return uncovered;
+      case "alert":
+        return alert;
+      case "aligned":
+        return aligned;
+      default:
+        return true;
+    }
+  };
+  const sortSignalsByPriority = (left: LearnerEngagementSignal, right: LearnerEngagementSignal) => {
+    const leftUncovered = Number(!hasCoachCoverage(left.id) || !hasCohortCoverage(left.id));
+    const rightUncovered = Number(!hasCoachCoverage(right.id) || !hasCohortCoverage(right.id));
+    const leftBandRank = left.band === "risk" ? 0 : left.band === "watch" ? 1 : 2;
+    const rightBandRank = right.band === "risk" ? 0 : right.band === "watch" ? 1 : 2;
+
+    return (
+      rightUncovered - leftUncovered ||
+      leftBandRank - rightBandRank ||
+      right.overdueCount - left.overdueCount ||
+      right.dueSoonCount - left.dueSoonCount ||
+      left.score - right.score
+    );
+  };
+
+  const scopedSignals = base.engagementSignals.filter((signal) => {
+    const matchesCohort = selectedCohortId ? (cohortIdsByLearnerId.get(signal.id) ?? []).includes(selectedCohortId) : true;
+    const matchesCoach = selectedCoachId ? (coachIdsByLearnerId.get(signal.id) ?? []).includes(selectedCoachId) : true;
+    const matchesQuery = normalizedQuery
+      ? `${signal.name} ${signal.cohorts.join(" ")} ${signal.nextFocus} ${coachNameListForLearner(signal.id).join(" ")}`.toLowerCase().includes(normalizedQuery)
+      : true;
+
+    return matchesCohort && matchesCoach && matchesQuery;
+  });
+  const filteredSignals = scopedSignals.filter((signal) => matchesLane(signal, laneFilter));
+  const filteredOverview = buildEngagementOverview(filteredSignals);
+  const filteredLearnerIds = new Set(filteredSignals.map((signal) => signal.id));
+  const laneBreakdown = [
+    {
+      id: "uncovered",
+      label: "À structurer",
+      count: scopedSignals.filter((signal) => matchesLane(signal, "uncovered")).length,
+      tone: "warning" as const
+    },
+    {
+      id: "alert",
+      label: "Sous tension",
+      count: scopedSignals.filter((signal) => matchesLane(signal, "alert")).length,
+      tone: "accent" as const
+    },
+    {
+      id: "aligned",
+      label: "Bien alignés",
+      count: scopedSignals.filter((signal) => matchesLane(signal, "aligned")).length,
+      tone: "success" as const
+    }
+  ].map((item) => ({
+    ...item,
+    isActive: laneFilter === item.id
+  }));
+  const learnersWithoutCoach = filteredSignals.filter((signal) => !hasCoachCoverage(signal.id)).length;
+  const learnersWithoutCohort = filteredSignals.filter((signal) => !hasCohortCoverage(signal.id)).length;
+  const priorityLearners = [...filteredSignals].sort(sortSignalsByPriority);
+  const learnerOperations = priorityLearners.slice(0, 8).map((signal) => {
+    const coachNames = coachNameListForLearner(signal.id);
+    const cohortIds = cohortIdsByLearnerId.get(signal.id) ?? [];
+    const uncovered = !hasCoachCoverage(signal.id) || !hasCohortCoverage(signal.id);
 
     return {
-      id: coach.id,
-      name: coach.label,
-      directCount: coachRows.filter((item) => item.coachee_id).length,
-      cohortCount: coachRows.filter((item) => item.cohort_id).length,
-      directCoachees,
-      cohorts
+      id: signal.id,
+      name: signal.name,
+      score: signal.score,
+      band: signal.band,
+      bandLabel: signal.bandLabel,
+      cohorts: signal.cohorts,
+      coachNames,
+      coverageLabel: uncovered
+        ? !hasCoachCoverage(signal.id)
+          ? "Sans coach affecté"
+          : "Sans cohorte"
+        : `${coachNames.length} coach(s) · ${cohortIds.length} cohorte(s)`,
+      coverageTone: (!hasCoachCoverage(signal.id) ? "warning" : !hasCohortCoverage(signal.id) ? "accent" : "success") as
+        | "warning"
+        | "accent"
+        | "success",
+      lastActivityLabel: signal.lastActivityLabel,
+      nextFocus: signal.nextFocus,
+      assignmentCount: signal.assignmentCount,
+      completionRate: signal.completionRate,
+      onTimeRate: signal.onTimeRate,
+      averageQuizScore: signal.averageQuizScore,
+      overdueCount: signal.overdueCount,
+      dueSoonCount: signal.dueSoonCount
     };
   });
+  const cohortRadar = base.cohortOptions
+    .map((cohort) => {
+      const memberIds = learnerIdsByCohortId.get(cohort.id) ?? [];
+      const signals = memberIds
+        .map((learnerId) => learnerSignalById.get(learnerId))
+        .filter((signal): signal is LearnerEngagementSignal => Boolean(signal))
+        .filter((signal) => filteredLearnerIds.has(signal.id));
+      const coachIds = coachIdsByCohortId.get(cohort.id) ?? [];
+      const leadCoaches = coachIds.map((coachId) => coachById.get(coachId)?.name ?? "Coach").slice(0, 3);
+      const averageScore = signals.length
+        ? roundMetric(signals.reduce((total, signal) => total + signal.score, 0) / signals.length)
+        : 0;
+      const completionSignals = signals.filter((signal) => signal.completionRate !== null);
+      const completionRate = completionSignals.length
+        ? roundMetric(
+            completionSignals.reduce((total, signal) => total + (signal.completionRate ?? 0), 0) / completionSignals.length
+          )
+        : null;
+      const uncoveredCount = signals.filter((signal) => !hasCoachCoverage(signal.id)).length;
+      const atRiskCount = signals.filter((signal) => signal.band === "risk").length;
+      const watchCount = signals.filter((signal) => signal.band === "watch").length;
+      const nextNeed =
+        uncoveredCount > 0
+          ? `${uncoveredCount} coaché(s) à couvrir côté coach`
+          : atRiskCount > 0
+            ? `${atRiskCount} coaché(s) à relancer vite`
+            : signals[0]?.nextFocus ?? "Rythme cohorte stable";
+
+      return {
+        id: cohort.id,
+        name: cohort.label,
+        memberCount: signals.length,
+        averageScore,
+        completionRate,
+        uncoveredCount,
+        atRiskCount,
+        watchCount,
+        leadCoaches,
+        nextNeed,
+        tone: (averageScore >= 75 ? "success" : averageScore >= 45 ? "accent" : "warning") as
+          | "success"
+          | "accent"
+          | "warning",
+        isActive: cohort.id === selectedCohortId
+      };
+    })
+    .filter((cohort) => cohort.memberCount > 0 || cohort.id === selectedCohortId || (!selectedCoachId && !query))
+    .sort(
+      (left, right) =>
+        Number(right.isActive) - Number(left.isActive) ||
+        right.uncoveredCount - left.uncoveredCount ||
+        right.atRiskCount - left.atRiskCount ||
+        left.averageScore - right.averageScore
+    );
+  const focusCohort =
+    cohortRadar.find((cohort) => cohort.id === selectedCohortId) ??
+    cohortRadar[0] ??
+    null;
+  const coachPortfolios = base.coachOptions
+    .map((coach) => {
+      const coachRows = assignments.filter((item) => item.coach_id === coach.id);
+      const coveredLearnerIds = (coveredLearnerIdsByCoachId.get(coach.id) ?? []).filter((learnerId) => {
+        const matchesSelectedCohort = selectedCohortId
+          ? (cohortIdsByLearnerId.get(learnerId) ?? []).includes(selectedCohortId)
+          : true;
+        const matchesQuery = normalizedQuery
+          ? `${learnerSignalById.get(learnerId)?.name ?? ""} ${(cohortIdsByLearnerId.get(learnerId) ?? [])
+              .map((cohortId) => cohortLabelById.get(cohortId) ?? "")
+              .join(" ")}`.toLowerCase().includes(normalizedQuery)
+          : true;
+
+        return matchesSelectedCohort && matchesQuery;
+      });
+      const coveredSignals = coveredLearnerIds
+        .map((learnerId) => learnerSignalById.get(learnerId))
+        .filter((signal): signal is LearnerEngagementSignal => Boolean(signal))
+        .filter((signal) => laneFilter === "all" || filteredLearnerIds.has(signal.id));
+      const directCoachees = uniqueById(
+        coachRows
+          .filter((item) => item.coachee_id)
+          .map((item) => ({
+            id: item.coachee_id as string,
+            label: learnerSignalById.get(item.coachee_id as string)?.name ?? "Coaché"
+          }))
+      )
+        .map((item) => item.label)
+        .slice(0, 4);
+      const cohorts = uniqueById(
+        coachRows
+          .filter((item) => item.cohort_id)
+          .map((item) => ({
+            id: item.cohort_id as string,
+            label: cohortLabelById.get(item.cohort_id as string) ?? "Cohorte"
+          }))
+      )
+        .map((item) => item.label)
+        .slice(0, 4);
+      const riskCount = coveredSignals.filter((signal) => signal.band !== "strong").length;
+      const overloaded = coveredSignals.length >= 12 || riskCount >= 4;
+      const statusTone = (coveredSignals.length === 0 ? "neutral" : overloaded ? "warning" : "success") as
+        | "neutral"
+        | "warning"
+        | "success";
+      const statusLabel =
+        coveredSignals.length === 0 ? "à configurer" : overloaded ? "sous tension" : "opérationnel";
+
+      return {
+        id: coach.id,
+        name: coachById.get(coach.id)?.name ?? coach.label,
+        email: coachById.get(coach.id)?.email ?? "",
+        directCount: coachRows.filter((item) => item.coachee_id).length,
+        cohortCount: coachRows.filter((item) => item.cohort_id).length,
+        learnerCoverageCount: coveredSignals.length,
+        riskCount,
+        directCoachees,
+        cohorts,
+        statusTone,
+        statusLabel,
+        sampleLearners: coveredSignals.sort(sortSignalsByPriority).slice(0, 3).map((signal) => signal.name),
+        isActive: coach.id === selectedCoachId
+      };
+    })
+    .filter((coach) => {
+      const matchesCoach = selectedCoachId ? coach.id === selectedCoachId : true;
+      const matchesQuery = normalizedQuery
+        ? `${coach.name} ${coach.email} ${coach.directCoachees.join(" ")} ${coach.cohorts.join(" ")}`.toLowerCase().includes(normalizedQuery)
+        : true;
+
+      return matchesCoach && matchesQuery;
+    })
+    .sort(
+      (left, right) =>
+        Number(right.isActive) - Number(left.isActive) ||
+        Number(right.statusTone === "warning") - Number(left.statusTone === "warning") ||
+        right.riskCount - left.riskCount ||
+        right.learnerCoverageCount - left.learnerCoverageCount
+    );
+  const activeCoachCount = coachPortfolios.filter((coach) => coach.learnerCoverageCount > 0).length;
+  const assignmentHistory = assignments
+    .map((assignment) => {
+      const targetLearnerIds = assignment.coachee_id
+        ? [assignment.coachee_id]
+        : assignment.cohort_id
+          ? learnerIdsByCohortId.get(assignment.cohort_id) ?? []
+          : [];
+      const matchesLearnerScope = targetLearnerIds.some((learnerId) => filteredLearnerIds.has(learnerId));
+
+      return {
+        id: assignment.id,
+        coachName: coachById.get(assignment.coach_id)?.name ?? "Coach inconnu",
+        target:
+          assignment.coachee_id
+            ? learnerSignalById.get(assignment.coachee_id)?.name ?? "Coaché inconnu"
+            : cohortLabelById.get(assignment.cohort_id ?? "") ?? "Cohorte inconnue",
+        targetType: assignment.coachee_id ? "coaché" : "cohorte",
+        scopeLabel: assignment.coachee_id
+          ? "Couverture directe"
+          : `Cohorte · ${(learnerIdsByCohortId.get(assignment.cohort_id ?? "") ?? []).length} coaché(s)`,
+        createdAt: formatDate(assignment.created_at),
+        createdAtCompact: formatDateCompact(assignment.created_at),
+        tone: (assignment.coachee_id ? "accent" : "warning") as "accent" | "warning",
+        matchesLearnerScope
+      };
+    })
+    .filter((assignment) => {
+      const matchesCoach = selectedCoachId ? assignments.find((item) => item.id === assignment.id)?.coach_id === selectedCoachId : true;
+      const matchesCohort = selectedCohortId
+        ? assignments.find((item) => item.id === assignment.id)?.cohort_id === selectedCohortId || assignment.matchesLearnerScope
+        : true;
+      const matchesQuery = normalizedQuery
+        ? `${assignment.coachName} ${assignment.target} ${assignment.scopeLabel}`.toLowerCase().includes(normalizedQuery)
+        : true;
+
+      return matchesCoach && matchesCohort && matchesQuery;
+    })
+    .slice(0, 12);
+  const buildLearnerOpsHref = (params: {
+    path: string;
+    query?: string;
+    coachId?: string;
+    cohortId?: string;
+    lane?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+
+    if (params.query) {
+      searchParams.set("query", params.query);
+    }
+
+    if (params.coachId) {
+      searchParams.set("coach", params.coachId);
+    }
+
+    if (params.cohortId) {
+      searchParams.set("cohort", params.cohortId);
+    }
+
+    if (params.lane && params.lane !== "all") {
+      searchParams.set("lane", params.lane);
+    }
+
+    const value = searchParams.toString();
+    return value ? `${params.path}?${value}` : params.path;
+  };
+  const priorityActions = [
+    learnersWithoutCoach > 0
+      ? {
+          id: "coverage",
+          title: `${learnersWithoutCoach} coaché(s) sans coach dans cette vue`,
+          description: "Le risque principal n'est pas le contenu, mais l'absence de couverture de suivi.",
+          href: "#admin-learners-studio",
+          ctaLabel: "Affecter un coach",
+          tone: "warning" as const
+        }
+      : {
+          id: "coverage",
+          title: "Couverture coach sous contrôle",
+          description: "Tous les coachés visibles ont déjà au moins un coach dans leur périmètre.",
+          href: "/coach",
+          ctaLabel: "Voir le cockpit coach",
+          tone: "success" as const
+        },
+    learnersWithoutCohort > 0
+      ? {
+          id: "cohorts",
+          title: `${learnersWithoutCohort} coaché(s) encore sans cohorte`,
+          description: "Sans cohorte, les parcours groupés et la lecture agenda restent moins exploitables.",
+          href: "#admin-learners-studio",
+          ctaLabel: "Rattacher une cohorte",
+          tone: "accent" as const
+        }
+      : {
+          id: "cohorts",
+          title: "Population cohorte structurée",
+          description: "Les coachés visibles sont déjà rattachés à une cohorte exploitable.",
+          href: "/agenda",
+          ctaLabel: "Piloter l'agenda",
+          tone: "success" as const
+        },
+    focusCohort
+      ? {
+          id: "focus",
+          title: `Prioriser ${focusCohort.name}`,
+          description: focusCohort.nextNeed,
+          href: buildLearnerOpsHref({
+            path: "/admin/learners",
+            query,
+            coachId: selectedCoachId,
+            cohortId: focusCohort.id,
+            lane: "alert"
+          }),
+          ctaLabel: "Voir le détail",
+          tone: focusCohort.tone
+        }
+      : {
+          id: "focus",
+          title: "Aucune cohorte remontée",
+          description: "Le cockpit s'enrichira dès qu'une cohorte ou un coaché sera visible.",
+          href: "/admin/users",
+          ctaLabel: "Ouvrir les utilisateurs",
+          tone: "neutral" as const
+        },
+    coachPortfolios[0]
+      ? {
+          id: "coach",
+          title: `Arbitrer le portefeuille de ${coachPortfolios[0].name}`,
+          description:
+            coachPortfolios[0].learnerCoverageCount > 0
+              ? `${coachPortfolios[0].learnerCoverageCount} coaché(s) couverts · ${coachPortfolios[0].riskCount} à surveiller`
+              : "Coach disponible mais encore sans portefeuille actif.",
+          href: buildLearnerOpsHref({
+            path: "/admin/learners",
+            query,
+            coachId: coachPortfolios[0].id,
+            cohortId: selectedCohortId,
+            lane: laneFilter
+          }),
+          ctaLabel: "Isoler ce coach",
+          tone: coachPortfolios[0].statusTone
+        }
+      : {
+          id: "coach",
+          title: "Aucun coach disponible",
+          description: "Ajoute d'abord des coachs ou ouvre leur visibilité via une affectation.",
+          href: "/admin/users",
+          ctaLabel: "Gérer les utilisateurs",
+          tone: "neutral" as const
+        }
+  ];
+  const summaryParts = [
+    selectedCohortId ? cohortLabelById.get(selectedCohortId) ?? "Cohorte ciblée" : null,
+    selectedCoachId ? coachById.get(selectedCoachId)?.name ?? "Coach ciblé" : null,
+    laneFilter !== "all"
+      ? laneFilter === "uncovered"
+        ? "à structurer"
+        : laneFilter === "alert"
+          ? "sous tension"
+          : "bien alignés"
+      : null,
+    query ? `Recherche « ${query} »` : null
+  ].filter(Boolean) as string[];
 
   return {
     ...base,
-    coachAssignments: assignments.map((assignment) => ({
-      id: assignment.id,
-      coach: coachLabelById.get(assignment.coach_id) ?? "Coach inconnu",
-      target:
-        assignment.coachee_id
-          ? coacheeLabelById.get(assignment.coachee_id) ?? "Coaché inconnu"
-          : cohortLabelById.get(assignment.cohort_id ?? "") ?? "Cohorte inconnue",
-      targetType: assignment.coachee_id ? "coaché" : "cohorte",
-      createdAt: formatDate(assignment.created_at)
-    })),
-    coachPortfolios
+    filters: {
+      query,
+      cohortId: selectedCohortId,
+      coachId: selectedCoachId,
+      lane: laneFilter,
+      summary: summaryParts.length ? summaryParts.join(" · ") : "Vue globale"
+    },
+    metrics: [
+      {
+        label: "Coachés visibles",
+        value: filteredSignals.length.toString(),
+        delta: `${base.engagementSignals.length} coaché(s) dans ECCE`
+      },
+      {
+        label: "Sans coach",
+        value: learnersWithoutCoach.toString(),
+        delta: `${learnersWithoutCohort} sans cohorte sur la vue active`
+      },
+      {
+        label: "Coachs actifs",
+        value: activeCoachCount.toString(),
+        delta: `${base.coachOptions.length} coach(s) configurés`
+      },
+      {
+        label: "Tension pédagogique",
+        value: `${filteredOverview.averageScore}%`,
+        delta: `${laneBreakdown.find((item) => item.id === "alert")?.count ?? 0} coaché(s) sous tension`
+      }
+    ],
+    analyticsOverview: {
+      ...filteredOverview,
+      totalPublishedContents: base.analyticsOverview.totalPublishedContents,
+      totalQuizzes: base.analyticsOverview.totalQuizzes,
+      totalAssignments: base.analyticsOverview.totalAssignments,
+      totalCoaches: base.analyticsOverview.totalCoaches
+    },
+    laneBreakdown,
+    learnerOperations,
+    focusCohort,
+    cohortRadar,
+    coachPortfolios,
+    coachAssignments: assignmentHistory,
+    priorityActions
   };
 }
 
