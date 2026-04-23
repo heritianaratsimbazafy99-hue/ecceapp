@@ -4238,8 +4238,8 @@ export async function getProfessorPageData(params?: {
               ? `Revoir ${topFragileQuiz.title}`
               : `Suivre ${topFragileQuiz.title}`,
           description: topFragileQuiz.insight,
-          href: "/admin/quizzes",
-          ctaLabel: "Ouvrir les quiz",
+          href: `/professor/quizzes/${topFragileQuiz.id}`,
+          ctaLabel: "Analyser le quiz",
           tone: topFragileQuiz.signalTone
         }
       : {
@@ -4953,6 +4953,513 @@ export async function getProfessorCohortDetailPageData(cohortId: string) {
           professorData.analyticsOverview.averageQuizScore !== null
             ? `${professorData.analyticsOverview.averageQuizScore}% de moyenne`
             : "score encore en construction"
+      }
+    ]
+  };
+}
+
+export async function getProfessorQuizDetailPageData(quizId: string) {
+  const context = await requireRole(["admin", "professor"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const quizResult = await admin
+    .from("quizzes")
+    .select(
+      `
+        id,
+        title,
+        description,
+        kind,
+        status,
+        attempts_allowed,
+        time_limit_minutes,
+        passing_score,
+        content_item_id,
+        created_at,
+        quiz_questions (
+          id,
+          prompt,
+          helper_text,
+          question_type,
+          points,
+          position,
+          quiz_question_choices (
+            id,
+            label,
+            is_correct,
+            position
+          )
+        )
+      `
+    )
+    .eq("organization_id", organizationId)
+    .eq("id", quizId)
+    .maybeSingle<
+      QuizRow & {
+        quiz_questions: QuizQuestionRow[];
+      }
+    >();
+
+  if (quizResult.error || !quizResult.data) {
+    return null;
+  }
+
+  const quiz = quizResult.data;
+  const questions = [...(quiz.quiz_questions ?? [])].sort((left, right) => left.position - right.position);
+  const [attemptsResult, assignmentsResult, linkedContentResult, cohortsResult] = await Promise.all([
+    admin
+      .from("quiz_attempts")
+      .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+      .eq("quiz_id", quiz.id)
+      .order("submitted_at", { ascending: false })
+      .limit(240),
+    (() => {
+      let query = admin
+        .from("learning_assignments")
+        .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at, created_at")
+        .eq("organization_id", organizationId)
+        .order("created_at", { ascending: false });
+
+      query = quiz.content_item_id
+        ? query.or(`quiz_id.eq.${quiz.id},content_item_id.eq.${quiz.content_item_id}`)
+        : query.eq("quiz_id", quiz.id);
+
+      return query.limit(120);
+    })(),
+    quiz.content_item_id
+      ? admin
+          .from("content_items")
+          .select("id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at")
+          .eq("organization_id", organizationId)
+          .eq("id", quiz.content_item_id)
+          .maybeSingle<ContentRow>()
+      : Promise.resolve({ data: null as ContentRow | null }),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name")
+  ]);
+  const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
+  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const cohortIds = new Set(cohorts.map((cohort) => cohort.id));
+  const learnerIds = Array.from(
+    new Set([
+      ...attempts.map((attempt) => attempt.user_id),
+      ...assignments.map((assignment) => assignment.assigned_user_id).filter(Boolean)
+    ])
+  ) as string[];
+  const assignmentCohortIds = Array.from(
+    new Set(assignments.map((assignment) => assignment.cohort_id).filter(Boolean))
+  ) as string[];
+  const [profilesResult, cohortMembersResult, answersResult, relatedContentsResult] = await Promise.all([
+    learnerIds.length
+      ? admin
+          .from("profiles")
+          .select("id, first_name, last_name, status, bio, timezone")
+          .eq("organization_id", organizationId)
+          .in("id", learnerIds)
+      : Promise.resolve({ data: [] as ProfileRow[] }),
+    learnerIds.length || assignmentCohortIds.length
+      ? (() => {
+          let query = admin.from("cohort_members").select("user_id, cohort_id");
+          const filters = [
+            learnerIds.length ? `user_id.in.(${learnerIds.join(",")})` : null,
+            assignmentCohortIds.length ? `cohort_id.in.(${assignmentCohortIds.join(",")})` : null
+          ].filter(Boolean);
+
+          if (filters.length) {
+            query = query.or(filters.join(","));
+          }
+
+          return query;
+        })()
+      : Promise.resolve({ data: [] as Array<{ user_id: string; cohort_id: string }> }),
+    attempts.length
+      ? admin
+          .from("quiz_attempt_answers")
+          .select("attempt_id, question_id, choice_id, answer_text, is_correct, points_awarded")
+          .in(
+            "attempt_id",
+            attempts.map((attempt) => attempt.id)
+          )
+      : Promise.resolve({
+          data: [] as Array<{
+            attempt_id: string;
+            question_id: string;
+            choice_id: string | null;
+            answer_text: string | null;
+            is_correct: boolean | null;
+            points_awarded: number | null;
+          }>
+        }),
+    linkedContentResult.data?.category
+      ? admin
+          .from("content_items")
+          .select("id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at")
+          .eq("organization_id", organizationId)
+          .eq("status", "published")
+          .eq("category", linkedContentResult.data.category)
+          .neq("id", linkedContentResult.data.id)
+          .order("created_at", { ascending: false })
+          .limit(3)
+      : Promise.resolve({ data: [] as ContentRow[] })
+  ]);
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const cohortNameById = new Map(cohorts.map((cohort) => [cohort.id, cohort.name]));
+  const cohortMembers = ((cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>).filter(
+    (member) => cohortIds.has(member.cohort_id)
+  );
+  const cohortIdsByUserId = cohortMembers.reduce((map, member) => {
+    const current = map.get(member.user_id) ?? [];
+    current.push(member.cohort_id);
+    map.set(member.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const gradedAttempts = attempts.filter((attempt) => attempt.status === "graded" && attempt.score !== null);
+  const averageScore = gradedAttempts.length
+    ? roundMetric(gradedAttempts.reduce((total, attempt) => total + (attempt.score ?? 0), 0) / gradedAttempts.length)
+    : null;
+  const passingScore = quiz.passing_score ?? 70;
+  const passedCount = gradedAttempts.filter((attempt) => (attempt.score ?? 0) >= passingScore).length;
+  const passRate = gradedAttempts.length ? roundMetric((passedCount / gradedAttempts.length) * 100) : null;
+  const submittedCount = attempts.filter((attempt) => attempt.status === "submitted").length;
+  const answerRows = (answersResult.data ?? []) as Array<{
+    attempt_id: string;
+    question_id: string;
+    choice_id: string | null;
+    answer_text: string | null;
+    is_correct: boolean | null;
+    points_awarded: number | null;
+  }>;
+  const answersByQuestionId = answerRows.reduce((map, answer) => {
+    const current = map.get(answer.question_id) ?? [];
+    current.push(answer);
+    map.set(answer.question_id, current);
+    return map;
+  }, new Map<string, typeof answerRows>());
+  const questionDiagnostics = questions
+    .map((question) => {
+      const answers = answersByQuestionId.get(question.id) ?? [];
+      const maxPoints = question.points || 1;
+      const averagePoints = answers.length
+        ? roundMetric(answers.reduce((total, answer) => total + (answer.points_awarded ?? 0), 0) / answers.length)
+        : null;
+      const mastery = answers.length
+        ? roundMetric(
+            (answers.reduce((total, answer) => total + (answer.points_awarded ?? 0), 0) /
+              (answers.length * maxPoints)) *
+              100
+          )
+        : null;
+      const correctCount = answers.filter(
+        (answer) => answer.is_correct === true || (answer.points_awarded ?? 0) >= maxPoints
+      ).length;
+      const wrongChoiceCount = answers.reduce((map, answer) => {
+        if (!answer.choice_id || answer.is_correct === true) {
+          return map;
+        }
+
+        map.set(answer.choice_id, (map.get(answer.choice_id) ?? 0) + 1);
+        return map;
+      }, new Map<string, number>());
+      const topWrongChoice = [...wrongChoiceCount.entries()].sort((left, right) => right[1] - left[1])[0] ?? null;
+      const choiceById = new Map((question.quiz_question_choices ?? []).map((choice) => [choice.id, choice]));
+      const signalTone =
+        mastery === null ? ("neutral" as const) : mastery < 55 ? ("warning" as const) : mastery < 75 ? ("accent" as const) : ("success" as const);
+
+      return {
+        id: question.id,
+        position: question.position + 1,
+        prompt: question.prompt,
+        helperText: question.helper_text,
+        questionType: question.question_type === "single_choice" ? "Choix unique" : "Réponse ouverte",
+        maxPoints,
+        answerCount: answers.length,
+        correctCount,
+        averagePoints,
+        mastery,
+        signalTone,
+        signalLabel:
+          mastery === null
+            ? "Sans données"
+            : mastery < 55
+              ? "Fragile"
+              : mastery < 75
+                ? "À consolider"
+                : "Maîtrisée",
+        topWrongAnswer: topWrongChoice
+          ? `${choiceById.get(topWrongChoice[0])?.label ?? "Choix non résolu"} · ${topWrongChoice[1]} réponse(s)`
+          : question.question_type === "text"
+            ? "Réponses ouvertes à relire qualitativement"
+            : "Pas de mauvaise réponse dominante"
+      };
+    })
+    .sort((left, right) => (left.mastery ?? 101) - (right.mastery ?? 101));
+  const fragileQuestions = questionDiagnostics.filter(
+    (question) => question.answerCount > 0 && question.mastery !== null && question.mastery < 75
+  );
+  const cohortStatsMap = new Map<
+    string,
+    {
+      id: string;
+      name: string;
+      scores: number[];
+      learnerIds: Set<string>;
+      attemptCount: number;
+      submittedCount: number;
+      assignmentCount: number;
+    }
+  >();
+  const ensureCohortStat = (cohortId: string | null) => {
+    const key = cohortId ?? "none";
+    const existing = cohortStatsMap.get(key);
+
+    if (existing) {
+      return existing;
+    }
+
+    const stat = {
+      id: key,
+      name: cohortId ? cohortNameById.get(cohortId) ?? "Cohorte" : "Sans cohorte",
+      scores: [] as number[],
+      learnerIds: new Set<string>(),
+      attemptCount: 0,
+      submittedCount: 0,
+      assignmentCount: 0
+    };
+    cohortStatsMap.set(key, stat);
+    return stat;
+  };
+
+  for (const attempt of attempts) {
+    const userCohortIds = cohortIdsByUserId.get(attempt.user_id) ?? [null];
+    for (const userCohortId of userCohortIds.length ? userCohortIds : [null]) {
+      const stat = ensureCohortStat(userCohortId);
+      stat.learnerIds.add(attempt.user_id);
+      stat.attemptCount += 1;
+      if (attempt.status === "submitted") {
+        stat.submittedCount += 1;
+      }
+      if (attempt.status === "graded" && attempt.score !== null) {
+        stat.scores.push(attempt.score);
+      }
+    }
+  }
+
+  for (const assignment of assignments) {
+    if (assignment.cohort_id) {
+      ensureCohortStat(assignment.cohort_id).assignmentCount += 1;
+    } else if (assignment.assigned_user_id) {
+      const userCohortIds = cohortIdsByUserId.get(assignment.assigned_user_id) ?? [null];
+      for (const userCohortId of userCohortIds.length ? userCohortIds : [null]) {
+        ensureCohortStat(userCohortId).assignmentCount += 1;
+      }
+    }
+  }
+
+  const cohortStats = [...cohortStatsMap.values()]
+    .map((stat) => {
+      const statAverage = stat.scores.length
+        ? roundMetric(stat.scores.reduce((total, score) => total + score, 0) / stat.scores.length)
+        : null;
+      const statPassRate = stat.scores.length
+        ? roundMetric((stat.scores.filter((score) => score >= passingScore).length / stat.scores.length) * 100)
+        : null;
+
+      return {
+        id: stat.id,
+        name: stat.name,
+        learnerCount: stat.learnerIds.size,
+        attemptCount: stat.attemptCount,
+        submittedCount: stat.submittedCount,
+        assignmentCount: stat.assignmentCount,
+        averageScore: statAverage,
+        passRate: statPassRate,
+        tone:
+          statAverage === null
+            ? ("neutral" as const)
+            : statAverage < 60
+              ? ("warning" as const)
+              : statAverage < 75
+                ? ("accent" as const)
+                : ("success" as const),
+        href: stat.id === "none" ? "/professor" : `/professor/cohorts/${stat.id}`
+      };
+    })
+    .sort((left, right) => (left.averageScore ?? 101) - (right.averageScore ?? 101) || right.attemptCount - left.attemptCount);
+  const recentAttempts = attempts.slice(0, 8).map((attempt) => {
+    const profile = profileById.get(attempt.user_id);
+    const learnerCohorts = (cohortIdsByUserId.get(attempt.user_id) ?? [])
+      .map((cohortId) => cohortNameById.get(cohortId))
+      .filter(Boolean) as string[];
+
+    return {
+      id: attempt.id,
+      learner: profile ? formatUserName(profile) : "Coaché inconnu",
+      cohortLabel: learnerCohorts.length ? learnerCohorts.join(", ") : "Sans cohorte",
+      status: attempt.status,
+      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
+      tone:
+        attempt.status === "graded"
+          ? attempt.score !== null && attempt.score < passingScore
+            ? ("warning" as const)
+            : ("success" as const)
+          : ("accent" as const),
+      attemptLabel: `Tentative ${attempt.attempt_number}`,
+      submittedAt: formatDate(attempt.submitted_at)
+    };
+  });
+  const linkedContent = linkedContentResult.data;
+  const assignmentCountByContentId = assignments.reduce((map, assignment) => {
+    if (!assignment.content_item_id) {
+      return map;
+    }
+
+    map.set(assignment.content_item_id, (map.get(assignment.content_item_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const reinforceContents = [linkedContent, ...(((relatedContentsResult.data ?? []) as ContentRow[]) ?? [])]
+    .filter(Boolean)
+    .map((content) => ({
+      id: content!.id,
+      title: content!.title,
+      slug: content!.slug,
+      summary: content!.summary ?? "Ressource utile pour renforcer les acquis liés à ce quiz.",
+      category: content!.category || "Bibliothèque",
+      contentType: content!.content_type,
+      estimatedMinutes: content!.estimated_minutes,
+      assignmentCount: assignmentCountByContentId.get(content!.id) ?? 0,
+      isLinked: content!.id === linkedContent?.id
+    }));
+  const weakCohort = cohortStats.find((cohort) => cohort.averageScore !== null && cohort.averageScore < 75) ?? cohortStats[0] ?? null;
+  const weakestQuestion = fragileQuestions[0] ?? questionDiagnostics[0] ?? null;
+  const recommendation =
+    averageScore !== null && averageScore < passingScore
+      ? "Recalibrer le quiz avant la prochaine vague de tentatives."
+      : fragileQuestions.length > 0
+        ? "Renforcer les questions fragiles avec une ressource ou une explication ciblée."
+        : submittedCount > 0
+          ? "Finaliser les corrections ouvertes pour stabiliser la lecture professor."
+          : "Suivre ce quiz comme repère pédagogique, sans action lourde immédiate.";
+  const signalBand: EngagementBand =
+    averageScore === null ? "watch" : averageScore >= 75 ? "strong" : averageScore >= 55 ? "watch" : "risk";
+  const priorityActions = [
+    weakestQuestion
+      ? {
+          id: "question",
+          eyebrow: "Question fragile",
+          title: `Q${weakestQuestion.position} · ${weakestQuestion.signalLabel}`,
+          description:
+            weakestQuestion.mastery !== null
+              ? `${weakestQuestion.mastery}% de maîtrise · ${weakestQuestion.topWrongAnswer}.`
+              : "Aucune réponse exploitable pour cette question.",
+          tone: weakestQuestion.signalTone
+        }
+      : {
+          id: "question",
+          eyebrow: "Questions",
+          title: "Aucune question à analyser",
+          description: "Ajoute des questions ou attends les premières tentatives pour alimenter le diagnostic.",
+          tone: "neutral" as const
+        },
+    weakCohort
+      ? {
+          id: "cohort",
+          eyebrow: "Cohorte à cibler",
+          title: weakCohort.name,
+          description:
+            weakCohort.averageScore !== null
+              ? `${weakCohort.averageScore}% de moyenne sur ${weakCohort.attemptCount} tentative(s).`
+              : `${weakCohort.assignmentCount} assignation(s), scores encore en attente.`,
+          tone: weakCohort.tone
+        }
+      : {
+          id: "cohort",
+          eyebrow: "Cohortes",
+          title: "Aucun groupe touché",
+          description: "Assigne ce quiz à une cohorte pour obtenir une lecture comparative.",
+          tone: "neutral" as const
+        },
+    reinforceContents[0]
+      ? {
+          id: "content",
+          eyebrow: "Contenu support",
+          title: reinforceContents[0].title,
+          description: reinforceContents[0].isLinked
+            ? "Ressource directement liée au quiz."
+            : "Ressource de même catégorie à mobiliser en renfort.",
+          tone: "success" as const
+        }
+      : {
+          id: "content",
+          eyebrow: "Contenu support",
+          title: "Aucun contenu relié",
+          description: "Relie une ressource au quiz pour faciliter la remédiation.",
+          tone: "accent" as const
+        }
+  ];
+
+  return {
+    context,
+    quiz: {
+      id: quiz.id,
+      title: quiz.title,
+      description: quiz.description ?? "Quiz publié dans ECCE.",
+      kind: quiz.kind ?? "quiz",
+      status: quiz.status ?? "draft",
+      passingScore,
+      attemptsAllowed: quiz.attempts_allowed ?? 1,
+      timeLimitMinutes: quiz.time_limit_minutes ?? null,
+      questionCount: questions.length,
+      createdAt: formatDate(quiz.created_at ?? null)
+    },
+    overview: {
+      averageScore,
+      passRate,
+      gradedCount: gradedAttempts.length,
+      attemptCount: attempts.length,
+      submittedCount,
+      fragileQuestionCount: fragileQuestions.length,
+      cohortCount: cohortStats.filter((cohort) => cohort.id !== "none").length,
+      signalBand,
+      recommendation
+    },
+    linkedContent: linkedContent
+      ? {
+          id: linkedContent.id,
+          title: linkedContent.title,
+          slug: linkedContent.slug,
+          summary: linkedContent.summary ?? "Ressource liée au quiz.",
+          category: linkedContent.category || "Bibliothèque",
+          contentType: linkedContent.content_type,
+          estimatedMinutes: linkedContent.estimated_minutes
+        }
+      : null,
+    questionDiagnostics,
+    fragileQuestions,
+    cohortStats,
+    recentAttempts,
+    reinforceContents,
+    priorityActions,
+    metrics: [
+      {
+        label: "Score moyen",
+        value: averageScore !== null ? `${averageScore}%` : "n/a",
+        delta: `${gradedAttempts.length} copie(s) notée(s)`
+      },
+      {
+        label: "Taux de réussite",
+        value: passRate !== null ? `${passRate}%` : "n/a",
+        delta: `seuil ${passingScore}%`
+      },
+      {
+        label: "Questions fragiles",
+        value: fragileQuestions.length.toString(),
+        delta: `${questions.length} question(s) au total`
+      },
+      {
+        label: "Cohortes touchées",
+        value: cohortStats.filter((cohort) => cohort.id !== "none").length.toString(),
+        delta: `${attempts.length} tentative(s)`
       }
     ]
   };

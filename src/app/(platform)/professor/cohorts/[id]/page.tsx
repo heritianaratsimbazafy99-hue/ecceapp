@@ -318,6 +318,9 @@ export default async function ProfessorCohortDetailPage({
                   </div>
                   <strong>{quiz.title}</strong>
                   <p>{quiz.insight}</p>
+                  <Link className="button button-secondary button-small" href={`/professor/quizzes/${quiz.id}`}>
+                    Analyser
+                  </Link>
                 </article>
               ))}
             </div>

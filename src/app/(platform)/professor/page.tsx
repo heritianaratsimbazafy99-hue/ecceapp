@@ -504,6 +504,9 @@ export default async function ProfessorPage({
                     <span>{quiz.averageScore !== null ? `${quiz.averageScore}% moyen` : "Score en attente"}</span>
                     <span>{quiz.timeLimitMinutes ? `${quiz.timeLimitMinutes} min` : "Temps libre"}</span>
                   </div>
+                  <Link className="button button-secondary button-small" href={`/professor/quizzes/${quiz.id}`}>
+                    Analyser
+                  </Link>
                 </article>
               ))}
             </div>
