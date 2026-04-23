@@ -1,5 +1,12 @@
 import { AUDIT_CATEGORY_LABELS, AUDIT_EVENT_CATEGORIES, type AuditEventCategory } from "@/lib/audit";
 import { getAssignedCoachIdsForCoachee, getCoachAssignmentScope } from "@/lib/coach-assignments";
+import {
+  getNotificationOpsLaneLabel,
+  getNotificationOpsNavigation,
+  isNotificationOpsLane,
+  summarizeNotificationOps,
+  type NotificationOpsLane
+} from "@/lib/notification-ops";
 import { requireRole, type AppRole } from "@/lib/auth";
 import { getOrganizationBrandingById } from "@/lib/organization";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -1465,11 +1472,12 @@ export async function getMessagesPageData(filters?: {
   };
 }
 
-export async function getNotificationsPageData() {
+export async function getNotificationsPageData(params: { lane?: string } = {}) {
   const context = await requireRole(["admin", "professor", "coach", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
   const userId = context.user.id;
+  const activeRole = context.role ?? context.roles[0] ?? "coachee";
 
   const notificationsResult = await admin
     .from("notifications")
@@ -1480,28 +1488,249 @@ export async function getNotificationsPageData() {
     .limit(40);
 
   const notifications = (notificationsResult.data ?? []) as NotificationRow[];
-  const unreadCount = notifications.filter((item) => !item.read_at).length;
-  const actionableCount = notifications.filter((item) => Boolean(item.deeplink)).length;
-  const todayCount = notifications.filter((item) => isWithinDays(item.created_at, 1)).length;
+  const decoratedNotifications = notifications.map((notification) => {
+    const summary = summarizeNotificationOps(notification);
+
+    return {
+      ...notification,
+      ...summary,
+      createdAtLabel: formatDate(notification.created_at),
+      recencyLabel: getRelativeDayLabel(notification.created_at)
+    };
+  });
+  const laneFilter: NotificationOpsLane | "all" = isNotificationOpsLane(params.lane) ? params.lane : "all";
+  const visibleNotifications =
+    laneFilter === "all"
+      ? decoratedNotifications
+      : decoratedNotifications.filter((notification) => notification.lane === laneFilter);
+  const sortedVisibleNotifications = [...visibleNotifications].sort((left, right) => {
+    return (
+      left.priorityRank - right.priorityRank ||
+      Number(right.isUnread) - Number(left.isUnread) ||
+      Number(right.isActionable) - Number(left.isActionable) ||
+      (getDateValue(right.created_at) ?? 0) - (getDateValue(left.created_at) ?? 0)
+    );
+  });
+  const unreadCount = decoratedNotifications.filter((item) => item.isUnread).length;
+  const recentSevenDayCount = decoratedNotifications.filter((item) => isWithinDays(item.created_at, 7)).length;
+  const actionCount = decoratedNotifications.filter((item) => item.lane === "action").length;
+  const reviewCount = decoratedNotifications.filter((item) => item.lane === "review").length;
+  const clearedCount = decoratedNotifications.filter((item) => item.lane === "cleared").length;
+  const actionableUnreadCount = decoratedNotifications.filter(
+    (item) => item.isUnread && item.isActionable
+  ).length;
+  const filtersSummary =
+    laneFilter === "all"
+      ? `${decoratedNotifications.length} signal(aux) dans la vue live globale`
+      : `${visibleNotifications.length} signal(aux) dans ${getNotificationOpsLaneLabel(laneFilter).toLowerCase()}`;
+  const categorySpotlights = Array.from(
+    visibleNotifications.reduce((map, notification) => {
+      const current = map.get(notification.category) ?? {
+        category: notification.category,
+        label: notification.categoryLabel,
+        tone: notification.tone as BadgeTone,
+        count: 0,
+        unreadCount: 0,
+        actionableCount: 0,
+        priorityRank: notification.priorityRank,
+        focus: notification
+      };
+
+      current.count += 1;
+      current.unreadCount += Number(notification.isUnread);
+      current.actionableCount += Number(notification.isActionable);
+
+      if (
+        notification.priorityRank < current.priorityRank ||
+        (notification.priorityRank === current.priorityRank &&
+          (getDateValue(notification.created_at) ?? 0) > (getDateValue(current.focus.created_at) ?? 0))
+      ) {
+        current.focus = notification;
+        current.priorityRank = notification.priorityRank;
+        current.tone = notification.tone as BadgeTone;
+      }
+
+      map.set(notification.category, current);
+      return map;
+    }, new Map<string, {
+      category: (typeof decoratedNotifications)[number]["category"];
+      label: string;
+      tone: BadgeTone;
+      count: number;
+      unreadCount: number;
+      actionableCount: number;
+      priorityRank: number;
+      focus: (typeof decoratedNotifications)[number];
+    }>())
+      .values()
+  )
+    .sort((left, right) => {
+      return (
+        right.unreadCount - left.unreadCount ||
+        right.actionableCount - left.actionableCount ||
+        right.count - left.count ||
+        left.priorityRank - right.priorityRank
+      );
+    })
+    .slice(0, 4)
+    .map((bucket) => {
+      const navigation = getNotificationOpsNavigation(bucket.category, activeRole);
+
+      return {
+        category: bucket.category,
+        label: bucket.label,
+        tone: bucket.tone,
+        count: bucket.count,
+        unreadCount: bucket.unreadCount,
+        actionableCount: bucket.actionableCount,
+        summary: bucket.focus.nextAction,
+        href: bucket.focus.deeplink ?? navigation.href,
+        cta: bucket.focus.deeplink ? "Ouvrir le signal" : navigation.label
+      };
+    });
+  const dominantCategory = categorySpotlights[0] ?? null;
+  const crosslink = dominantCategory
+    ? getNotificationOpsNavigation(dominantCategory.category, activeRole)
+    : {
+        href: "/account",
+        label: "Voir mes preferences"
+      };
+  const focusSource = sortedVisibleNotifications[0] ?? decoratedNotifications[0] ?? null;
+  const focusNotification = focusSource
+    ? {
+        id: focusSource.id,
+        title: focusSource.title,
+        body: focusSource.body ?? "Notification systeme ECCE",
+        laneLabel: focusSource.laneLabel,
+        categoryLabel: focusSource.categoryLabel,
+        tone: focusSource.tone,
+        createdAtLabel: focusSource.createdAtLabel,
+        recencyLabel: focusSource.recencyLabel,
+        unread: focusSource.isUnread,
+        actionable: focusSource.isActionable,
+        nextAction: focusSource.nextAction,
+        href: focusSource.deeplink ?? null
+      }
+    : null;
+  const priorityNotifications = sortedVisibleNotifications.slice(0, 5).map((notification) => ({
+    id: notification.id,
+    title: notification.title,
+    body: notification.body ?? "Notification systeme ECCE",
+    laneLabel: notification.laneLabel,
+    categoryLabel: notification.categoryLabel,
+    tone: notification.tone,
+    createdAtLabel: notification.createdAtLabel,
+    recencyLabel: notification.recencyLabel,
+    unread: notification.isUnread,
+    actionable: notification.isActionable,
+    nextAction: notification.nextAction,
+    href: notification.deeplink ?? null
+  }));
+  const roleLabel =
+    context.role === "coach"
+      ? "Notification ops coach"
+      : context.role === "coachee"
+        ? "Notification ops coachee"
+        : context.role === "admin"
+          ? "Notification ops admin"
+          : "Notification ops professor";
+  const heroTitle =
+    laneFilter === "action"
+      ? "Tout ce qui doit etre ouvert maintenant, sans perdre le contexte."
+      : context.role === "coach"
+        ? "Le command center qui trie deadlines, reviews et signaux live dans le bon ordre."
+        : context.role === "coachee"
+          ? "Une lecture claire de ce qui demande une action, une lecture ou juste un repere."
+          : "Le cockpit des alertes utiles pour arbitrer vite sans alourdir la navigation.";
+  const heroSummary = decoratedNotifications.length
+    ? `${actionCount} action(s) immediate(s), ${reviewCount} signal(aux) a suivre et ${clearedCount} notification(s) deja digerees.${dominantCategory ? ` ${dominantCategory.label} concentre le plus de contexte dans la vue actuelle.` : ""}`
+    : "Le flux live est pret: les prochaines deadlines, reviews, messages et jalons remonteront ici.";
 
   return {
     context,
     notifications,
     metrics: [
       {
+        label: "Actions immediates",
+        value: actionCount.toString(),
+        delta: focusNotification ? `Focus · ${focusNotification.title}` : "Aucun signal urgent"
+      },
+      {
+        label: "A suivre",
+        value: reviewCount.toString(),
+        delta: laneFilter === "all" ? "Tri entre lecture et action" : filtersSummary
+      },
+      {
         label: "Notifications non lues",
         value: unreadCount.toString(),
-        delta: unreadCount ? "Le centre live mérite un passage" : "Tout est à jour"
+        delta: actionableUnreadCount
+          ? `${actionableUnreadCount} ouvrent une action directe`
+          : "Aucune ouverture urgente"
       },
       {
-        label: "Actions directes",
-        value: actionableCount.toString(),
-        delta: "Notifications avec lien d'ouverture"
+        label: "Activite 7 jours",
+        value: recentSevenDayCount.toString(),
+        delta: notifications[0] ? `Derniere alerte · ${formatDate(notifications[0].created_at)}` : "Aucun evenement recent"
+      }
+    ],
+    hero: {
+      eyebrow: roleLabel,
+      title: heroTitle,
+      summary: heroSummary,
+      crosslink
+    },
+    filters: {
+      lane: laneFilter,
+      summary: filtersSummary
+    },
+    laneBreakdown: [
+      {
+        id: "action" as NotificationOpsLane,
+        label: "Action immediate",
+        count: actionCount,
+        isActive: laneFilter === "action"
       },
       {
-        label: "Activité aujourd'hui",
-        value: todayCount.toString(),
-        delta: notifications[0] ? `Dernière alerte · ${formatDate(notifications[0].created_at)}` : "Aucun événement récent"
+        id: "review" as NotificationOpsLane,
+        label: "A suivre",
+        count: reviewCount,
+        isActive: laneFilter === "review"
+      },
+      {
+        id: "cleared" as NotificationOpsLane,
+        label: "Archive utile",
+        count: clearedCount,
+        isActive: laneFilter === "cleared"
+      }
+    ],
+    focusNotification,
+    priorityNotifications,
+    categorySpotlights,
+    responsePlaybook: [
+      {
+        title: actionCount ? "Traiter d'abord les signaux qui bloquent" : "Vue sous controle",
+        body: focusNotification
+          ? focusNotification.nextAction
+          : "Aucun signal urgent pour le moment, le flux reste pret pour les prochaines alertes.",
+        href: focusNotification?.href ?? "#notifications-live",
+        cta: focusNotification?.href ? "Ouvrir le signal focus" : "Voir le flux live",
+        tone: actionCount ? ("warning" as BadgeTone) : ("success" as BadgeTone)
+      },
+      {
+        title: "Reconnecter la bonne surface ECCE",
+        body: dominantCategory
+          ? `${dominantCategory.label} est la zone la plus active dans la vue courante.`
+          : "Les raccourcis restent disponibles pour revenir vers la bonne surface metier.",
+        href: crosslink.href,
+        cta: crosslink.label,
+        tone: "accent" as BadgeTone
+      },
+      {
+        title: "Garder seulement le bruit utile",
+        body: "Les preferences de compte filtrent deja les notifications a la creation, sans casser le temps reel.",
+        href: "/account",
+        cta: "Ajuster mes preferences",
+        tone: "neutral" as BadgeTone
       }
     ]
   };

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
+import { summarizeNotificationOps, type NotificationOpsLane } from "@/lib/notification-ops";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +17,7 @@ type NotificationItem = {
   deeplink?: string | null;
 };
 
-type NotificationFilter = "all" | "unread" | "actionable";
+type NotificationFilter = "all" | NotificationOpsLane;
 
 function sortNotifications(items: NotificationItem[]) {
   return [...items].sort(
@@ -65,31 +67,29 @@ function formatRelativeTime(dateString: string) {
   return formatter.format(deltaInDays, "day");
 }
 
-function getNotificationEyebrow(item: NotificationItem) {
-  if (!item.read_at && item.deeplink) {
-    return "Action prioritaire";
-  }
+function getNotificationMark(item: NotificationItem) {
+  const summary = summarizeNotificationOps(item);
 
-  if (!item.read_at) {
-    return "À lire";
+  switch (summary.category) {
+    case "messages":
+      return "MSG";
+    case "learning":
+      return "LRN";
+    case "programs":
+      return "PRG";
+    case "coaching":
+      return "AGD";
+    case "rewards":
+      return "WIN";
+    default:
+      return item.deeplink ? "GO" : "SYS";
   }
-
-  if (item.deeplink) {
-    return "Action archivée";
-  }
-
-  return "Information";
 }
 
 function filterNotifications(items: NotificationItem[], filter: NotificationFilter) {
-  switch (filter) {
-    case "unread":
-      return items.filter((item) => !item.read_at);
-    case "actionable":
-      return items.filter((item) => Boolean(item.deeplink));
-    default:
-      return items;
-  }
+  return filter === "all"
+    ? items
+    : items.filter((item) => summarizeNotificationOps(item).lane === filter);
 }
 
 function useRealtimeNotifications(userId: string, initialNotifications: NotificationItem[] = []) {
@@ -253,54 +253,63 @@ function NotificationStreamList({
 
   return (
     <div className={cn("notification-feed-list", variant === "page" && "is-page")}>
-      {items.map((item) => (
-        <article
-          className={cn(
-            "notification-feed-card",
-            !item.read_at && "is-unread",
-            item.deeplink && "is-actionable"
-          )}
-          key={item.id}
-        >
-          <div className="notification-feed-card-mark" aria-hidden="true">
-            {item.deeplink ? "->" : "*"}
-          </div>
-          <div className="notification-feed-card-copy">
-            <div className="notification-feed-card-topline">
-              <span>{getNotificationEyebrow(item)}</span>
-              <small>{formatRelativeTime(item.created_at)}</small>
+      {items.map((item) => {
+        const summary = summarizeNotificationOps(item);
+
+        return (
+          <article
+            className={cn(
+              "notification-feed-card",
+              !item.read_at && "is-unread",
+              item.deeplink && "is-actionable"
+            )}
+            key={item.id}
+          >
+            <div className="notification-feed-card-mark" aria-hidden="true">
+              {getNotificationMark(item)}
             </div>
-            <strong>{item.title}</strong>
-            <p>{item.body || "Notification système ECCE"}</p>
-            <small>{formatDate(item.created_at)}</small>
-          </div>
-          <div className="notification-feed-card-actions">
-            {item.deeplink ? (
-              <Link
-                className="button button-secondary button-small"
-                href={item.deeplink}
-                onClick={() => {
-                  if (!item.read_at) {
-                    void markAsRead(item.id);
-                  }
-                  onNavigate?.();
-                }}
-              >
-                Ouvrir
-              </Link>
-            ) : null}
-            {!item.read_at ? (
-              <button
-                className="button button-secondary button-small"
-                onClick={() => void markAsRead(item.id)}
-                type="button"
-              >
-                Marquer lue
-              </button>
-            ) : null}
-          </div>
-        </article>
-      ))}
+            <div className="notification-feed-card-copy">
+              <div className="notification-feed-card-topline">
+                <div className="notification-feed-card-tags">
+                  <Badge tone={summary.tone}>{summary.laneLabel}</Badge>
+                  <Badge tone="neutral">{summary.categoryLabel}</Badge>
+                </div>
+                <small>{formatRelativeTime(item.created_at)}</small>
+              </div>
+              <strong>{item.title}</strong>
+              <p>{item.body || "Notification systeme ECCE"}</p>
+              <small>
+                {summary.nextAction} · {formatDate(item.created_at)}
+              </small>
+            </div>
+            <div className="notification-feed-card-actions">
+              {item.deeplink ? (
+                <Link
+                  className="button button-secondary button-small"
+                  href={item.deeplink}
+                  onClick={() => {
+                    if (!item.read_at) {
+                      void markAsRead(item.id);
+                    }
+                    onNavigate?.();
+                  }}
+                >
+                  Ouvrir
+                </Link>
+              ) : null}
+              {!item.read_at ? (
+                <button
+                  className="button button-secondary button-small"
+                  onClick={() => void markAsRead(item.id)}
+                  type="button"
+                >
+                  Marquer lue
+                </button>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -335,17 +344,39 @@ export function LiveNotificationFeed({
 
 export function NotificationCommandCenter({
   initialNotifications,
+  initialLane = "all",
   userId
 }: {
   initialNotifications: NotificationItem[];
+  initialLane?: NotificationFilter;
   userId: string;
 }) {
   const { notifications, unreadCount, liveToast, markAsRead, markAllAsRead } = useRealtimeNotifications(
     userId,
     initialNotifications
   );
-  const [filter, setFilter] = useState<NotificationFilter>("all");
+  const [filter, setFilter] = useState<NotificationFilter>(initialLane);
 
+  useEffect(() => {
+    setFilter(initialLane);
+  }, [initialLane]);
+
+  const laneCounts = useMemo(
+    () =>
+      notifications.reduce(
+        (counts, item) => {
+          const summary = summarizeNotificationOps(item);
+          counts[summary.lane] += 1;
+          return counts;
+        },
+        {
+          action: 0,
+          review: 0,
+          cleared: 0
+        }
+      ),
+    [notifications]
+  );
   const actionableCount = useMemo(
     () => notifications.filter((item) => Boolean(item.deeplink)).length,
     [notifications]
@@ -356,25 +387,25 @@ export function NotificationCommandCenter({
   );
 
   return (
-    <section className="notification-command-center">
-      <div className="notification-command-hero">
+    <section className="panel notification-command-center">
+      <div className="notification-command-head">
         <div>
-          <span className="eyebrow">Centre live ECCE</span>
-          <h3>Une seule vue pour ce qui mérite vraiment ton attention.</h3>
+          <span className="eyebrow">Flux live ECCE</span>
+          <h3>Filtre les signaux sans casser la synchro temps reel.</h3>
           <p>
-            Les deadlines, messages, feedbacks et événements importants arrivent ici en direct, avec
-            un tri plus clair entre lecture rapide et actions à ouvrir.
+            Les notifications continuent d&apos;arriver en direct. Cette zone garde le tri
+            operatoire, le marquage lu/non lu et l&apos;ouverture rapide vers la bonne surface ECCE.
           </p>
         </div>
 
-        <div className="notification-command-stats">
+        <div className="notification-command-inline-stats">
           <article>
             <strong>{notifications.length}</strong>
-            <small>événements récents</small>
+            <small>signaux recents</small>
           </article>
           <article>
             <strong>{unreadCount}</strong>
-            <small>encore à lire</small>
+            <small>encore a lire</small>
           </article>
           <article>
             <strong>{actionableCount}</strong>
@@ -385,7 +416,7 @@ export function NotificationCommandCenter({
 
       {liveToast ? (
         <div className="notification-live-banner notification-live-banner-page">
-          <strong>Nouvel événement détecté</strong>
+          <strong>Nouveau signal detecte</strong>
           <p>{liveToast.title}</p>
         </div>
       ) : null}
@@ -394,8 +425,9 @@ export function NotificationCommandCenter({
         <div className="notification-filter-tabs">
           {[
             { id: "all", label: "Tout", count: notifications.length },
-            { id: "unread", label: "Non lues", count: unreadCount },
-            { id: "actionable", label: "À ouvrir", count: actionableCount }
+            { id: "action", label: "Action immediate", count: laneCounts.action },
+            { id: "review", label: "A suivre", count: laneCounts.review },
+            { id: "cleared", label: "Archive utile", count: laneCounts.cleared }
           ].map((item) => (
             <button
               className={cn("notification-filter-tab", filter === item.id && "is-active")}
@@ -409,7 +441,11 @@ export function NotificationCommandCenter({
           ))}
         </div>
 
-        <div className="table-actions">
+        <div className="notification-command-actions">
+          <div className="tag-row">
+            <Badge tone="accent">{unreadCount} non lue(s)</Badge>
+            <Badge tone="neutral">{actionableCount} ouvrable(s)</Badge>
+          </div>
           <button
             className="button button-secondary button-small"
             disabled={!unreadCount}
