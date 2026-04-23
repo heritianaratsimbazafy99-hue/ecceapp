@@ -423,6 +423,103 @@ function formatUserName(user: ProfileRow) {
   return `${user.first_name} ${user.last_name}`.trim();
 }
 
+function normalizeDataSearchQuery(value: string | null | undefined) {
+  return (value ?? "")
+    .trim()
+    .replace(/[^\p{L}\p{N}\s@._-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+}
+
+function matchesDataSearch(values: Array<string | null | undefined>, normalizedQuery: string) {
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const haystack = values.join(" ").toLowerCase();
+  return haystack.includes(normalizedQuery.toLowerCase());
+}
+
+async function getCoachVisibleLearnerScope() {
+  const context = await requireRole(["admin", "coach"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const coachScope =
+    context.role === "coach"
+      ? await getCoachAssignmentScope({
+          organizationId,
+          coachId: context.user.id
+        })
+      : null;
+
+  const coacheeRolesResult =
+    context.role === "coach"
+      ? coachScope?.coacheeIds.length
+        ? await admin
+            .from("user_roles")
+            .select("user_id, role")
+            .eq("organization_id", organizationId)
+            .eq("role", "coachee")
+            .in("user_id", coachScope.coacheeIds)
+        : { data: [] as Array<{ user_id: string; role: AppRole }> }
+      : await admin
+          .from("user_roles")
+          .select("user_id, role")
+          .eq("organization_id", organizationId)
+          .eq("role", "coachee");
+
+  const learnerIds = Array.from(new Set((coacheeRolesResult.data ?? []).map((item) => item.user_id)));
+  const [profilesResult, cohortMembersResult] = learnerIds.length
+    ? await Promise.all([
+        admin
+          .from("profiles")
+          .select("id, first_name, last_name, status, bio, timezone, created_at")
+          .eq("organization_id", organizationId)
+          .in("id", learnerIds),
+        admin.from("cohort_members").select("user_id, cohort_id").in("user_id", learnerIds)
+      ])
+    : [
+        { data: [] as ProfileRow[] },
+        { data: [] as Array<{ user_id: string; cohort_id: string }> }
+      ];
+
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{
+    user_id: string;
+    cohort_id: string;
+  }>;
+  const cohortIds = Array.from(new Set(cohortMembers.map((item) => item.cohort_id)));
+  const { data: cohortRows } = cohortIds.length
+    ? await admin.from("cohorts").select("id, name").in("id", cohortIds)
+    : { data: [] as Array<{ id: string; name: string }> };
+  const cohortNameById = new Map((cohortRows ?? []).map((item) => [item.id, item.name]));
+  const cohortNamesByUserId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    const cohortName = cohortNameById.get(item.cohort_id);
+
+    if (cohortName) {
+      current.push(cohortName);
+    }
+
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+
+  return {
+    admin,
+    context,
+    organizationId,
+    coachScope,
+    learnerIds,
+    profiles,
+    profileById,
+    cohortMembers,
+    cohortNameById,
+    cohortNamesByUserId
+  };
+}
+
 function buildProgramModuleOptions(programs: ProgramRow[], modules: ProgramModuleRow[]) {
   const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
 
@@ -6770,6 +6867,604 @@ export async function getLibraryResourcePageData(slug: string) {
     content,
     linkedQuizzes,
     relatedResources
+  };
+}
+
+export async function getCoachReviewQueueData(filters?: {
+  lane?: string;
+  query?: string;
+  limit?: number;
+}) {
+  const scope = await getCoachVisibleLearnerScope();
+  const { admin, learnerIds, organizationId, profileById, profiles } = scope;
+  const normalizedQuery = normalizeDataSearchQuery(filters?.query);
+  const limit = Math.min(Math.max(filters?.limit ?? 40, 10), 100);
+  const profileSearchIds = normalizedQuery
+    ? profiles
+        .filter((profile) =>
+          matchesDataSearch(
+            [profile.first_name, profile.last_name, profile.bio, profile.timezone],
+            normalizedQuery
+          )
+        )
+        .map((profile) => profile.id)
+    : [];
+
+  if (!learnerIds.length) {
+    return {
+      context: scope.context,
+      filters: {
+        lane: filters?.lane ?? "all",
+        query: normalizedQuery
+      },
+      recentQuizResults: [],
+      reviewQueue: [],
+      textReviewQueue: []
+    };
+  }
+
+  const [quizSearchResult, contentSearchResult, matchingTextAnswerResult] = normalizedQuery
+    ? await Promise.all([
+        admin
+          .from("quizzes")
+          .select("id, title, description")
+          .eq("organization_id", organizationId)
+          .or(`title.ilike.%${normalizedQuery}%,description.ilike.%${normalizedQuery}%`)
+          .limit(100),
+        admin
+          .from("content_items")
+          .select("id, title, summary, category, subcategory")
+          .eq("organization_id", organizationId)
+          .or(
+            `title.ilike.%${normalizedQuery}%,summary.ilike.%${normalizedQuery}%,category.ilike.%${normalizedQuery}%,subcategory.ilike.%${normalizedQuery}%`
+          )
+          .limit(100),
+        admin
+          .from("quiz_attempt_answers")
+          .select("attempt_id")
+          .ilike("answer_text", `%${normalizedQuery}%`)
+          .limit(100)
+      ])
+    : [
+        { data: [] as Array<{ id: string; title: string; description: string | null }> },
+        { data: [] as Array<{ id: string; title: string; summary: string | null; category: string | null; subcategory: string | null }> },
+        { data: [] as Array<{ attempt_id: string }> }
+      ];
+  const matchedQuizIds = Array.from(new Set((quizSearchResult.data ?? []).map((item) => item.id)));
+  const matchedContentIds = Array.from(new Set((contentSearchResult.data ?? []).map((item) => item.id)));
+  const matchedAnswerAttemptIds = Array.from(
+    new Set((matchingTextAnswerResult.data ?? []).map((item) => item.attempt_id))
+  );
+
+  const textAttemptSearchFilters = normalizedQuery
+    ? [
+        profileSearchIds.length ? `user_id.in.(${profileSearchIds.join(",")})` : null,
+        matchedQuizIds.length ? `quiz_id.in.(${matchedQuizIds.join(",")})` : null,
+        matchedAnswerAttemptIds.length ? `id.in.(${matchedAnswerAttemptIds.join(",")})` : null
+      ].filter(Boolean)
+    : [];
+  const shouldFetchTextAttempts = !normalizedQuery || textAttemptSearchFilters.length > 0;
+  const textAttemptsResult = shouldFetchTextAttempts
+    ? await (() => {
+        let query = admin
+          .from("quiz_attempts")
+          .select(
+            "id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at, profiles:user_id(first_name, last_name)"
+          )
+          .in("user_id", learnerIds)
+          .order("submitted_at", { ascending: false })
+          .limit(limit);
+
+        if (textAttemptSearchFilters.length) {
+          query = query.or(textAttemptSearchFilters.join(","));
+        }
+
+        return query;
+      })()
+    : { data: [] as QuizAttemptResultRow[] };
+  const coachVisibleAttempts = ((textAttemptsResult.data ?? []) as QuizAttemptResultRow[]).filter((attempt) =>
+    learnerIds.includes(attempt.user_id)
+  );
+  const coachVisibleAttemptIds = coachVisibleAttempts.map((attempt) => attempt.id);
+  const textAnswersResult = coachVisibleAttemptIds.length
+    ? await admin
+        .from("quiz_attempt_answers")
+        .select("attempt_id, question_id, answer_text, points_awarded")
+        .in("attempt_id", coachVisibleAttemptIds)
+        .not("answer_text", "is", null)
+    : { data: [] as Array<{ attempt_id: string; question_id: string; answer_text: string | null; points_awarded: number | null }> };
+  const textAnswerRows = (textAnswersResult.data ?? []) as Array<{
+    attempt_id: string;
+    question_id: string;
+    answer_text: string | null;
+    points_awarded: number | null;
+  }>;
+  const textQuestionIds = Array.from(new Set(textAnswerRows.map((answer) => answer.question_id)));
+  const textQuizIds = Array.from(new Set(coachVisibleAttempts.map((attempt) => attempt.quiz_id)));
+  const [textQuestionRowsResult, textQuizRowsResult] = await Promise.all([
+    textQuestionIds.length
+      ? admin.from("quiz_questions").select("id, prompt, points").in("id", textQuestionIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; prompt: string; points: number }> }),
+    textQuizIds.length
+      ? admin.from("quizzes").select("id, title").in("id", textQuizIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string }> })
+  ]);
+  const textQuestionById = new Map(
+    ((textQuestionRowsResult.data ?? []) as Array<{ id: string; prompt: string; points: number }>).map((question) => [
+      question.id,
+      question
+    ])
+  );
+  const textQuizTitleById = new Map(
+    ((textQuizRowsResult.data ?? []) as Array<{ id: string; title: string }>).map((quiz) => [quiz.id, quiz.title])
+  );
+  const textAnswersByAttemptId = textAnswerRows.reduce((map, answer) => {
+    const list = map.get(answer.attempt_id) ?? [];
+    list.push(answer);
+    map.set(answer.attempt_id, list);
+    return map;
+  }, new Map<string, typeof textAnswerRows>());
+  const textReviewQueue = coachVisibleAttempts
+    .filter((attempt) => textAnswersByAttemptId.has(attempt.id) && attempt.status !== "graded")
+    .map((attempt) => {
+      const learner = profileById.get(attempt.user_id);
+      const answers = (textAnswersByAttemptId.get(attempt.id) ?? []).map((answer) => {
+        const question = textQuestionById.get(answer.question_id);
+
+        return {
+          questionId: answer.question_id,
+          prompt: question?.prompt ?? "Question",
+          answerText: answer.answer_text ?? "",
+          maxPoints: question?.points ?? 0
+        };
+      });
+
+      return {
+        id: attempt.id,
+        learner: learner ? formatUserName(learner) : "Coaché inconnu",
+        learnerId: attempt.user_id,
+        quizTitle: textQuizTitleById.get(attempt.quiz_id) ?? "Quiz",
+        submittedAt: formatDate(attempt.submitted_at),
+        attemptLabel: `Tentative ${attempt.attempt_number}`,
+        score: attempt.score !== null ? `${attempt.score}%` : "En attente",
+        answers
+      };
+    });
+
+  const submissionSearchFilters = normalizedQuery
+    ? [
+        `title.ilike.%${normalizedQuery}%`,
+        `notes.ilike.%${normalizedQuery}%`,
+        profileSearchIds.length ? `user_id.in.(${profileSearchIds.join(",")})` : null,
+        matchedContentIds.length ? `content_item_id.in.(${matchedContentIds.join(",")})` : null
+      ].filter(Boolean)
+    : [];
+  const submissionsResult = await (() => {
+    let query = admin
+      .from("submissions")
+      .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+      .in("user_id", learnerIds)
+      .order("submitted_at", { ascending: false })
+      .limit(limit);
+
+    if (submissionSearchFilters.length) {
+      query = query.or(submissionSearchFilters.join(","));
+    }
+
+    return query;
+  })();
+  const submissions = ((submissionsResult.data ?? []) as SubmissionRow[]).filter((item) =>
+    learnerIds.includes(item.user_id)
+  );
+  const reviewIds = submissions.map((item) => item.id);
+  const [reviewsResult, contentRowsResult] = await Promise.all([
+    reviewIds.length
+      ? admin
+          .from("submission_reviews")
+          .select("id, submission_id, grade, feedback, created_at")
+          .in("submission_id", reviewIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as SubmissionReviewRow[] }),
+    submissions.some((item) => Boolean(item.content_item_id))
+      ? admin
+          .from("content_items")
+          .select("id, title")
+          .in(
+            "id",
+            Array.from(new Set(submissions.map((item) => item.content_item_id).filter(Boolean))) as string[]
+          )
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string }> })
+  ]);
+  const latestReviewBySubmissionId = new Map<string, SubmissionReviewRow>();
+  for (const review of (reviewsResult.data ?? []) as SubmissionReviewRow[]) {
+    if (!latestReviewBySubmissionId.has(review.submission_id)) {
+      latestReviewBySubmissionId.set(review.submission_id, review);
+    }
+  }
+
+  const contentTitleById = new Map((contentRowsResult.data ?? []).map((item) => [item.id, item.title]));
+  const reviewQueue = await Promise.all(
+    submissions.map(async (submission) => {
+      const learner = profileById.get(submission.user_id);
+
+      return {
+        id: submission.id,
+        learner: learner ? formatUserName(learner) : "Coaché inconnu",
+        learnerId: submission.user_id,
+        title: submission.title,
+        contentTitle: contentTitleById.get(submission.content_item_id ?? "") ?? "Contenu",
+        submittedAt: formatDate(submission.submitted_at),
+        status: submission.status,
+        notes: submission.notes,
+        fileUrl: await getSignedSubmissionUrl(submission.storage_path, admin),
+        review: latestReviewBySubmissionId.get(submission.id) ?? null
+      };
+    })
+  );
+  const recentQuizResults = coachVisibleAttempts.slice(0, 8).map((attempt) => {
+    const profile = profileById.get(attempt.user_id);
+
+    return {
+      id: attempt.id,
+      learner: profile ? formatUserName(profile) : "Coaché inconnu",
+      learnerId: attempt.user_id,
+      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
+      status: attempt.status,
+      attempt: `Tentative ${attempt.attempt_number}`,
+      submittedAt: formatDate(attempt.submitted_at)
+    };
+  });
+
+  return {
+    context: scope.context,
+    filters: {
+      lane: filters?.lane ?? "all",
+      query: normalizedQuery
+    },
+    recentQuizResults,
+    reviewQueue,
+    textReviewQueue
+  };
+}
+
+export async function getCoachLearnerDetailPageData(learnerId: string) {
+  const scope = await getCoachVisibleLearnerScope();
+  const { admin, cohortMembers, cohortNameById, cohortNamesByUserId, context, organizationId, profileById } = scope;
+  const learner = profileById.get(learnerId) ?? null;
+
+  if (!learner) {
+    return {
+      context,
+      learner: null,
+      metrics: [],
+      engagement: null,
+      assignmentCards: [],
+      submissionCards: [],
+      recentAttempts: [],
+      sessions: [],
+      badges: [],
+      notifications: [],
+      activityFeed: []
+    };
+  }
+
+  const learnerCohortMembers = cohortMembers.filter((member) => member.user_id === learnerId);
+  const learnerCohortIds = learnerCohortMembers.map((member) => member.cohort_id);
+  const assignmentFilter = learnerCohortIds.length
+    ? `assigned_user_id.eq.${learnerId},cohort_id.in.(${learnerCohortIds.join(",")})`
+    : `assigned_user_id.eq.${learnerId}`;
+  const [
+    assignmentsResult,
+    attemptsResult,
+    submissionsResult,
+    sessionsResult,
+    notificationsResult,
+    badgesResult,
+    assignedCoachIds
+  ] = await Promise.all([
+    admin
+      .from("learning_assignments")
+      .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, created_at, published_at")
+      .eq("organization_id", organizationId)
+      .or(assignmentFilter)
+      .order("due_at", { ascending: true })
+      .limit(60),
+    admin
+      .from("quiz_attempts")
+      .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+      .eq("user_id", learnerId)
+      .order("submitted_at", { ascending: false })
+      .limit(30),
+    admin
+      .from("submissions")
+      .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+      .eq("user_id", learnerId)
+      .order("submitted_at", { ascending: false })
+      .limit(30),
+    admin
+      .from("coaching_sessions")
+      .select("id, coach_id, coachee_id, cohort_id, starts_at, ends_at, status, video_link")
+      .eq("organization_id", organizationId)
+      .eq("coachee_id", learnerId)
+      .order("starts_at", { ascending: false })
+      .limit(12),
+    admin
+      .from("notifications")
+      .select("id, title, body, created_at, read_at, deeplink, recipient_id")
+      .eq("organization_id", organizationId)
+      .eq("recipient_id", learnerId)
+      .order("created_at", { ascending: false })
+      .limit(12),
+    admin
+      .from("user_badges")
+      .select("id, user_id, awarded_at, badges(title, description, icon)")
+      .eq("user_id", learnerId)
+      .order("awarded_at", { ascending: false })
+      .limit(8),
+    getAssignedCoachIdsForCoachee({
+      organizationId,
+      coacheeId: learnerId,
+      cohortIds: learnerCohortIds
+    })
+  ]);
+  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
+  const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const sessions = (sessionsResult.data ?? []) as Array<{
+    id: string;
+    coach_id: string;
+    coachee_id: string;
+    cohort_id: string | null;
+    starts_at: string;
+    ends_at: string | null;
+    status: string;
+    video_link: string | null;
+  }>;
+  const notifications = (notificationsResult.data ?? []) as Array<NotificationRow & { recipient_id: string }>;
+  const badges = (badgesResult.data ?? []) as UserBadgeRow[];
+  const contentIds = Array.from(
+    new Set(
+      [
+        ...assignments.map((assignment) => assignment.content_item_id),
+        ...submissions.map((submission) => submission.content_item_id)
+      ].filter(Boolean)
+    )
+  ) as string[];
+  const quizIds = Array.from(
+    new Set(
+      [
+        ...assignments.map((assignment) => assignment.quiz_id),
+        ...attempts.map((attempt) => attempt.quiz_id)
+      ].filter(Boolean)
+    )
+  ) as string[];
+  const submissionIds = submissions.map((submission) => submission.id);
+  const [contentRowsResult, quizRowsResult, reviewsResult, coachProfilesResult] = await Promise.all([
+    contentIds.length
+      ? admin.from("content_items").select("id, title, slug, summary, content_type").in("id", contentIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string; slug: string; summary: string | null; content_type: string }> }),
+    quizIds.length
+      ? admin.from("quizzes").select("id, title, description, passing_score").in("id", quizIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; title: string; description: string | null; passing_score: number | null }> }),
+    submissionIds.length
+      ? admin
+          .from("submission_reviews")
+          .select("id, submission_id, reviewer_id, grade, feedback, created_at")
+          .in("submission_id", submissionIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as SubmissionReviewRow[] }),
+    assignedCoachIds.length
+      ? admin
+          .from("profiles")
+          .select("id, first_name, last_name, status")
+          .eq("organization_id", organizationId)
+          .in("id", assignedCoachIds)
+      : Promise.resolve({ data: [] as ProfileRow[] })
+  ]);
+  const contentById = new Map((contentRowsResult.data ?? []).map((content) => [content.id, content]));
+  const quizById = new Map((quizRowsResult.data ?? []).map((quiz) => [quiz.id, quiz]));
+  const latestReviewBySubmissionId = new Map<string, SubmissionReviewRow>();
+  for (const review of (reviewsResult.data ?? []) as SubmissionReviewRow[]) {
+    if (!latestReviewBySubmissionId.has(review.submission_id)) {
+      latestReviewBySubmissionId.set(review.submission_id, review);
+    }
+  }
+
+  const latestAttemptByAssignmentKey = new Map<string, QuizAttemptResultRow>();
+  const latestAttemptByQuizKey = new Map<string, QuizAttemptResultRow>();
+  for (const attempt of attempts) {
+    if (attempt.assignment_id && !latestAttemptByAssignmentKey.has(attempt.assignment_id)) {
+      latestAttemptByAssignmentKey.set(attempt.assignment_id, attempt);
+    }
+
+    if (!latestAttemptByQuizKey.has(attempt.quiz_id)) {
+      latestAttemptByQuizKey.set(attempt.quiz_id, attempt);
+    }
+  }
+
+  const latestSubmissionByAssignmentId = new Map<string, SubmissionRow>();
+  for (const submission of submissions) {
+    if (submission.assignment_id && !latestSubmissionByAssignmentId.has(submission.assignment_id)) {
+      latestSubmissionByAssignmentId.set(submission.assignment_id, submission);
+    }
+  }
+
+  const engagement =
+    buildEngagementSignals({
+      learnerIds: [learnerId],
+      profiles: [learner],
+      cohortNamesByUserId,
+      assignments,
+      cohortMembers: learnerCohortMembers,
+      attempts,
+      submissions,
+      sessions,
+      notifications,
+      badges: badges.map((badge) => ({
+        user_id: learnerId,
+        awarded_at: badge.awarded_at
+      }))
+    })[0] ?? null;
+  const gradedAttempts = attempts.filter((attempt) => attempt.status === "graded" && attempt.score !== null);
+  const upcomingSessions = sessions
+    .filter((session) => getDateValue(session.starts_at) !== null && (getDateValue(session.starts_at) ?? 0) >= Date.now())
+    .sort((left, right) => (getDateValue(left.starts_at) ?? 0) - (getDateValue(right.starts_at) ?? 0));
+  const coachProfiles = (coachProfilesResult.data ?? []) as ProfileRow[];
+  const submissionCards = await Promise.all(
+    submissions.slice(0, 8).map(async (submission) => ({
+      id: submission.id,
+      title: submission.title,
+      contentTitle: contentById.get(submission.content_item_id ?? "")?.title ?? "Contenu",
+      submittedAt: formatDate(submission.submitted_at),
+      status: submission.status,
+      statusLabel: getSubmissionStatusLabel(submission.status),
+      statusTone: getSubmissionStatusTone(submission.status),
+      notes: submission.notes,
+      fileUrl: await getSignedSubmissionUrl(submission.storage_path, admin),
+      review: latestReviewBySubmissionId.get(submission.id) ?? null
+    }))
+  );
+  const assignmentCards = assignments.slice(0, 12).map((assignment) => {
+    const latestAttempt =
+      latestAttemptByAssignmentKey.get(assignment.id) ??
+      (assignment.quiz_id ? latestAttemptByQuizKey.get(assignment.quiz_id) : undefined);
+    const latestSubmission = latestSubmissionByAssignmentId.get(assignment.id);
+    const completed = assignment.quiz_id
+      ? Boolean(latestAttempt && latestAttempt.status !== "in_progress" && latestAttempt.status !== "expired")
+      : Boolean(latestSubmission && latestSubmission.status !== "not_started");
+    const dueState = getDeadlineState(assignment.due_at, completed);
+    const content = contentById.get(assignment.content_item_id ?? "");
+    const quiz = quizById.get(assignment.quiz_id ?? "");
+
+    return {
+      id: assignment.id,
+      title: assignment.title,
+      assetTitle: quiz?.title ?? content?.title ?? "Asset pédagogique",
+      kind: assignment.quiz_id ? "quiz" : "contenu",
+      due: formatDate(assignment.due_at),
+      statusLabel: getDeadlineStateLabel(dueState),
+      statusTone: getDeadlineStateTone(dueState),
+      audienceLabel: assignment.cohort_id
+        ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
+        : "Assignation individuelle",
+      href: assignment.quiz_id ? `/quiz/${assignment.quiz_id}?assignment=${assignment.id}` : `/assignments/${assignment.id}`,
+      latestResult: latestAttempt?.score !== null && latestAttempt?.score !== undefined
+        ? `${latestAttempt.score}%`
+        : latestSubmission
+          ? getSubmissionStatusLabel(latestSubmission.status)
+          : "Non démarré"
+    };
+  });
+  const activityFeed = [
+    ...attempts.slice(0, 8).map((attempt) => ({
+      id: `attempt-${attempt.id}`,
+      title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
+      meta: `Tentative ${attempt.attempt_number} · ${attempt.status === "submitted" ? "correction en cours" : attempt.score !== null ? `${attempt.score}%` : "non noté"}`,
+      date: formatDate(attempt.submitted_at),
+      sortValue: getDateValue(attempt.submitted_at) ?? 0,
+      tone: (attempt.status === "graded" ? "success" : "accent") as BadgeTone
+    })),
+    ...submissions.slice(0, 8).map((submission) => ({
+      id: `submission-${submission.id}`,
+      title: submission.title,
+      meta: `${contentById.get(submission.content_item_id ?? "")?.title ?? "Soumission"} · ${getSubmissionStatusLabel(submission.status)}`,
+      date: formatDate(submission.submitted_at),
+      sortValue: getDateValue(submission.submitted_at ?? submission.created_at) ?? 0,
+      tone: getSubmissionStatusTone(submission.status)
+    })),
+    ...sessions.slice(0, 8).map((session) => ({
+      id: `session-${session.id}`,
+      title: "Séance de coaching",
+      meta: session.status,
+      date: formatDate(session.starts_at),
+      sortValue: getDateValue(session.starts_at) ?? 0,
+      tone: (session.status === "planned" ? "accent" : "neutral") as BadgeTone
+    }))
+  ]
+    .sort((left, right) => right.sortValue - left.sortValue)
+    .slice(0, 10)
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      meta: item.meta,
+      date: item.date,
+      tone: item.tone
+    }));
+
+  return {
+    context,
+    learner: {
+      id: learner.id,
+      name: formatUserName(learner),
+      bio: learner.bio ?? null,
+      status: learner.status,
+      timezone: learner.timezone ?? "UTC",
+      createdAt: learner.created_at ? formatDate(learner.created_at) : "Date non disponible",
+      cohorts: cohortNamesByUserId.get(learnerId) ?? [],
+      coaches: coachProfiles.map((coach) => ({
+        id: coach.id,
+        name: formatUserName(coach)
+      }))
+    },
+    metrics: [
+      {
+        label: "Engagement",
+        value: `${engagement?.score ?? 0}%`,
+        delta: engagement?.trendLabel ?? "signal en construction"
+      },
+      {
+        label: "Assignations",
+        value: `${engagement?.completedCount ?? 0}/${engagement?.assignmentCount ?? assignments.length}`,
+        delta: engagement?.nextFocus ?? "aucune action prioritaire"
+      },
+      {
+        label: "Score quiz moyen",
+        value: engagement?.averageQuizScore !== null && engagement?.averageQuizScore !== undefined ? `${engagement.averageQuizScore}%` : "—",
+        delta: `${gradedAttempts.length} tentative(s) notée(s)`
+      },
+      {
+        label: "Séances à venir",
+        value: upcomingSessions.length.toString(),
+        delta: upcomingSessions[0] ? formatDate(upcomingSessions[0].starts_at) : "aucune séance planifiée"
+      }
+    ],
+    engagement,
+    assignmentCards,
+    submissionCards,
+    recentAttempts: attempts.slice(0, 8).map((attempt) => ({
+      id: attempt.id,
+      title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
+      meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}`,
+      status: attempt.status,
+      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté"
+    })),
+    sessions: sessions.slice(0, 8).map((session) => ({
+      id: session.id,
+      date: formatDate(session.starts_at),
+      end: session.ends_at ? formatDate(session.ends_at) : "Fin libre",
+      status: session.status,
+      videoLink: session.video_link,
+      cohort: session.cohort_id ? (cohortNameById.get(session.cohort_id) ?? null) : null
+    })),
+    badges: badges.map((badge) => {
+      const badgeInfo = Array.isArray(badge.badges) ? badge.badges[0] : badge.badges;
+
+      return {
+        id: badge.id,
+        title: badgeInfo?.title ?? "Badge ECCE",
+        description: badgeInfo?.description ?? "Nouveau jalon débloqué.",
+        awardedAt: formatDate(badge.awarded_at)
+      };
+    }),
+    notifications: notifications.slice(0, 6).map((notification) => ({
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      createdAt: formatDate(notification.created_at),
+      read: Boolean(notification.read_at),
+      deeplink: notification.deeplink
+    })),
+    activityFeed
   };
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -198,6 +199,10 @@ export function CoachPortfolioBoard({
                   <small>Prochaine action</small>
                   <p>{item.nextFocus ?? "Aucune action spécifique remontée pour l’instant."}</p>
                 </div>
+
+                <Link className="button button-secondary button-small" href={`/coach/learners/${item.id}`}>
+                  Ouvrir la fiche
+                </Link>
               </article>
             ))}
           </div>

@@ -7,7 +7,7 @@ import {
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MetricCard } from "@/components/platform/metric-card";
 import { Badge } from "@/components/ui/badge";
-import { getCoachPageData } from "@/lib/platform-data";
+import { getCoachReviewQueueData } from "@/lib/platform-data";
 import { cn } from "@/lib/utils";
 
 function getSubmissionStatusTone(status: string) {
@@ -62,48 +62,25 @@ export default async function CoachReviewsPage({
   }>;
 }) {
   const params = await searchParams;
-  const lane = params.lane ?? "all";
-  const query = params.query?.trim() ?? "";
-  const { recentQuizResults, reviewQueue, textReviewQueue } = await getCoachPageData();
-
-  const normalizedQuery = query.toLowerCase();
-  const filteredTextQueue = textReviewQueue.filter((attempt) => {
-    if (!normalizedQuery) {
-      return true;
-    }
-
-    return [attempt.learner, attempt.quizTitle, attempt.attemptLabel]
-      .join(" ")
-      .toLowerCase()
-      .includes(normalizedQuery);
+  const { filters, recentQuizResults, reviewQueue, textReviewQueue } = await getCoachReviewQueueData({
+    lane: params.lane,
+    query: params.query
   });
-  const filteredSubmissionQueue = reviewQueue.filter((submission) => {
-    const matchesLane =
-      lane === "reviewed"
-        ? submission.status === "reviewed"
-        : lane === "submissions"
-          ? submission.status !== "reviewed"
-          : true;
-
-    if (!matchesLane) {
-      return false;
-    }
-
-    if (!normalizedQuery) {
-      return true;
-    }
-
-    return [submission.learner, submission.title, submission.contentTitle, submission.notes ?? ""]
-      .join(" ")
-      .toLowerCase()
-      .includes(normalizedQuery);
-  });
+  const lane = filters.lane;
+  const query = filters.query;
 
   const pendingSubmissions = reviewQueue.filter((submission) => submission.status !== "reviewed");
   const reviewedSubmissions = reviewQueue.filter((submission) => submission.status === "reviewed" || submission.review);
-  const visibleTextQueue = lane === "submissions" || lane === "reviewed" ? [] : filteredTextQueue;
-  const visibleSubmissionQueue = lane === "quiz" ? [] : filteredSubmissionQueue;
-  const priorityTextAttempt = filteredTextQueue[0] ?? null;
+  const visibleTextQueue = lane === "submissions" || lane === "reviewed" ? [] : textReviewQueue;
+  const visibleSubmissionQueue =
+    lane === "quiz"
+      ? []
+      : lane === "reviewed"
+        ? reviewQueue.filter((submission) => submission.status === "reviewed" || submission.review)
+        : lane === "submissions"
+          ? reviewQueue.filter((submission) => submission.status !== "reviewed")
+          : reviewQueue;
+  const priorityTextAttempt = textReviewQueue[0] ?? null;
   const prioritySubmission = pendingSubmissions[0] ?? reviewQueue[0] ?? null;
   const laneCards = [
     {
@@ -197,6 +174,9 @@ export default async function CoachReviewsPage({
                   {priorityTextAttempt.quizTitle} · {priorityTextAttempt.submittedAt}
                 </p>
                 <Badge tone="warning">{priorityTextAttempt.answers.length} réponse(s) ouverte(s)</Badge>
+                <Link className="button button-secondary button-small" href={`/coach/learners/${priorityTextAttempt.learnerId}`}>
+                  Fiche coaché
+                </Link>
               </>
             ) : (
               <>
@@ -218,6 +198,9 @@ export default async function CoachReviewsPage({
                 <Badge tone={getSubmissionStatusTone(prioritySubmission.status)}>
                   {getSubmissionStatusLabel(prioritySubmission.status)}
                 </Badge>
+                <Link className="button button-secondary button-small" href={`/coach/learners/${prioritySubmission.learnerId}`}>
+                  Fiche coaché
+                </Link>
               </>
             ) : (
               <>
@@ -305,6 +288,9 @@ export default async function CoachReviewsPage({
                     <div className="tag-row">
                       <Badge tone="warning">correction requise</Badge>
                       <Badge tone="neutral">score auto actuel {attempt.score}</Badge>
+                      <Link className="button button-secondary button-small" href={`/coach/learners/${attempt.learnerId}`}>
+                        Fiche coaché
+                      </Link>
                     </div>
 
                     <GradeQuizTextAttemptForm answers={attempt.answers} attemptId={attempt.id} />
@@ -351,6 +337,9 @@ export default async function CoachReviewsPage({
                           <Badge tone={getSubmissionStatusTone(submission.status)}>
                             {getSubmissionStatusLabel(submission.status)}
                           </Badge>
+                          <Link className="button button-secondary button-small" href={`/coach/learners/${submission.learnerId}`}>
+                            Fiche coaché
+                          </Link>
                           {submission.fileUrl ? (
                             <Link className="button button-secondary button-small" href={submission.fileUrl} target="_blank">
                               Télécharger
@@ -402,9 +391,14 @@ export default async function CoachReviewsPage({
                         {result.attempt} · {result.submittedAt}
                       </p>
                     </div>
-                    <Badge tone={result.status === "submitted" ? "neutral" : "success"}>
-                      {result.score}
-                    </Badge>
+                    <div className="table-actions">
+                      <Badge tone={result.status === "submitted" ? "neutral" : "success"}>
+                        {result.score}
+                      </Badge>
+                      <Link className="button button-secondary button-small" href={`/coach/learners/${result.learnerId}`}>
+                        Fiche
+                      </Link>
+                    </div>
                   </article>
                 ))}
               </div>
