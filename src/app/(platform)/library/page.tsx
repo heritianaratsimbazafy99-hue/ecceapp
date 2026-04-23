@@ -2,8 +2,19 @@ import { LibraryExplorer } from "@/components/content/library-explorer";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { getLibraryPageData } from "@/lib/platform-data";
 
-export default async function LibraryPage() {
-  const { resources, groups, taxonomy, themeMap } = await getLibraryPageData();
+export default async function LibraryPage({
+  searchParams
+}: {
+  searchParams: Promise<{
+    query?: string;
+    filter?: string;
+  }>;
+}) {
+  const params = await searchParams;
+  const { resources, groups, taxonomy, themeMap, filters, totalResourceCount } = await getLibraryPageData({
+    query: params.query,
+    filter: params.filter
+  });
 
   return (
     <div className="page-shell">
@@ -12,8 +23,15 @@ export default async function LibraryPage() {
         description="Une bibliothèque plus éditoriale, plus filtrable et plus agréable à parcourir pour retrouver contenus et quiz publiés."
       />
 
-      {resources.length ? (
-        <LibraryExplorer groups={groups} taxonomy={taxonomy} themeMap={themeMap} />
+      {resources.length || filters.query || filters.filter ? (
+        <LibraryExplorer
+          groups={groups}
+          initialFilter={filters.filter}
+          initialSearch={filters.query}
+          taxonomy={taxonomy}
+          themeMap={themeMap}
+          totalResourceCount={totalResourceCount}
+        />
       ) : (
         <section className="panel">
           <div className="empty-state">

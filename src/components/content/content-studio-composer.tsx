@@ -11,6 +11,17 @@ type ModuleOption = {
   label: string;
 };
 
+export type ContentTaxonomyPreset = {
+  id: string;
+  theme: string;
+  description: string;
+  subthemes: Array<{
+    id?: string;
+    label: string;
+    topics: string[];
+  }>;
+};
+
 const initialState: AdminActionState = {};
 
 const CONTENT_TAXONOMY_PRESETS = [
@@ -74,7 +85,7 @@ const CONTENT_TAXONOMY_PRESETS = [
       }
     ]
   }
-] as const;
+] satisfies ContentTaxonomyPreset[];
 
 function normalizeTag(tag: string) {
   return tag.trim().replace(/\s+/g, " ");
@@ -110,11 +121,14 @@ function ctaLabel(contentType: string) {
 }
 
 export function ContentStudioComposer({
-  moduleOptions
+  moduleOptions,
+  taxonomyPresets = CONTENT_TAXONOMY_PRESETS
 }: {
   moduleOptions: ModuleOption[];
+  taxonomyPresets?: ContentTaxonomyPreset[];
 }) {
   const [state, formAction, pending] = useActionState(createContentAction, initialState);
+  const availableTaxonomyPresets = taxonomyPresets.length ? taxonomyPresets : CONTENT_TAXONOMY_PRESETS;
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [category, setCategory] = useState("Fondamentaux");
@@ -127,18 +141,18 @@ export function ContentStudioComposer({
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState("30");
   const [isRequired, setIsRequired] = useState(false);
-  const [selectedThemeId, setSelectedThemeId] = useState<string>(CONTENT_TAXONOMY_PRESETS[0].id);
+  const [selectedThemeId, setSelectedThemeId] = useState<string>(availableTaxonomyPresets[0]?.id ?? "fallback");
 
   const tagList = tags
     .split(",")
     .map(normalizeTag)
     .filter(Boolean);
   const selectedTheme =
-    CONTENT_TAXONOMY_PRESETS.find((preset) => preset.id === selectedThemeId) ??
-    CONTENT_TAXONOMY_PRESETS[0];
+    availableTaxonomyPresets.find((preset) => preset.id === selectedThemeId) ??
+    availableTaxonomyPresets[0];
   const selectedSubtheme =
-    selectedTheme.subthemes.find((item) => item.label === subcategory) ??
-    selectedTheme.subthemes[0];
+    selectedTheme?.subthemes.find((item) => item.label === subcategory) ??
+    selectedTheme?.subthemes[0];
   const hasPrimaryLink = Boolean((contentType === "youtube" ? youtubeUrl : externalUrl).trim());
   const readinessScore = [
     Boolean(title.trim()),
@@ -150,16 +164,16 @@ export function ContentStudioComposer({
   ].filter(Boolean).length;
   const taxonomyReady = Boolean(category.trim() && subcategory.trim() && tagList.length >= 3);
 
-  function applyTheme(preset: (typeof CONTENT_TAXONOMY_PRESETS)[number]) {
+  function applyTheme(preset: ContentTaxonomyPreset) {
     const firstSubtheme = preset.subthemes[0];
 
     setSelectedThemeId(preset.id);
     setCategory(preset.theme);
-    setSubcategory(firstSubtheme.label);
-    setTags((currentTags) => mergeTags(currentTags, firstSubtheme.topics));
+    setSubcategory(firstSubtheme?.label ?? "");
+    setTags((currentTags) => mergeTags(currentTags, firstSubtheme?.topics ?? []));
   }
 
-  function applySubtheme(subtheme: (typeof CONTENT_TAXONOMY_PRESETS)[number]["subthemes"][number]) {
+  function applySubtheme(subtheme: ContentTaxonomyPreset["subthemes"][number]) {
     setSubcategory(subtheme.label);
     setTags((currentTags) => mergeTags(currentTags, subtheme.topics));
   }
@@ -260,7 +274,7 @@ export function ContentStudioComposer({
 
                 <div className="content-taxonomy-presets">
                   <div className="content-taxonomy-theme-grid">
-                    {CONTENT_TAXONOMY_PRESETS.map((preset) => (
+                    {availableTaxonomyPresets.map((preset) => (
                       <button
                         className={`content-taxonomy-theme-button${selectedThemeId === preset.id ? " is-active" : ""}`}
                         key={preset.id}
@@ -273,23 +287,25 @@ export function ContentStudioComposer({
                     ))}
                   </div>
 
-                  <div className="content-taxonomy-subtheme-grid">
-                    {selectedTheme.subthemes.map((subtheme) => (
-                      <button
-                        className={`content-taxonomy-subtheme-button${subcategory === subtheme.label ? " is-active" : ""}`}
-                        key={subtheme.label}
-                        onClick={() => applySubtheme(subtheme)}
-                        type="button"
-                      >
-                        <strong>{subtheme.label}</strong>
-                        <span>{subtheme.topics.slice(0, 3).join(" · ")}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {selectedTheme?.subthemes.length ? (
+                    <div className="content-taxonomy-subtheme-grid">
+                      {selectedTheme.subthemes.map((subtheme) => (
+                        <button
+                          className={`content-taxonomy-subtheme-button${subcategory === subtheme.label ? " is-active" : ""}`}
+                          key={subtheme.label}
+                          onClick={() => applySubtheme(subtheme)}
+                          type="button"
+                        >
+                          <strong>{subtheme.label}</strong>
+                          <span>{subtheme.topics.slice(0, 3).join(" · ")}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
 
                   <div className="content-topic-strip">
                     <span>Suggestions</span>
-                    {selectedSubtheme.topics.map((topic) => (
+                    {(selectedSubtheme?.topics ?? []).map((topic) => (
                       <button
                         className="content-topic-chip"
                         key={topic}

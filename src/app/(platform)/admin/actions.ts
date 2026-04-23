@@ -850,6 +850,130 @@ export async function createContentAction(
   return ok(`Contenu "${title}" créé.`);
 }
 
+export async function createContentTaxonomyThemeAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const label = String(formData.get("label") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const position = Number(String(formData.get("position") ?? "").trim() || 0);
+
+  if (!label) {
+    return fail("Le nom du thème est obligatoire.");
+  }
+
+  const { data, error } = await admin
+    .from("content_taxonomy_themes")
+    .insert({
+      organization_id: organizationId,
+      label,
+      description: description || null,
+      position: Number.isFinite(position) ? position : 0,
+      created_by: context.user.id
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content_taxonomy.theme_created",
+    summary: `Thème éditorial "${label}" créé.`,
+    targetType: "content_taxonomy_theme",
+    targetId: data.id,
+    targetLabel: label,
+    highlights: [description || "sans description"]
+  });
+
+  revalidatePath("/admin/content");
+  revalidatePath("/library");
+  revalidateAdminAudit();
+
+  return ok(`Thème "${label}" ajouté à la taxonomie.`);
+}
+
+export async function createContentTaxonomySubthemeAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const themeId = String(formData.get("theme_id") ?? "").trim();
+  const label = String(formData.get("label") ?? "").trim();
+  const topicsInput = String(formData.get("topics") ?? "").trim();
+  const position = Number(String(formData.get("position") ?? "").trim() || 0);
+
+  if (!themeId || !label) {
+    return fail("Le thème parent et le nom du sous-thème sont obligatoires.");
+  }
+
+  const themeResult = await admin
+    .from("content_taxonomy_themes")
+    .select("id, label")
+    .eq("organization_id", organizationId)
+    .eq("id", themeId)
+    .maybeSingle<{ id: string; label: string }>();
+
+  if (themeResult.error || !themeResult.data) {
+    return fail("Le thème parent sélectionné est introuvable.");
+  }
+
+  const topics = Array.from(
+    new Set(
+      topicsInput
+        .split(",")
+        .map((topic) => topic.trim().replace(/\s+/g, " "))
+        .filter(Boolean)
+    )
+  );
+
+  const { data, error } = await admin
+    .from("content_taxonomy_subthemes")
+    .insert({
+      organization_id: organizationId,
+      theme_id: themeId,
+      label,
+      topics,
+      position: Number.isFinite(position) ? position : 0,
+      created_by: context.user.id
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content_taxonomy.subtheme_created",
+    summary: `Sous-thème éditorial "${label}" créé.`,
+    targetType: "content_taxonomy_subtheme",
+    targetId: data.id,
+    targetLabel: label,
+    highlights: [`thème ${themeResult.data.label}`, `${topics.length} sujet(s)`]
+  });
+
+  revalidatePath("/admin/content");
+  revalidatePath("/library");
+  revalidateAdminAudit();
+
+  return ok(`Sous-thème "${label}" ajouté à la taxonomie.`);
+}
+
 export async function createQuizAction(
   _prevState: AdminActionState,
   formData: FormData

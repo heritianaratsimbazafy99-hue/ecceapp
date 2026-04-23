@@ -2425,7 +2425,15 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-card-progress,
 .admin-content-category-grid,
 .admin-content-actions,
-.admin-content-focus-copy {
+.admin-content-focus-copy,
+.admin-content-taxonomy-manager,
+.admin-content-taxonomy-layout,
+.admin-content-taxonomy-map,
+.admin-content-taxonomy-forms,
+.admin-content-taxonomy-form,
+.admin-content-taxonomy-report,
+.admin-content-taxonomy-card,
+.admin-content-issue-list {
   display: grid;
   gap: 24px;
 }
@@ -2454,7 +2462,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-priority-card p,
 .admin-content-card-copy p,
 .admin-content-focus-copy p,
-.admin-content-category-card p {
+.admin-content-category-card p,
+.admin-content-taxonomy-map p {
   margin: 0;
 }
 
@@ -2471,7 +2480,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .admin-content-lane-grid,
 .admin-content-watchlist,
-.admin-content-category-grid {
+.admin-content-category-grid,
+.admin-content-taxonomy-map,
+.admin-content-taxonomy-report {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
@@ -2479,6 +2490,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-lane-card,
 .admin-content-card,
 .admin-content-category-card,
+.admin-content-taxonomy-card,
+.admin-content-taxonomy-form,
 .admin-content-focus-metrics article,
 .admin-content-priority-card,
 .admin-content-summary article {
@@ -2524,9 +2537,42 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   align-items: start;
 }
 
+.admin-content-taxonomy-layout {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: start;
+}
+
 .admin-content-filter-form {
   grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr) auto;
   align-items: end;
+}
+
+.admin-content-taxonomy-form {
+  gap: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(242, 248, 244, 0.9));
+}
+
+.admin-content-taxonomy-form label {
+  display: grid;
+  gap: 8px;
+  font-weight: 750;
+}
+
+.admin-content-taxonomy-form input,
+.admin-content-taxonomy-form select,
+.admin-content-taxonomy-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1px solid rgba(16, 24, 32, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.admin-content-taxonomy-form textarea {
+  padding-top: 12px;
+  resize: vertical;
 }
 
 .admin-content-filter-actions {
@@ -2546,6 +2592,29 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .admin-content-card {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 239, 0.9));
+}
+
+.admin-content-taxonomy-card {
+  background:
+    radial-gradient(circle at top right, rgba(255, 106, 61, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.9);
+}
+
+.admin-content-issue-list {
+  gap: 8px;
+}
+
+.admin-content-issue-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  width: fit-content;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 106, 61, 0.1);
+  color: #ad451f;
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .admin-content-card-copy,
@@ -2573,6 +2642,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-lane-grid,
   .admin-content-watchlist,
   .admin-content-category-grid,
+  .admin-content-taxonomy-layout,
+  .admin-content-taxonomy-map,
+  .admin-content-taxonomy-report,
   .admin-content-summary,
   .admin-content-focus-metrics,
   .admin-content-card-progress,
@@ -2591,6 +2663,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-lane-grid,
   .admin-content-watchlist,
   .admin-content-category-grid,
+  .admin-content-taxonomy-layout,
+  .admin-content-taxonomy-map,
+  .admin-content-taxonomy-report,
   .admin-content-summary,
   .admin-content-focus-metrics,
   .admin-content-card-progress,
@@ -3066,7 +3141,14 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   gap: 10px;
 }
 
-.library-search-bar input {
+.library-search-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.library-search-bar input:not([type="hidden"]) {
   width: 100%;
   min-height: 58px;
   padding: 0 18px;
@@ -3084,6 +3166,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: rgba(16, 24, 32, 0.08);
   color: var(--text);
   font-weight: 700;
+  text-decoration: none;
   cursor: pointer;
   transition: transform 180ms ease, background 180ms ease, color 180ms ease;
 }
@@ -3141,6 +3224,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: transparent;
   color: var(--text);
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -3185,6 +3269,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: rgba(255, 255, 255, 0.74);
   color: var(--text);
   font-weight: 800;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -3202,11 +3287,14 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .library-topic-pill {
   border: 0;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .library-topic-row .library-topic-pill,
 .collection-tags .library-topic-pill {
+  display: inline-flex;
+  align-items: center;
   min-height: 30px;
   padding: 0 10px;
   border-radius: 999px;
@@ -3237,7 +3325,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   margin-top: 18px;
 }
 
-.library-resource-meta button {
+.library-resource-meta a {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
@@ -3247,6 +3335,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: rgba(16, 24, 32, 0.06);
   color: var(--muted);
   font-size: 0.92rem;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -8426,6 +8515,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .program-admin-kpis,
   .program-card-metrics,
   .library-intelligence-grid,
+  .library-search-bar,
   .library-taxonomy-map,
   .content-taxonomy-theme-grid,
   .content-taxonomy-subtheme-grid {

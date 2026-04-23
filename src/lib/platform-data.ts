@@ -40,6 +40,21 @@ type ContentRow = {
   created_at: string;
 };
 
+type ContentTaxonomyThemeRow = {
+  id: string;
+  label: string;
+  description: string | null;
+  position: number;
+};
+
+type ContentTaxonomySubthemeRow = {
+  id: string;
+  theme_id: string;
+  label: string;
+  topics: string[] | null;
+  position: number;
+};
+
 type ProgramRow = {
   id: string;
   title: string;
@@ -5482,7 +5497,14 @@ export async function getAdminContentStudioPageData(filters?: {
   const programs = (programsResult.data ?? []) as ProgramRow[];
   const programIds = programs.map((program) => program.id);
 
-  const [contentsResult, modulesResult, quizzesResult, assignmentsResult] = await Promise.all([
+  const [
+    contentsResult,
+    modulesResult,
+    quizzesResult,
+    assignmentsResult,
+    taxonomyThemesResult,
+    taxonomySubthemesResult
+  ] = await Promise.all([
     admin
       .from("content_items")
       .select(
@@ -5503,7 +5525,19 @@ export async function getAdminContentStudioPageData(filters?: {
     admin
       .from("learning_assignments")
       .select("id, content_item_id, due_at, published_at")
+      .eq("organization_id", organizationId),
+    admin
+      .from("content_taxonomy_themes")
+      .select("id, label, description, position")
       .eq("organization_id", organizationId)
+      .order("position", { ascending: true })
+      .order("label", { ascending: true }),
+    admin
+      .from("content_taxonomy_subthemes")
+      .select("id, theme_id, label, topics, position")
+      .eq("organization_id", organizationId)
+      .order("position", { ascending: true })
+      .order("label", { ascending: true })
   ]);
 
   const contents = (contentsResult.data ?? []) as ContentRow[];
@@ -5520,6 +5554,20 @@ export async function getAdminContentStudioPageData(filters?: {
     due_at: string | null;
     published_at: string | null;
   }>;
+  const taxonomyThemes = (taxonomyThemesResult.data ?? []) as ContentTaxonomyThemeRow[];
+  const taxonomySubthemes = (taxonomySubthemesResult.data ?? []) as ContentTaxonomySubthemeRow[];
+  const taxonomyPresets = taxonomyThemes.map((theme) => ({
+    id: theme.id,
+    theme: theme.label,
+    description: theme.description ?? "",
+    subthemes: taxonomySubthemes
+      .filter((subtheme) => subtheme.theme_id === theme.id)
+      .map((subtheme) => ({
+        id: subtheme.id,
+        label: subtheme.label,
+        topics: subtheme.topics ?? []
+      }))
+  }));
   const moduleOptions = buildProgramModuleOptions(programs, modules);
   const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
   const moduleById = new Map(modules.map((module) => [module.id, module]));
@@ -5592,11 +5640,18 @@ export async function getAdminContentStudioPageData(filters?: {
       dueSoonCount: 0
     };
     const linkedQuizCount = linkedQuizCountByContentId.get(content.id) ?? 0;
+    const normalizedTags = content.tags ?? [];
+    const taxonomyIssues = [
+      content.summary?.trim() ? null : "Résumé manquant",
+      content.category?.trim() ? null : "Thème manquant",
+      content.subcategory?.trim() ? null : "Sous-thème manquant",
+      normalizedTags.length >= 3 ? null : "Moins de 3 sujets abordés"
+    ].filter(Boolean) as string[];
     const taxonomyScore = [
       Boolean(content.summary?.trim()),
       Boolean(content.category?.trim()),
       Boolean(content.subcategory?.trim()),
-      Boolean(content.tags?.length)
+      normalizedTags.length >= 3
     ].filter(Boolean).length;
     const lane: "priority" | "connected" | "draft" | "library" =
       content.status !== "published"
@@ -5623,6 +5678,7 @@ export async function getAdminContentStudioPageData(filters?: {
       tone,
       statusTone,
       taxonomyScore,
+      taxonomyIssues,
       assignmentCount: assignmentStats.assignmentCount,
       overdueCount: assignmentStats.overdueCount,
       dueSoonCount: assignmentStats.dueSoonCount,
@@ -5705,6 +5761,29 @@ export async function getAdminContentStudioPageData(filters?: {
         (getDateValue(right.created_at) ?? 0) - (getDateValue(left.created_at) ?? 0)
       );
     });
+  const taxonomyGapReport = visibleContents
+    .filter((content) => content.taxonomyIssues.length > 0)
+    .slice()
+    .sort((left, right) => {
+      return (
+        right.taxonomyIssues.length - left.taxonomyIssues.length ||
+        left.taxonomyScore - right.taxonomyScore ||
+        (getDateValue(right.created_at) ?? 0) - (getDateValue(left.created_at) ?? 0)
+      );
+    })
+    .slice(0, 8)
+    .map((content) => ({
+      id: content.id,
+      title: content.title,
+      status: content.status,
+      statusTone: content.statusTone,
+      category: content.category?.trim() || "Sans thème",
+      subcategory: content.subcategory?.trim() || "Sans sous-thème",
+      tagCount: content.tags?.length ?? 0,
+      taxonomyScore: content.taxonomyScore,
+      issues: content.taxonomyIssues,
+      previewHref: content.previewHref
+    }));
   const focusContent = sortedVisibleContents[0] ?? null;
   const categoryRadar = Array.from(
     visibleContents.reduce((map, content) => {
@@ -5960,12 +6039,14 @@ export async function getAdminContentStudioPageData(filters?: {
     ],
     focusContent,
     priorityActions,
+    taxonomyGapReport,
     contentWatchlist: sortedVisibleContents.slice(0, 6),
     categoryOptions: categories,
     categoryRadar,
     editorialFeed,
     contents: visibleContents,
-    moduleOptions
+    moduleOptions,
+    taxonomyPresets
   };
 }
 
@@ -7820,10 +7901,15 @@ export async function getAdminAssignmentStudioPageData(filters?: {
   };
 }
 
-export async function getLibraryPageData() {
+export async function getLibraryPageData(filters?: {
+  query?: string;
+  filter?: string;
+}) {
   const context = await requireRole(["admin", "professor", "coach", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
+  const normalizedQuery = String(filters?.query ?? "").trim().toLowerCase();
+  const selectedFilter = String(filters?.filter ?? "").trim();
 
   const [contentsResult, quizzesResult] = await Promise.all([
     admin
@@ -7933,14 +8019,37 @@ export async function getLibraryPageData() {
     })
   ];
 
+  const scopedResources = resources.filter((item) => {
+    const subthemeLabel = item.subcategory || "Sans sous-thème";
+    const matchesFilter =
+      !selectedFilter ||
+      item.category === selectedFilter ||
+      subthemeLabel === selectedFilter ||
+      item.tags.includes(selectedFilter);
+    const haystack = [
+      item.title,
+      item.summary ?? "",
+      item.category,
+      subthemeLabel,
+      item.meta,
+      item.badge,
+      ...item.tags
+    ]
+      .join(" ")
+      .toLowerCase();
+    const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+
+    return matchesFilter && matchesQuery;
+  });
+
   const groups = Array.from(
-    resources.reduce((map, item) => {
+    scopedResources.reduce((map, item) => {
       const key = item.category;
       const current = map.get(key) ?? [];
       current.push(item);
       map.set(key, current);
       return map;
-    }, new Map<string, Array<(typeof resources)[number]>>())
+    }, new Map<string, Array<(typeof scopedResources)[number]>>())
   ).map(([category, items]) => ({
     category,
     items
@@ -7983,9 +8092,14 @@ export async function getLibraryPageData() {
 
   return {
     context,
-    resources,
+    resources: scopedResources,
     groups,
     themeMap,
+    totalResourceCount: resources.length,
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      filter: selectedFilter
+    },
     taxonomy
   };
 }

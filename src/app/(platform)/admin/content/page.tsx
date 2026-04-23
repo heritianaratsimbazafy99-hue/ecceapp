@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ContentStudioComposer } from "@/components/content/content-studio-composer";
+import { ContentTaxonomyManager } from "@/components/content/content-taxonomy-manager";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { EngagementMeter } from "@/components/platform/engagement-meter";
 import { MetricCard } from "@/components/platform/metric-card";
@@ -64,7 +65,9 @@ export default async function AdminContentPage({
     laneBreakdown,
     metrics,
     moduleOptions,
-    priorityActions
+    priorityActions,
+    taxonomyGapReport,
+    taxonomyPresets
   } = await getAdminContentStudioPageData({
     query: params.query,
     category: params.category,
@@ -306,6 +309,68 @@ export default async function AdminContentPage({
       <section className="panel">
         <div className="panel-header-rich">
           <div>
+            <span className="eyebrow">Rapport taxonomie</span>
+            <h3>Contenus à recadrer</h3>
+            <p>
+              Les ressources ci-dessous manquent encore de thème, sous-thème, résumé ou sujets abordés. C’est la dette
+              qui ralentit le plus la recherche côté coach.
+            </p>
+          </div>
+
+          <div className="messaging-inline-stats">
+            <article>
+              <strong>{taxonomyGapReport.length}</strong>
+              <span>à corriger</span>
+            </article>
+            <article>
+              <strong>{metrics[2]?.value ?? "0/0"}</strong>
+              <span>taxonomie prête</span>
+            </article>
+          </div>
+        </div>
+
+        {taxonomyGapReport.length ? (
+          <div className="admin-content-taxonomy-report">
+            {taxonomyGapReport.map((content) => (
+              <article className="admin-content-taxonomy-card" key={content.id}>
+                <div className="tag-row">
+                  <Badge tone={content.statusTone}>{content.status}</Badge>
+                  <Badge tone={content.taxonomyScore >= 3 ? "accent" : "warning"}>
+                    taxonomie {content.taxonomyScore}/4
+                  </Badge>
+                  <Badge tone="neutral">{content.tagCount} sujet(s)</Badge>
+                </div>
+
+                <div className="admin-content-card-copy">
+                  <strong>{content.title}</strong>
+                  <p>
+                    {content.category} · {content.subcategory}
+                  </p>
+                </div>
+
+                <div className="admin-content-issue-list">
+                  {content.issues.map((issue) => (
+                    <span key={`${content.id}-${issue}`}>{issue}</span>
+                  ))}
+                </div>
+
+                <Link className="button button-secondary button-small" href={content.previewHref}>
+                  Revoir la ressource
+                </Link>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Taxonomie propre sur la vue active.</strong>
+            <p>Les ressources visibles ont un résumé, un thème, un sous-thème et au moins trois sujets abordés.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header-rich">
+          <div>
             <h3>Watchlist contenus</h3>
             <p>Les ressources les plus utiles à relire maintenant, triées par priorité éditoriale et impact visible dans la plateforme.</p>
           </div>
@@ -455,8 +520,10 @@ export default async function AdminContentPage({
         </section>
       </section>
 
+      <ContentTaxonomyManager taxonomyPresets={taxonomyPresets} />
+
       <div id="content-studio">
-        <ContentStudioComposer moduleOptions={moduleOptions} />
+        <ContentStudioComposer moduleOptions={moduleOptions} taxonomyPresets={taxonomyPresets} />
       </div>
     </div>
   );

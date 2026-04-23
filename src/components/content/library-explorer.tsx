@@ -55,17 +55,44 @@ function contentTone(contentType: string) {
   }
 }
 
+function buildLibraryHref({
+  query,
+  filter
+}: {
+  query?: string;
+  filter?: string;
+}) {
+  const searchParams = new URLSearchParams();
+
+  if (query?.trim()) {
+    searchParams.set("query", query.trim());
+  }
+
+  if (filter && filter !== "all") {
+    searchParams.set("filter", filter);
+  }
+
+  const value = searchParams.toString();
+  return value ? `/library?${value}` : "/library";
+}
+
 export function LibraryExplorer({
   groups,
+  initialFilter,
+  initialSearch,
   taxonomy,
-  themeMap
+  themeMap,
+  totalResourceCount
 }: {
   groups: LibraryGroup[];
+  initialFilter?: string;
+  initialSearch?: string;
   taxonomy: string[];
   themeMap: LibraryThemeMap[];
+  totalResourceCount: number;
 }) {
-  const [search, setSearch] = useState("");
-  const [activeTag, setActiveTag] = useState<string>("all");
+  const [search, setSearch] = useState(initialSearch ?? "");
+  const activeTag = initialFilter || "all";
   const deferredSearch = useDeferredValue(search);
   const normalizedSearch = deferredSearch.trim().toLowerCase();
 
@@ -120,51 +147,53 @@ export function LibraryExplorer({
           </div>
         </div>
 
-        <div className="library-search-bar">
+        <form action="/library" className="library-search-bar" method="get">
+          {activeTag !== "all" ? <input name="filter" type="hidden" value={activeTag} /> : null}
           <input
             onChange={(event) => setSearch(event.target.value)}
+            name="query"
             placeholder="Rechercher un contenu, un quiz, un tag ou une catégorie..."
             type="search"
             value={search}
           />
-        </div>
+          <button className="button button-secondary" type="submit">
+            Rechercher
+          </button>
+        </form>
 
         <div className="tag-row">
-          <button
+          <Link
             className={`library-filter-chip${activeTag === "all" ? " is-active" : ""}`}
-            onClick={() => setActiveTag("all")}
-            type="button"
+            href={buildLibraryHref({ query: search })}
           >
             Tout
-          </button>
+          </Link>
           {taxonomy.map((item) => (
-            <button
+            <Link
               className={`library-filter-chip${activeTag === item ? " is-active" : ""}`}
+              href={buildLibraryHref({ filter: item, query: search })}
               key={item}
-              onClick={() => setActiveTag(item)}
-              type="button"
             >
               {item}
-            </button>
+            </Link>
           ))}
         </div>
 
         <div className="library-taxonomy-summary">
           <strong>{activeFilterLabel}</strong>
-          <span>{totalResources} ressource(s) publiées, dont {themeMap.reduce((total, theme) => total + theme.quizCount, 0)} quiz rattachés au plan pédagogique.</span>
+          <span>{totalResources} ressource(s) dans la vue active sur {totalResourceCount} publiée(s), dont {themeMap.reduce((total, theme) => total + theme.quizCount, 0)} quiz rattachés au plan pédagogique.</span>
         </div>
 
         <div className="library-taxonomy-map">
           {themeMap.map((theme) => (
             <article className="library-taxonomy-card" key={theme.category}>
-              <button
+              <Link
                 className="library-taxonomy-card-head"
-                onClick={() => setActiveTag(theme.category)}
-                type="button"
+                href={buildLibraryHref({ filter: theme.category, query: search })}
               >
                 <span>{theme.category}</span>
                 <strong>{theme.count}</strong>
-              </button>
+              </Link>
 
               <div className="library-taxonomy-counts">
                 <span>{theme.contentCount} contenu(x)</span>
@@ -174,15 +203,14 @@ export function LibraryExplorer({
               {theme.subthemes.length ? (
                 <div className="library-subtheme-list">
                   {theme.subthemes.slice(0, 4).map((subtheme) => (
-                    <button
+                    <Link
                       className="library-subtheme-button"
+                      href={buildLibraryHref({ filter: subtheme.label, query: search })}
                       key={`${theme.category}-${subtheme.label}`}
-                      onClick={() => setActiveTag(subtheme.label)}
-                      type="button"
                     >
                       <span>{subtheme.label}</span>
                       <strong>{subtheme.count}</strong>
-                    </button>
+                    </Link>
                   ))}
                 </div>
               ) : null}
@@ -190,14 +218,13 @@ export function LibraryExplorer({
               {theme.topics.length ? (
                 <div className="library-topic-row">
                   {theme.topics.slice(0, 5).map((topic) => (
-                    <button
+                    <Link
                       className="library-topic-pill"
+                      href={buildLibraryHref({ filter: topic, query: search })}
                       key={`${theme.category}-${topic}`}
-                      onClick={() => setActiveTag(topic)}
-                      type="button"
                     >
                       {topic}
-                    </button>
+                    </Link>
                   ))}
                 </div>
               ) : null}
@@ -221,15 +248,14 @@ export function LibraryExplorer({
                 {groupTheme?.subthemes.length ? (
                   <div className="library-group-taxonomy">
                     {groupTheme.subthemes.slice(0, 5).map((subtheme) => (
-                      <button
+                      <Link
                         className="library-subtheme-button"
+                        href={buildLibraryHref({ filter: subtheme.label, query: search })}
                         key={`${group.category}-group-${subtheme.label}`}
-                        onClick={() => setActiveTag(subtheme.label)}
-                        type="button"
                       >
                         <span>{subtheme.label}</span>
                         <strong>{subtheme.count}</strong>
-                      </button>
+                      </Link>
                     ))}
                   </div>
                 ) : null}
@@ -247,23 +273,22 @@ export function LibraryExplorer({
                         <p>{item.summary}</p>
 
                         <div className="library-resource-meta">
-                          <button onClick={() => setActiveTag(item.subcategory || "Sans sous-thème")} type="button">
+                          <Link href={buildLibraryHref({ filter: item.subcategory || "Sans sous-thème", query: search })}>
                             {item.subcategory || "Sans sous-thème"}
-                          </button>
+                          </Link>
                           <span>{item.meta}</span>
                         </div>
 
                         {item.tags.length ? (
                           <div className="collection-tags">
                             {item.tags.map((tag) => (
-                              <button
+                              <Link
                                 className="collection-tag library-topic-pill"
+                                href={buildLibraryHref({ filter: tag, query: search })}
                                 key={tag}
-                                onClick={() => setActiveTag(tag)}
-                                type="button"
                               >
                                 {tag}
-                              </button>
+                              </Link>
                             ))}
                           </div>
                         ) : null}
