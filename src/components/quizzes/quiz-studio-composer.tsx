@@ -10,6 +10,11 @@ type ContentOption = {
   label: string;
 };
 
+type ModuleOption = {
+  id: string;
+  label: string;
+};
+
 type QuestionType = "single_choice" | "text";
 
 type DraftChoice = {
@@ -80,9 +85,11 @@ function isQuestionReady(question: DraftQuestion) {
 }
 
 export function QuizStudioComposer({
-  contentOptions
+  contentOptions,
+  moduleOptions
 }: {
   contentOptions: ContentOption[];
+  moduleOptions: ModuleOption[];
 }) {
   const [state, formAction, pending] = useActionState(createQuizAction, initialState);
   const [title, setTitle] = useState("");
@@ -93,6 +100,7 @@ export function QuizStudioComposer({
   const [timeLimitMinutes, setTimeLimitMinutes] = useState("12");
   const [passingScore, setPassingScore] = useState("70");
   const [contentItemId, setContentItemId] = useState("");
+  const [moduleId, setModuleId] = useState("");
   const [randomizeQuestions, setRandomizeQuestions] = useState(false);
   const [questions, setQuestions] = useState<DraftQuestion[]>(() => [createDraftQuestion("single_choice")]);
   const [activeQuestionId, setActiveQuestionId] = useState<string>("");
@@ -269,6 +277,7 @@ export function QuizStudioComposer({
       <input name="time_limit_minutes" type="hidden" value={timeLimitMinutes} />
       <input name="passing_score" type="hidden" value={passingScore} />
       <input name="content_item_id" type="hidden" value={contentItemId} />
+      <input name="module_id" type="hidden" value={moduleId} />
       <input name="randomize_questions" type="hidden" value={randomizeQuestions ? "true" : "false"} />
       <input name="questions_payload" type="hidden" value={questionPayload} />
 
@@ -337,6 +346,17 @@ export function QuizStudioComposer({
                   <select onChange={(event) => setContentItemId(event.target.value)} value={contentItemId}>
                     <option value="">Aucun contenu rattaché</option>
                     {contentOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-grid-span">
+                  Module de parcours
+                  <select onChange={(event) => setModuleId(event.target.value)} value={moduleId}>
+                    <option value="">Aucun module rattaché</option>
+                    {moduleOptions.map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.label}
                       </option>

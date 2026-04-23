@@ -26,6 +26,12 @@ const VALID_PUBLICATION_STATUS = ["draft", "scheduled", "published", "archived"]
 const VALID_QUIZ_KIND = ["qcm", "quiz", "assessment"] as const;
 const VALID_QUESTION_TYPES = ["single_choice", "text"] as const;
 
+type ProgramModuleDraftPayload = {
+  title: string;
+  description?: string | null;
+  status?: string;
+};
+
 type QuizDraftPayloadQuestion = {
   prompt: string;
   helper_text?: string | null;
@@ -57,6 +63,46 @@ function ok(success: string): AdminActionState {
 
 function fail(error: string): AdminActionState {
   return { error };
+}
+
+async function ensureProgramBelongsToOrganization(
+  programId: string,
+  organizationId: string
+) {
+  const admin = createSupabaseAdminClient();
+
+  const programResult = await admin
+    .from("programs")
+    .select("id, title")
+    .eq("organization_id", organizationId)
+    .eq("id", programId)
+    .maybeSingle<{ id: string; title: string }>();
+
+  if (programResult.error || !programResult.data) {
+    return null;
+  }
+
+  return programResult.data;
+}
+
+async function ensureProgramModuleBelongsToOrganization(
+  moduleId: string,
+  organizationId: string
+) {
+  const admin = createSupabaseAdminClient();
+
+  const moduleResult = await admin
+    .from("program_modules")
+    .select("id, title, program_id, programs!inner(organization_id)")
+    .eq("id", moduleId)
+    .eq("programs.organization_id", organizationId)
+    .maybeSingle<{ id: string; title: string; program_id: string }>();
+
+  if (moduleResult.error || !moduleResult.data) {
+    return null;
+  }
+
+  return moduleResult.data;
 }
 
 function normalizeDraftQuestion(
@@ -451,6 +497,7 @@ export async function createContentAction(
   const summary = String(formData.get("summary") ?? "").trim();
   const category = String(formData.get("category") ?? "").trim();
   const subcategory = String(formData.get("subcategory") ?? "").trim();
+  const moduleId = String(formData.get("module_id") ?? "").trim();
   const contentType = String(formData.get("content_type") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
   const tagsInput = String(formData.get("tags") ?? "").trim();
@@ -467,6 +514,14 @@ export async function createContentAction(
     return fail("Le statut de publication n'est pas valide.");
   }
 
+  if (moduleId) {
+    const moduleResult = await ensureProgramModuleBelongsToOrganization(moduleId, organizationId);
+
+    if (!moduleResult) {
+      return fail("Le module de parcours sélectionné est introuvable.");
+    }
+  }
+
   const slug = slugify(title);
   const tags = tagsInput
     ? tagsInput
@@ -479,6 +534,7 @@ export async function createContentAction(
     organization_id: organizationId,
     title,
     slug,
+    module_id: moduleId || null,
     summary: summary || null,
     category: category || null,
     subcategory: subcategory || null,
@@ -520,6 +576,7 @@ export async function createQuizAction(
   const timeLimitMinutes = Number(String(formData.get("time_limit_minutes") ?? "").trim() || 0);
   const passingScore = Number(String(formData.get("passing_score") ?? "").trim() || 0);
   const contentItemId = String(formData.get("content_item_id") ?? "").trim();
+  const moduleId = String(formData.get("module_id") ?? "").trim();
   const randomizeQuestions = String(formData.get("randomize_questions") ?? "").trim() === "true";
   const questionsPayload = String(formData.get("questions_payload") ?? "").trim();
 
@@ -536,6 +593,14 @@ export async function createQuizAction(
 
   if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
     return fail("Le statut du quiz n'est pas valide.");
+  }
+
+  if (moduleId) {
+    const moduleResult = await ensureProgramModuleBelongsToOrganization(moduleId, organizationId);
+
+    if (!moduleResult) {
+      return fail("Le module de parcours sélectionné est introuvable.");
+    }
   }
 
   let normalizedQuestions: NormalizedQuizDraftQuestion[] = [];
@@ -601,6 +666,7 @@ export async function createQuizAction(
     .from("quizzes")
     .insert({
       organization_id: organizationId,
+      module_id: moduleId || null,
       title,
       description: description || null,
       kind,
@@ -811,6 +877,268 @@ export async function deleteQuizQuestionAction(
   revalidatePath(`/quiz/${quizId}`);
 
   return ok("Question supprimée.");
+}
+
+export async function createProgramAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const modulesPayload = String(formData.get("modules_payload") ?? "").trim();
+
+  if (!title) {
+    return fail("Le titre du parcours est obligatoire.");
+  }
+
+  if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
+    return fail("Le statut du parcours n'est pas valide.");
+  }
+
+  let normalizedModules: Array<{
+    title: string;
+    description: string | null;
+    status: (typeof VALID_PUBLICATION_STATUS)[number];
+    position: number;
+  }> = [];
+
+  if (modulesPayload) {
+    try {
+      const parsedModules = JSON.parse(modulesPayload) as ProgramModuleDraftPayload[];
+
+      if (!Array.isArray(parsedModules)) {
+        return fail("La structure des modules du parcours est invalide.");
+      }
+
+      normalizedModules = parsedModules
+        .map((module, index) => ({
+          title: String(module.title ?? "").trim(),
+          description: String(module.description ?? "").trim() || null,
+          status:
+            VALID_PUBLICATION_STATUS.includes(
+              String(module.status ?? "").trim() as (typeof VALID_PUBLICATION_STATUS)[number]
+            )
+              ? (String(module.status ?? "").trim() as (typeof VALID_PUBLICATION_STATUS)[number])
+              : "published",
+          position: index
+        }))
+        .filter((module) => module.title);
+    } catch {
+      return fail("Le storyboard du parcours n'a pas pu être décodé.");
+    }
+  }
+
+  if (!normalizedModules.length) {
+    return fail("Ajoute au moins un module prêt à structurer le parcours.");
+  }
+
+  const programInsert = await admin
+    .from("programs")
+    .insert({
+      organization_id: organizationId,
+      title,
+      slug: slugify(title),
+      description: description || null,
+      status,
+      created_by: context.user.id
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (programInsert.error || !programInsert.data) {
+    return fail(programInsert.error?.message ?? "Impossible de créer le parcours.");
+  }
+
+  const moduleInsert = await admin.from("program_modules").insert(
+    normalizedModules.map((module) => ({
+      program_id: programInsert.data.id,
+      title: module.title,
+      description: module.description,
+      position: module.position,
+      status: module.status
+    }))
+  );
+
+  if (moduleInsert.error) {
+    return fail(moduleInsert.error.message);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/programs");
+  revalidatePath("/admin/content");
+  revalidatePath("/admin/quizzes");
+  revalidatePath("/programs");
+
+  return ok(`Parcours "${title}" créé avec ${normalizedModules.length} module(s).`);
+}
+
+export async function addProgramModuleAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const programId = String(formData.get("program_id") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+
+  if (!programId || !title) {
+    return fail("Le parcours et le titre du module sont obligatoires.");
+  }
+
+  if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
+    return fail("Le statut du module n'est pas valide.");
+  }
+
+  const programResult = await ensureProgramBelongsToOrganization(programId, organizationId);
+
+  if (!programResult) {
+    return fail("Parcours introuvable.");
+  }
+
+  const lastModuleResult = await admin
+    .from("program_modules")
+    .select("position")
+    .eq("program_id", programId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ position: number }>();
+
+  const nextPosition = (lastModuleResult.data?.position ?? -1) + 1;
+
+  const moduleInsert = await admin.from("program_modules").insert({
+    program_id: programId,
+    title,
+    description: description || null,
+    position: nextPosition,
+    status
+  });
+
+  if (moduleInsert.error) {
+    return fail(moduleInsert.error.message);
+  }
+
+  revalidatePath("/admin/programs");
+  revalidatePath("/admin/content");
+  revalidatePath("/admin/quizzes");
+  revalidatePath("/programs");
+
+  return ok(`Module "${title}" ajouté au parcours ${programResult.title}.`);
+}
+
+export async function enrollProgramAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const programId = String(formData.get("program_id") ?? "").trim();
+  const assignedUserId = String(formData.get("assigned_user_id") ?? "").trim();
+  const cohortId = String(formData.get("cohort_id") ?? "").trim();
+
+  if (!programId) {
+    return fail("Sélectionne un parcours.");
+  }
+
+  if ((!assignedUserId && !cohortId) || (assignedUserId && cohortId)) {
+    return fail("Choisis soit un coaché, soit une cohorte.");
+  }
+
+  const programResult = await ensureProgramBelongsToOrganization(programId, organizationId);
+
+  if (!programResult) {
+    return fail("Parcours introuvable.");
+  }
+
+  const recipientIds = new Set<string>();
+
+  if (assignedUserId) {
+    const coacheeRoleResult = await admin
+      .from("user_roles")
+      .select("user_id")
+      .eq("organization_id", organizationId)
+      .eq("user_id", assignedUserId)
+      .eq("role", "coachee")
+      .maybeSingle<{ user_id: string }>();
+
+    if (coacheeRoleResult.error || !coacheeRoleResult.data) {
+      return fail("Le coaché sélectionné est introuvable.");
+    }
+
+    recipientIds.add(assignedUserId);
+  }
+
+  if (cohortId) {
+    const cohortResult = await admin
+      .from("cohorts")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("id", cohortId)
+      .maybeSingle<{ id: string; name: string }>();
+
+    if (cohortResult.error || !cohortResult.data) {
+      return fail("La cohorte sélectionnée est introuvable.");
+    }
+
+    const cohortMembersResult = await admin
+      .from("cohort_members")
+      .select("user_id")
+      .eq("cohort_id", cohortId);
+
+    for (const member of cohortMembersResult.data ?? []) {
+      recipientIds.add(member.user_id);
+    }
+
+    if (!recipientIds.size) {
+      return fail("Cette cohorte ne contient encore aucun coaché.");
+    }
+  }
+
+  const rows = Array.from(recipientIds).map((userId) => ({
+    program_id: programId,
+    user_id: userId,
+    cohort_id: cohortId || null
+  }));
+
+  const enrollmentInsert = await admin.from("program_enrollments").upsert(rows, {
+    onConflict: "program_id,user_id",
+    ignoreDuplicates: false
+  });
+
+  if (enrollmentInsert.error) {
+    return fail(enrollmentInsert.error.message);
+  }
+
+  await createNotifications(
+    Array.from(recipientIds).map((recipientId) => ({
+      organizationId,
+      recipientId,
+      actorId: context.user.id,
+      title: "Nouveau parcours ECCE",
+      body: `${programResult.title} a été ajouté à ton espace de progression.`,
+      deeplink: "/programs"
+    }))
+  );
+
+  revalidatePath("/admin/programs");
+  revalidatePath("/dashboard");
+  revalidatePath("/programs");
+
+  return ok(
+    recipientIds.size > 1
+      ? `Parcours activé pour ${recipientIds.size} coachés.`
+      : `Parcours activé pour 1 coaché.`
+  );
 }
 
 export async function createAssignmentAction(

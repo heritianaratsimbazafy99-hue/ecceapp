@@ -6,6 +6,11 @@ import { createContentAction, type AdminActionState } from "@/app/(platform)/adm
 import { CelebrationBurst } from "@/components/feedback/celebration-burst";
 import { Badge } from "@/components/ui/badge";
 
+type ModuleOption = {
+  id: string;
+  label: string;
+};
+
 const initialState: AdminActionState = {};
 
 function ctaLabel(contentType: string) {
@@ -25,12 +30,17 @@ function ctaLabel(contentType: string) {
   }
 }
 
-export function ContentStudioComposer() {
+export function ContentStudioComposer({
+  moduleOptions
+}: {
+  moduleOptions: ModuleOption[];
+}) {
   const [state, formAction, pending] = useActionState(createContentAction, initialState);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [category, setCategory] = useState("Fondamentaux");
   const [subcategory, setSubcategory] = useState("");
+  const [moduleId, setModuleId] = useState("");
   const [contentType, setContentType] = useState("document");
   const [status, setStatus] = useState("published");
   const [tags, setTags] = useState("");
@@ -65,6 +75,7 @@ export function ContentStudioComposer() {
       <input name="summary" type="hidden" value={summary} />
       <input name="category" type="hidden" value={category} />
       <input name="subcategory" type="hidden" value={subcategory} />
+      <input name="module_id" type="hidden" value={moduleId} />
       <input name="content_type" type="hidden" value={contentType} />
       <input name="status" type="hidden" value={status} />
       <input name="tags" type="hidden" value={tags} />
@@ -161,6 +172,17 @@ export function ContentStudioComposer() {
                       type="text"
                       value={tags}
                     />
+                  </label>
+                  <label className="form-grid-span">
+                    Module de parcours
+                    <select onChange={(event) => setModuleId(event.target.value)} value={moduleId}>
+                      <option value="">Aucun module rattaché</option>
+                      {moduleOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
               </article>

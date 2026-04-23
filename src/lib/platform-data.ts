@@ -13,6 +13,7 @@ type ProfileRow = {
 
 type ContentRow = {
   id: string;
+  module_id?: string | null;
   title: string;
   slug: string;
   summary: string | null;
@@ -26,6 +27,32 @@ type ContentRow = {
   youtube_url: string | null;
   is_required: boolean;
   created_at: string;
+};
+
+type ProgramRow = {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  status: string;
+  created_at: string;
+};
+
+type ProgramModuleRow = {
+  id: string;
+  program_id: string;
+  title: string;
+  description: string | null;
+  position: number;
+  status: string;
+  available_at?: string | null;
+};
+
+type ProgramEnrollmentRow = {
+  program_id: string;
+  user_id: string;
+  cohort_id: string | null;
+  enrolled_at: string;
 };
 
 type NotificationRow = {
@@ -51,6 +78,7 @@ type AssignmentRow = {
 
 type QuizRow = {
   id: string;
+  module_id?: string | null;
   title: string;
   description?: string | null;
   kind?: string;
@@ -308,6 +336,38 @@ function getSubmissionStatusTone(status: string): "neutral" | "accent" | "warnin
 
 function formatUserName(user: ProfileRow) {
   return `${user.first_name} ${user.last_name}`.trim();
+}
+
+function buildProgramModuleOptions(programs: ProgramRow[], modules: ProgramModuleRow[]) {
+  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
+
+  return modules
+    .slice()
+    .sort((left, right) =>
+      left.program_id === right.program_id
+        ? left.position - right.position
+        : (programTitleById.get(left.program_id) ?? "").localeCompare(programTitleById.get(right.program_id) ?? "")
+    )
+    .map((module) => ({
+      id: module.id,
+      label: `${programTitleById.get(module.program_id) ?? "Parcours"} · Module ${module.position + 1} · ${module.title}`
+    }));
+}
+
+function getProgramProgressTone(progress: number): "neutral" | "accent" | "warning" | "success" {
+  if (progress >= 100) {
+    return "success";
+  }
+
+  if (progress >= 60) {
+    return "accent";
+  }
+
+  if (progress > 0) {
+    return "warning";
+  }
+
+  return "neutral";
 }
 
 function uniqueById<T extends { id: string }>(items: T[]) {
@@ -1740,16 +1800,33 @@ export async function getAdminContentStudioPageData() {
   const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
-
-  const contentsResult = await admin
-    .from("content_items")
-    .select(
-      "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
-    )
+  const programsResult = await admin
+    .from("programs")
+    .select("id, title, slug, description, status, created_at")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
+  const programs = (programsResult.data ?? []) as ProgramRow[];
+  const programIds = programs.map((program) => program.id);
+
+  const [contentsResult, modulesResult] = await Promise.all([
+    admin
+      .from("content_items")
+      .select(
+        "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+      )
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    programIds.length
+      ? admin
+          .from("program_modules")
+          .select("id, program_id, title, description, position, status, available_at")
+          .in("program_id", programIds)
+      : Promise.resolve({ data: [] as ProgramModuleRow[] })
+  ]);
 
   const contents = (contentsResult.data ?? []) as ContentRow[];
+  const modules = (modulesResult.data ?? []) as ProgramModuleRow[];
+  const moduleOptions = buildProgramModuleOptions(programs, modules);
 
   return {
     context,
@@ -1765,7 +1842,8 @@ export async function getAdminContentStudioPageData() {
         delta: "parcours guidés"
       }
     ],
-    contents
+    contents,
+    moduleOptions
   };
 }
 
@@ -1774,7 +1852,15 @@ export async function getAdminQuizStudioPageData() {
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
 
-  const [contentsResult, quizzesResult] = await Promise.all([
+  const programsResult = await admin
+    .from("programs")
+    .select("id, title, slug, description, status, created_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false });
+  const programs = (programsResult.data ?? []) as ProgramRow[];
+  const programIds = programs.map((program) => program.id);
+
+  const [contentsResult, quizzesResult, modulesResult] = await Promise.all([
     admin
       .from("content_items")
       .select("id, title, status")
@@ -1810,11 +1896,18 @@ export async function getAdminQuizStudioPageData() {
         `
       )
       .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false }),
+    programIds.length
+      ? admin
+          .from("program_modules")
+          .select("id, program_id, title, description, position, status, available_at")
+          .in("program_id", programIds)
+      : Promise.resolve({ data: [] as ProgramModuleRow[] })
   ]);
 
   const contents = (contentsResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
   const quizzes = (quizzesResult.data ?? []) as QuizRow[];
+  const modules = (modulesResult.data ?? []) as ProgramModuleRow[];
 
   return {
     context,
@@ -1834,10 +1927,197 @@ export async function getAdminQuizStudioPageData() {
       id: content.id,
       label: `${content.title} · ${content.status}`
     })),
+    moduleOptions: buildProgramModuleOptions(programs, modules),
     quizzes: quizzes.map((quiz) => ({
       ...quiz,
       quiz_questions: [...(quiz.quiz_questions ?? [])].sort((left, right) => left.position - right.position)
     }))
+  };
+}
+
+export async function getAdminProgramStudioPageData() {
+  const context = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const [
+    programsResult,
+    modulesResult,
+    enrollmentsResult,
+    profilesResult,
+    authUsersResult,
+    cohortsResult,
+    cohortMembersResult,
+    contentsResult,
+    quizzesResult
+  ] = await Promise.all([
+    admin
+      .from("programs")
+      .select("id, title, slug, description, status, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("program_modules")
+      .select("id, program_id, title, description, position, status, available_at")
+      .order("position", { ascending: true }),
+    admin
+      .from("program_enrollments")
+      .select("program_id, user_id, cohort_id, enrolled_at")
+      .order("enrolled_at", { ascending: false }),
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, status, user_roles(role)")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 200
+    }),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin.from("cohort_members").select("user_id, cohort_id"),
+    admin
+      .from("content_items")
+      .select("id, module_id, title, status")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("quizzes")
+      .select("id, module_id, title, status")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+  ]);
+
+  const programs = (programsResult.data ?? []) as ProgramRow[];
+  const programIds = new Set(programs.map((program) => program.id));
+  const modules = ((modulesResult.data ?? []) as ProgramModuleRow[]).filter((module) =>
+    programIds.has(module.program_id)
+  );
+  const enrollments = ((enrollmentsResult.data ?? []) as ProgramEnrollmentRow[]).filter((enrollment) =>
+    programIds.has(enrollment.program_id)
+  );
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const authUsers = authUsersResult.data?.users ?? [];
+  const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
+  const contents = (contentsResult.data ?? []) as Array<{ id: string; module_id?: string | null; title: string; status: string }>;
+  const quizzes = (quizzesResult.data ?? []) as Array<{ id: string; module_id?: string | null; title: string; status: string }>;
+
+  const contentCountByModuleId = contents.reduce((map, item) => {
+    if (!item.module_id) {
+      return map;
+    }
+
+    map.set(item.module_id, (map.get(item.module_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const quizCountByModuleId = quizzes.reduce((map, item) => {
+    if (!item.module_id) {
+      return map;
+    }
+
+    map.set(item.module_id, (map.get(item.module_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
+  const emailByUserId = new Map(authUsers.map((user) => [user.id, user.email ?? "email indisponible"]));
+  const cohortIdsByUserId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    current.push(item.cohort_id);
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const cohortNameById = new Map(cohorts.map((cohort) => [cohort.id, cohort.name]));
+
+  const users = profiles.map((profile) => ({
+    id: profile.id,
+    name: formatUserName(profile),
+    email: emailByUserId.get(profile.id) ?? "email indisponible",
+    roles: (profile.user_roles ?? []).map((item) => item.role),
+    cohortIds: cohortIdsByUserId.get(profile.id) ?? []
+  }));
+
+  const coacheeOptions = users
+    .filter((user) => user.roles.includes("coachee"))
+    .map((user) => ({
+      id: user.id,
+      label: `${user.name} · ${user.email}`,
+      cohortIds: user.cohortIds
+    }));
+
+  const cohortOptions = cohorts.map((cohort) => ({
+    id: cohort.id,
+    label: `${cohort.name} · ${
+      cohortMembers.filter((member) => member.cohort_id === cohort.id).length
+    } membre(s)`
+  }));
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Parcours",
+        value: programs.length.toString(),
+        delta: `${programs.filter((program) => program.status === "published").length} publiés`
+      },
+      {
+        label: "Modules",
+        value: modules.length.toString(),
+        delta: `${contents.filter((item) => item.module_id).length} contenus rattachés`
+      },
+      {
+        label: "Activations",
+        value: enrollments.length.toString(),
+        delta: `${new Set(enrollments.map((enrollment) => enrollment.user_id)).size} coaché(s) concernés`
+      }
+    ],
+    programOptions: programs.map((program) => ({
+      id: program.id,
+      label: `${program.title} · ${program.status}`
+    })),
+    coacheeOptions,
+    cohortOptions,
+    programs: programs.map((program) => {
+      const programModules = modules
+        .filter((module) => module.program_id === program.id)
+        .sort((left, right) => left.position - right.position);
+      const programEnrollments = enrollments.filter((enrollment) => enrollment.program_id === program.id);
+
+      return {
+        id: program.id,
+        title: program.title,
+        description: program.description,
+        slug: program.slug,
+        status: program.status,
+        moduleCount: programModules.length,
+        enrollmentCount: programEnrollments.length,
+        learnerCount: new Set(programEnrollments.map((enrollment) => enrollment.user_id)).size,
+        contentCount: programModules.reduce(
+          (total, module) => total + (contentCountByModuleId.get(module.id) ?? 0),
+          0
+        ),
+        quizCount: programModules.reduce((total, module) => total + (quizCountByModuleId.get(module.id) ?? 0), 0),
+        modules: programModules.map((module) => ({
+          id: module.id,
+          title: module.title,
+          description: module.description,
+          position: module.position,
+          status: module.status,
+          availableLabel: module.available_at ? formatDate(module.available_at) : "Disponible immédiatement",
+          contentCount: contentCountByModuleId.get(module.id) ?? 0,
+          quizCount: quizCountByModuleId.get(module.id) ?? 0
+        })),
+        recentEnrollments: programEnrollments.slice(0, 4).map((enrollment) => ({
+          id: `${enrollment.program_id}-${enrollment.user_id}`,
+          learner:
+            users.find((user) => user.id === enrollment.user_id)?.name ?? "Coaché",
+          context: enrollment.cohort_id
+            ? `via ${cohortNameById.get(enrollment.cohort_id) ?? "cohorte"}`
+            : "activation individuelle",
+          enrolledAt: formatDate(enrollment.enrolled_at),
+          programLabel: programTitleById.get(enrollment.program_id) ?? "Parcours"
+        }))
+      };
+    })
   };
 }
 
@@ -2741,6 +3021,287 @@ export async function getCoachPageData() {
       date: formatDate(session.starts_at),
       cohort: session.cohort_id ? (cohortNameById.get(session.cohort_id) ?? null) : null
     }))
+  };
+}
+
+export async function getLearnerProgramsPageData() {
+  const context = await requireRole(["admin", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const userId = context.user.id;
+
+  const cohortMembersResult = await admin.from("cohort_members").select("cohort_id").eq("user_id", userId);
+  const cohortIds = (cohortMembersResult.data ?? []).map((item) => item.cohort_id);
+
+  const enrollmentsResult = await admin
+    .from("program_enrollments")
+    .select("program_id, user_id, cohort_id, enrolled_at")
+    .eq("user_id", userId)
+    .order("enrolled_at", { ascending: false });
+
+  const enrollments = (enrollmentsResult.data ?? []) as ProgramEnrollmentRow[];
+  const programIds = Array.from(new Set(enrollments.map((enrollment) => enrollment.program_id)));
+
+  if (!programIds.length) {
+    return {
+      context,
+      metrics: [
+        {
+          label: "Parcours actifs",
+          value: "0",
+          delta: "Aucun programme activé pour ce profil"
+        },
+        {
+          label: "Progression moyenne",
+          value: "0%",
+          delta: "Dès qu'un parcours sera activé, la progression apparaîtra ici"
+        },
+        {
+          label: "Modules visibles",
+          value: "0",
+          delta: "Le studio admin peut maintenant structurer les parcours"
+        }
+      ],
+      programs: []
+    };
+  }
+
+  const [programsResult, modulesResult] = await Promise.all([
+    admin
+      .from("programs")
+      .select("id, title, slug, description, status, created_at")
+      .eq("organization_id", organizationId)
+      .in("id", programIds)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("program_modules")
+      .select("id, program_id, title, description, position, status, available_at")
+      .in("program_id", programIds)
+      .order("position", { ascending: true })
+  ]);
+
+  const programs = (programsResult.data ?? []) as ProgramRow[];
+  const modules = (modulesResult.data ?? []) as ProgramModuleRow[];
+  const moduleIds = modules.map((module) => module.id);
+
+  const [contentsResult, quizzesResult] = await Promise.all([
+    moduleIds.length
+      ? admin
+          .from("content_items")
+          .select(
+            "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+          )
+          .eq("organization_id", organizationId)
+          .eq("status", "published")
+          .in("module_id", moduleIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as ContentRow[] }),
+    moduleIds.length
+      ? admin
+          .from("quizzes")
+          .select("id, module_id, title, description, kind, status, attempts_allowed, time_limit_minutes, passing_score")
+          .eq("organization_id", organizationId)
+          .eq("status", "published")
+          .in("module_id", moduleIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as QuizRow[] })
+  ]);
+
+  const contents = (contentsResult.data ?? []) as ContentRow[];
+  const quizzes = (quizzesResult.data ?? []) as QuizRow[];
+  const contentIds = contents.map((item) => item.id);
+  const quizIds = quizzes.map((item) => item.id);
+
+  const assignmentQuery =
+    context.role === "admin"
+      ? Promise.resolve({ data: [] as AssignmentRow[] })
+      : (() => {
+          const filters = [`assigned_user_id.eq.${userId}`, ...cohortIds.map((cohortId) => `cohort_id.eq.${cohortId}`)];
+
+          if (!filters.length) {
+            return Promise.resolve({ data: [] as AssignmentRow[] });
+          }
+
+          return admin
+            .from("learning_assignments")
+            .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at")
+            .eq("organization_id", organizationId)
+            .or(filters.join(","))
+            .order("published_at", { ascending: false });
+        })();
+
+  const [assignmentsResult, submissionsResult, attemptsResult] = await Promise.all([
+    assignmentQuery,
+    contentIds.length
+      ? admin
+          .from("submissions")
+          .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+          .eq("user_id", userId)
+          .in("content_item_id", contentIds)
+          .order("submitted_at", { ascending: false })
+      : Promise.resolve({ data: [] as SubmissionRow[] }),
+    quizIds.length
+      ? admin
+          .from("quiz_attempts")
+          .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+          .eq("user_id", userId)
+          .in("quiz_id", quizIds)
+          .order("submitted_at", { ascending: false })
+      : Promise.resolve({ data: [] as QuizAttemptResultRow[] })
+  ]);
+
+  const assignments = ((assignmentsResult.data ?? []) as AssignmentRow[]).filter(
+    (assignment) =>
+      (assignment.content_item_id && contentIds.includes(assignment.content_item_id)) ||
+      (assignment.quiz_id && quizIds.includes(assignment.quiz_id))
+  );
+  const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
+
+  const latestSubmissionByContentId = new Map<string, SubmissionRow>();
+  for (const submission of submissions) {
+    if (submission.content_item_id && !latestSubmissionByContentId.has(submission.content_item_id)) {
+      latestSubmissionByContentId.set(submission.content_item_id, submission);
+    }
+  }
+
+  const latestAttemptByQuizId = new Map<string, QuizAttemptResultRow>();
+  for (const attempt of attempts) {
+    if (attempt.quiz_id && !latestAttemptByQuizId.has(attempt.quiz_id)) {
+      latestAttemptByQuizId.set(attempt.quiz_id, attempt);
+    }
+  }
+
+  const assignmentByContentId = new Map<string, AssignmentRow>();
+  const assignmentByQuizId = new Map<string, AssignmentRow>();
+  for (const assignment of assignments) {
+    if (assignment.content_item_id && !assignmentByContentId.has(assignment.content_item_id)) {
+      assignmentByContentId.set(assignment.content_item_id, assignment);
+    }
+
+    if (assignment.quiz_id && !assignmentByQuizId.has(assignment.quiz_id)) {
+      assignmentByQuizId.set(assignment.quiz_id, assignment);
+    }
+  }
+
+  const moduleListByProgramId = modules.reduce((map, module) => {
+    const current = map.get(module.program_id) ?? [];
+    current.push(module);
+    map.set(module.program_id, current);
+    return map;
+  }, new Map<string, ProgramModuleRow[]>());
+
+  const programCards = programs.map((program) => {
+    const programModules = (moduleListByProgramId.get(program.id) ?? []).sort((left, right) => left.position - right.position);
+
+    const moduleCards = programModules.map((module) => {
+      const moduleContents = contents.filter((content) => content.module_id === module.id);
+      const moduleQuizzes = quizzes.filter((quiz) => quiz.module_id === module.id);
+
+      const items = [
+        ...moduleContents.map((content) => {
+          const assignment = assignmentByContentId.get(content.id) ?? null;
+          const submission = latestSubmissionByContentId.get(content.id) ?? null;
+          const completed = Boolean(submission && ["submitted", "reviewed", "late"].includes(submission.status));
+
+          return {
+            id: content.id,
+            type: "contenu",
+            title: content.title,
+            description: content.summary || `${content.content_type}${content.estimated_minutes ? ` · ${content.estimated_minutes} min` : ""}`,
+            completed,
+            href: assignment ? `/assignments/${assignment.id}` : `/library/${content.slug}`,
+            dueLabel: assignment?.due_at ? formatDate(assignment.due_at) : "Accessible maintenant",
+            tone: completed ? "success" : assignment?.due_at ? getDeadlineStateTone(getDeadlineState(assignment.due_at)) : "neutral"
+          };
+        }),
+        ...moduleQuizzes.map((quiz) => {
+          const assignment = assignmentByQuizId.get(quiz.id) ?? null;
+          const attempt = latestAttemptByQuizId.get(quiz.id) ?? null;
+          const completed = Boolean(attempt && ["submitted", "graded"].includes(attempt.status));
+
+          return {
+            id: quiz.id,
+            type: "quiz",
+            title: quiz.title,
+            description:
+              quiz.description ||
+              `${quiz.kind ?? "quiz"}${quiz.time_limit_minutes ? ` · ${quiz.time_limit_minutes} min` : ""}`,
+            completed,
+            href: assignment ? `/quiz/${quiz.id}?assignment=${assignment.id}` : `/quiz/${quiz.id}`,
+            dueLabel: assignment?.due_at ? formatDate(assignment.due_at) : "Ouverture libre",
+            tone: completed ? "success" : assignment?.due_at ? getDeadlineStateTone(getDeadlineState(assignment.due_at)) : "accent"
+          };
+        })
+      ];
+
+      const completedItems = items.filter((item) => item.completed).length;
+      const totalItems = items.length;
+      const progress = totalItems ? Math.round((completedItems / totalItems) * 100) : 0;
+      const nextItem = items.find((item) => !item.completed) ?? null;
+
+      return {
+        id: module.id,
+        title: module.title,
+        description: module.description,
+        position: module.position,
+        status: module.status,
+        availableLabel: module.available_at ? formatDate(module.available_at) : "Ouvert maintenant",
+        progress,
+        progressTone: getProgramProgressTone(progress),
+        completedItems,
+        totalItems,
+        nextFocus: nextItem?.title ?? (items.length ? "Module complété" : "Module en préparation"),
+        items
+      };
+    });
+
+    const totalItems = moduleCards.reduce((total, module) => total + module.totalItems, 0);
+    const completedItems = moduleCards.reduce((total, module) => total + module.completedItems, 0);
+    const progress = totalItems ? Math.round((completedItems / totalItems) * 100) : 0;
+    const nextFocus = moduleCards.find((module) => module.completedItems < module.totalItems)?.nextFocus ?? "Parcours complété";
+    const enrollment = enrollments.find((item) => item.program_id === program.id);
+
+    return {
+      id: program.id,
+      title: program.title,
+      description: program.description,
+      status: program.status,
+      enrolledAt: enrollment ? formatDate(enrollment.enrolled_at) : "Activation récente",
+      progress,
+      progressTone: getProgramProgressTone(progress),
+      completedItems,
+      totalItems,
+      moduleCount: moduleCards.length,
+      nextFocus,
+      modules: moduleCards
+    };
+  });
+
+  const averageProgress = programCards.length
+    ? Math.round(programCards.reduce((total, program) => total + program.progress, 0) / programCards.length)
+    : 0;
+
+  return {
+    context,
+    metrics: [
+      {
+        label: "Parcours actifs",
+        value: programCards.length.toString(),
+        delta: `${enrollments.length} activation(s) enregistrée(s)`
+      },
+      {
+        label: "Progression moyenne",
+        value: `${averageProgress}%`,
+        delta: programCards[0] ? `Focus · ${programCards[0].nextFocus}` : "Aucun focus pour le moment"
+      },
+      {
+        label: "Modules visibles",
+        value: programCards.reduce((total, program) => total + program.moduleCount, 0).toString(),
+        delta: `${programCards.reduce((total, program) => total + program.totalItems, 0)} ressources et quiz`
+      }
+    ],
+    programs: programCards
   };
 }
 

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { getAdminQuizStudioPageData } from "@/lib/platform-data";
 
 export default async function AdminQuizzesPage() {
-  const { metrics, contentOptions, quizzes } = await getAdminQuizStudioPageData();
+  const { metrics, contentOptions, moduleOptions, quizzes } = await getAdminQuizStudioPageData();
 
   return (
     <div className="page-shell">
@@ -26,7 +26,7 @@ export default async function AdminQuizzesPage() {
         ))}
       </section>
 
-      <QuizStudioComposer contentOptions={contentOptions} />
+      <QuizStudioComposer contentOptions={contentOptions} moduleOptions={moduleOptions} />
 
       <section className="panel">
         <div className="panel-header">

@@ -26,6 +26,11 @@ const studios = [
     description: "Relances, cohortes, portefeuilles coach et visibilité pédagogique."
   },
   {
+    href: "/admin/programs",
+    title: "Studio parcours",
+    description: "Structurer des programmes, les découper en modules et les activer par coaché ou cohorte."
+  },
+  {
     href: "/admin/content",
     title: "Studio contenus",
     description: "Créer, publier et organiser les ressources sans surcharger le hub admin."

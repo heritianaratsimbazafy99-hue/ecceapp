@@ -1207,7 +1207,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-form label,
 .auth-form label,
 .quiz-studio-shell label,
-.content-studio-shell label {
+.content-studio-shell label,
+.program-studio-shell label {
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -1225,7 +1226,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .quiz-studio-shell textarea,
 .content-studio-shell input:not([type="hidden"]),
 .content-studio-shell select,
-.content-studio-shell textarea {
+.content-studio-shell textarea,
+.program-studio-shell input:not([type="hidden"]),
+.program-studio-shell select,
+.program-studio-shell textarea {
   width: 100%;
   min-width: 0;
   min-height: 54px;
@@ -1260,7 +1264,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .quiz-studio-shell textarea:focus,
 .content-studio-shell input:not([type="hidden"]):focus,
 .content-studio-shell select:focus,
-.content-studio-shell textarea:focus {
+.content-studio-shell textarea:focus,
+.program-studio-shell input:not([type="hidden"]):focus,
+.program-studio-shell select:focus,
+.program-studio-shell textarea:focus {
   outline: none;
   border-color: rgba(255, 106, 61, 0.36);
   box-shadow: 0 0 0 4px rgba(255, 106, 61, 0.12), 0 16px 36px rgba(16, 24, 32, 0.08);
@@ -4173,6 +4180,235 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   padding: 1.1rem;
 }
 
+.program-studio-shell,
+.program-board {
+  display: grid;
+  gap: 24px;
+}
+
+.program-studio-hero,
+.program-card {
+  overflow: hidden;
+}
+
+.program-studio-hero {
+  display: grid;
+  gap: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 106, 61, 0.18), transparent 28%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(255, 246, 238, 0.94));
+}
+
+.program-studio-hero-copy,
+.program-card-hero,
+.program-module-card,
+.program-item-card,
+.program-admin-card,
+.program-inline-form,
+.program-enrollment-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.program-studio-hero-metrics,
+.program-admin-kpis,
+.program-card-metrics,
+.program-item-grid,
+.program-admin-grid,
+.program-briefing-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.program-studio-hero-metrics,
+.program-admin-kpis,
+.program-card-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.program-studio-hero-metrics article,
+.program-admin-kpis article,
+.program-card-metrics article {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.program-studio-hero-metrics strong,
+.program-admin-kpis strong,
+.program-card-metrics strong {
+  font-size: 1.3rem;
+}
+
+.program-studio-hero-metrics span,
+.program-admin-kpis span,
+.program-card-metrics span {
+  color: var(--muted);
+}
+
+.program-briefing-layout {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  align-items: start;
+}
+
+.program-briefing-card,
+.program-module-draft,
+.program-admin-module,
+.program-module-card {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 28px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 18px 44px rgba(16, 24, 32, 0.06);
+}
+
+.program-briefing-card-primary {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 244, 236, 0.9));
+}
+
+.program-briefing-card-head,
+.program-module-draft-head,
+.program-admin-card-head,
+.program-module-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.program-studio-grid,
+.program-inline-grid,
+.program-admin-module-list,
+.program-admin-enrollment-list,
+.program-module-list {
+  display: grid;
+  gap: 14px;
+}
+
+.program-studio-grid,
+.program-inline-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.program-studio-preview-note,
+.program-next-focus {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(16, 24, 32, 0.05);
+}
+
+.program-module-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.program-studio-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.program-inline-form,
+.program-enrollment-panel {
+  margin-top: 18px;
+}
+
+.program-enrollment-mode {
+  display: inline-flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.program-enrollment-chip {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.program-enrollment-chip.is-active {
+  background: rgba(255, 106, 61, 0.14);
+  border-color: rgba(255, 106, 61, 0.28);
+  color: var(--accent);
+}
+
+.program-admin-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.program-admin-card-head h3,
+.program-card-hero h3 {
+  margin: 10px 0 8px;
+}
+
+.program-admin-module-list,
+.program-admin-enrollment-list,
+.program-module-list {
+  margin-top: 6px;
+}
+
+.program-board {
+  margin-top: 10px;
+}
+
+.program-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 239, 0.9));
+}
+
+.program-card-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  align-items: start;
+}
+
+.program-progress-track {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.08);
+  overflow: hidden;
+}
+
+.program-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 106, 61, 1), rgba(255, 154, 61, 0.9));
+}
+
+.program-module-card {
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.program-module-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.program-item-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.program-item-card {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+}
+
 @media (max-width: 1080px) {
   .hero {
     grid-template-columns: 1fr;
@@ -4220,7 +4456,16 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .onboarding-page,
   .auth-showcase-grid,
   .auth-metric-row,
-  .onboarding-checklist {
+  .onboarding-checklist,
+  .program-admin-grid,
+  .program-item-grid,
+  .program-briefing-layout,
+  .program-card-hero,
+  .program-studio-grid,
+  .program-inline-grid,
+  .program-studio-hero-metrics,
+  .program-admin-kpis,
+  .program-card-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4266,7 +4511,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
   .notification-command-toolbar,
   .panel-header-rich,
-  .messaging-preview-head {
+  .messaging-preview-head,
+  .program-module-draft-head,
+  .program-admin-card-head,
+  .program-module-card-head {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -4360,7 +4608,16 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .coach-portfolio-metrics,
   .coach-roster-kpis,
   .assignment-page-metrics,
-  .assignment-submission-metrics {
+  .assignment-submission-metrics,
+  .program-admin-grid,
+  .program-item-grid,
+  .program-briefing-layout,
+  .program-card-hero,
+  .program-studio-grid,
+  .program-inline-grid,
+  .program-studio-hero-metrics,
+  .program-admin-kpis,
+  .program-card-metrics {
     grid-template-columns: 1fr;
   }
 
@@ -4378,7 +4635,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .quiz-choice-editor-head,
   .library-search-head,
   .assignment-board-head,
-  .coach-roster-head {
+  .coach-roster-head,
+  .program-module-draft-head,
+  .program-admin-card-head,
+  .program-module-card-head {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -4511,7 +4771,16 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .auth-showcase-grid,
   .auth-metric-row,
   .onboarding-checklist,
-  .auth-form-grid-halves {
+  .auth-form-grid-halves,
+  .program-admin-grid,
+  .program-item-grid,
+  .program-briefing-layout,
+  .program-card-hero,
+  .program-studio-grid,
+  .program-inline-grid,
+  .program-studio-hero-metrics,
+  .program-admin-kpis,
+  .program-card-metrics {
     grid-template-columns: 1fr;
   }
 }

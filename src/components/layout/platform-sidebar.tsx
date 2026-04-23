@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", shortLabel: "DB", match: "exact", roles: ["admin", "coachee"] },
+  { href: "/programs", label: "Parcours", shortLabel: "PA", match: "exact", roles: ["coachee"] },
   { href: "/library", label: "Bibliothèque", shortLabel: "BI", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/professor", label: "Insights prof", shortLabel: "PR", match: "exact", roles: ["admin", "professor"] },
   { href: "/messages", label: "Messages", shortLabel: "MS", match: "exact", roles: ["coach", "coachee"] },
@@ -16,6 +17,7 @@ const navigation = [
   { href: "/coach", label: "Espace coach", shortLabel: "CO", match: "exact", roles: ["admin", "coach"] },
   { href: "/admin", label: "Hub admin", shortLabel: "AD", match: "exact", roles: ["admin"] },
   { href: "/admin/learners", label: "Parcours coachés", shortLabel: "PC", match: "prefix", roles: ["admin"] },
+  { href: "/admin/programs", label: "Studio parcours", shortLabel: "SP", match: "prefix", roles: ["admin"] },
   { href: "/admin/content", label: "Studio contenus", shortLabel: "SC", match: "prefix", roles: ["admin"] },
   { href: "/admin/quizzes", label: "Studio quiz", shortLabel: "SQ", match: "prefix", roles: ["admin"] },
   { href: "/admin/assignments", label: "Assignations", shortLabel: "AS", match: "prefix", roles: ["admin"] }

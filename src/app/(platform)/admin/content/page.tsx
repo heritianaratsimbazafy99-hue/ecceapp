@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { getAdminContentStudioPageData } from "@/lib/platform-data";
 
 export default async function AdminContentPage() {
-  const { metrics, contents } = await getAdminContentStudioPageData();
+  const { metrics, contents, moduleOptions } = await getAdminContentStudioPageData();
 
   return (
     <div className="page-shell">
@@ -22,7 +22,7 @@ export default async function AdminContentPage() {
         ))}
       </section>
 
-      <ContentStudioComposer />
+      <ContentStudioComposer moduleOptions={moduleOptions} />
 
       <section className="panel">
         <div className="panel-header">
