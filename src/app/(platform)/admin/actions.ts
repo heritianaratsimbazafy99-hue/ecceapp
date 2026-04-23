@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireRole, type AppRole } from "@/lib/auth";
+import { getOrganizationBrandingById } from "@/lib/organization";
 import { createNotifications, getAssignmentRecipientIds } from "@/lib/platform-events";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
@@ -172,6 +173,7 @@ export async function createUserAction(
   const context = await requireRole(["admin"]);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
+  const branding = await getOrganizationBrandingById(organizationId);
 
   const firstName = String(formData.get("first_name") ?? "").trim();
   const lastName = String(formData.get("last_name") ?? "").trim();
@@ -204,6 +206,7 @@ export async function createUserAction(
     organization_id: organizationId,
     first_name: firstName,
     last_name: lastName,
+    timezone: branding.defaultTimezone,
     status: "invited"
   });
 

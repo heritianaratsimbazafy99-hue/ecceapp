@@ -4522,6 +4522,89 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   gap: 10px;
 }
 
+.organization-settings-hero,
+.organization-settings-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.organization-settings-hero {
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  align-items: stretch;
+}
+
+.organization-brand-preview,
+.organization-settings-stack,
+.organization-settings-aside,
+.organization-settings-reference-list {
+  display: grid;
+  gap: 18px;
+}
+
+.organization-brand-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.organization-brand-preview-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.organization-brand-preview-copy h3,
+.organization-brand-preview-story,
+.organization-brand-preview-support {
+  margin: 0;
+}
+
+.organization-brand-preview-story {
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: #fff7ef;
+}
+
+.organization-brand-preview-support {
+  color: rgba(247, 242, 235, 0.82);
+}
+
+.organization-settings-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.organization-settings-metrics article,
+.organization-settings-reference-list > div {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.organization-settings-metrics strong,
+.organization-settings-reference-list strong,
+.organization-settings-reference-list a {
+  word-break: break-word;
+}
+
+.organization-settings-reference-list a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.organization-settings-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  align-items: start;
+}
+
+.organization-settings-checkbox {
+  gap: 10px;
+}
+
 @media (max-width: 1080px) {
   .hero {
     grid-template-columns: 1fr;
@@ -4629,7 +4712,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .program-module-draft-head,
   .program-admin-card-head,
   .program-module-card-head,
-  .agenda-head {
+  .agenda-head,
+  .organization-brand-preview-head {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -4896,7 +4980,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .program-studio-hero-metrics,
   .program-admin-kpis,
   .program-card-metrics,
-  .agenda-hero-metrics {
+  .agenda-hero-metrics,
+  .organization-settings-hero,
+  .organization-settings-grid,
+  .organization-settings-metrics {
     grid-template-columns: 1fr;
   }
 

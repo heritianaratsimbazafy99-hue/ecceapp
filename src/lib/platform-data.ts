@@ -1,5 +1,6 @@
 import { getAssignedCoachIdsForCoachee, getCoachAssignmentScope } from "@/lib/coach-assignments";
 import { requireRole, type AppRole } from "@/lib/auth";
+import { getOrganizationBrandingById } from "@/lib/organization";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ProfileRow = {
@@ -3092,6 +3093,7 @@ export async function getAgendaPageData() {
           coachId: userId
         })
       : null;
+  const branding = await getOrganizationBrandingById(organizationId);
 
   const directCohortRowsResult = await admin.from("cohort_members").select("user_id, cohort_id");
   const allCohortRows = (directCohortRowsResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
@@ -3339,7 +3341,7 @@ export async function getAgendaPageData() {
   const contentById = new Map(((contentsResult.data ?? []) as Array<{ id: string; title: string; slug: string }>).map((item) => [item.id, item]));
   const quizById = new Map(((quizzesResult.data ?? []) as Array<{ id: string; title: string }>).map((item) => [item.id, item]));
 
-  const showPlanner = context.role === "admin" || context.role === "coach";
+  const showPlanner = context.role === "admin" || (context.role === "coach" && branding.allowCoachSelfSchedule);
   const coachOptions = showPlanner
     ? profiles
         .filter((profile) => coachIds.has(profile.id) || (context.role === "coach" && profile.id === userId))

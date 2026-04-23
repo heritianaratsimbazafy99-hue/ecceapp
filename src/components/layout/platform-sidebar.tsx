@@ -18,6 +18,7 @@ const navigation = [
   { href: "/coach", label: "Espace coach", shortLabel: "CO", match: "exact", roles: ["admin", "coach"] },
   { href: "/admin", label: "Hub admin", shortLabel: "AD", match: "exact", roles: ["admin"] },
   { href: "/admin/learners", label: "Parcours coachés", shortLabel: "PC", match: "prefix", roles: ["admin"] },
+  { href: "/admin/settings", label: "Réglages", shortLabel: "RG", match: "prefix", roles: ["admin"] },
   { href: "/admin/programs", label: "Studio parcours", shortLabel: "SP", match: "prefix", roles: ["admin"] },
   { href: "/admin/content", label: "Studio contenus", shortLabel: "SC", match: "prefix", roles: ["admin"] },
   { href: "/admin/quizzes", label: "Studio quiz", shortLabel: "SQ", match: "prefix", roles: ["admin"] },
@@ -25,6 +26,9 @@ const navigation = [
 ] as Array<{ href: string; label: string; shortLabel: string; match: "exact" | "prefix"; roles: AppRole[] }>;
 
 type PlatformSidebarProps = {
+  brandMark?: string;
+  brandName?: string;
+  platformTagline?: string;
   role?: string | null;
   userName?: string | null;
   roles?: AppRole[];
@@ -34,6 +38,9 @@ const SIDEBAR_PINNED_STORAGE_KEY = "ecce-platform-sidebar-pinned";
 const DESKTOP_MEDIA_QUERY = "(min-width: 1081px)";
 
 export function PlatformSidebar({
+  brandMark = "ECCE",
+  brandName = "Workspace",
+  platformTagline = "ecole de coaching",
   role = "coach",
   userName = "Utilisateur ECCE",
   roles = []
@@ -136,7 +143,7 @@ export function PlatformSidebar({
         type="button"
       >
         <span className="platform-sidebar-rail-line" aria-hidden="true" />
-        <span className="platform-sidebar-rail-copy">Menu ECCE</span>
+        <span className="platform-sidebar-rail-copy">Menu {brandMark}</span>
       </button>
 
       <aside
@@ -149,10 +156,10 @@ export function PlatformSidebar({
 
         <div className="platform-sidebar-top">
           <Link className="brand brand-inverse" href="/">
-            <span className="brand-mark">ECCE</span>
+            <span className="brand-mark">{brandMark}</span>
             <span className="brand-copy">
-              <strong>Workspace</strong>
-              <small>école de coaching</small>
+              <strong>{brandName}</strong>
+              <small>{platformTagline}</small>
             </span>
           </Link>
 

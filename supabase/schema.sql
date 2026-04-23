@@ -29,6 +29,23 @@ create table if not exists public.organizations (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.organization_settings (
+  organization_id uuid primary key references public.organizations (id) on delete cascade,
+  display_name text,
+  short_name text,
+  platform_tagline text,
+  marketing_headline text,
+  marketing_subheadline text,
+  support_email text,
+  support_phone text,
+  website_url text,
+  default_timezone text not null default 'Indian/Antananarivo',
+  default_locale text not null default 'fr',
+  allow_coach_self_schedule boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   organization_id uuid not null references public.organizations (id) on delete cascade,
@@ -302,6 +319,10 @@ create trigger profiles_set_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
+create trigger organization_settings_set_updated_at
+before update on public.organization_settings
+for each row execute function public.set_updated_at();
+
 create trigger cohorts_set_updated_at
 before update on public.cohorts
 for each row execute function public.set_updated_at();
@@ -359,6 +380,7 @@ as $$
 $$;
 
 alter table public.organizations enable row level security;
+alter table public.organization_settings enable row level security;
 alter table public.profiles enable row level security;
 alter table public.user_roles enable row level security;
 alter table public.cohorts enable row level security;
@@ -384,6 +406,17 @@ create policy "organization members can read organizations"
 on public.organizations
 for select
 using (public.is_org_member(id));
+
+create policy "organization members can read settings"
+on public.organization_settings
+for select
+using (public.is_org_member(organization_id));
+
+create policy "admins can manage settings"
+on public.organization_settings
+for all
+using (public.has_org_role(organization_id, 'admin'))
+with check (public.has_org_role(organization_id, 'admin'));
 
 create policy "users can read own profile or staff can read org profiles"
 on public.profiles

@@ -8,6 +8,7 @@ import {
   isSuspendedStatus,
   requiresOnboarding
 } from "@/lib/auth";
+import { getOrganizationBrandingById } from "@/lib/organization";
 
 function getRoleHighlights(roles: string[]) {
   if (roles.includes("admin")) {
@@ -66,6 +67,7 @@ export default async function OnboardingPage() {
       ? `${profile.first_name} ${profile.last_name}`
       : user.email ?? "Membre ECCE";
   const roleHighlights = getRoleHighlights(roles);
+  const branding = await getOrganizationBrandingById(profile.organization_id);
 
   return (
     <main className="auth-page onboarding-page">
@@ -75,7 +77,7 @@ export default async function OnboardingPage() {
           <h1>Bienvenue {displayName}, on finalise ton espace avant de te lancer.</h1>
           <p>
             Deux minutes suffisent pour activer ton profil, ajuster le fuseau horaire et rendre ton
-            espace ECCE cohérent pour les séances, les deadlines et la collaboration.
+            espace {branding.shortName} cohérent pour les séances, les deadlines et la collaboration.
           </p>
         </div>
 
@@ -106,7 +108,7 @@ export default async function OnboardingPage() {
           <h1>Dernière étape avant l&apos;ouverture du workspace.</h1>
           <p>
             Ton compte est encore marqué <strong>invited</strong>. Une fois ces informations
-            enregistrées, ECCE t&apos;enverra directement sur la bonne interface métier.
+            enregistrées, {branding.shortName} t&apos;enverra directement sur la bonne interface métier.
           </p>
         </div>
 
@@ -126,11 +128,12 @@ export default async function OnboardingPage() {
         </div>
 
         <OnboardingForm
+          brandName={branding.shortName}
           defaultValues={{
             bio: profile.bio ?? "",
             firstName: profile.first_name,
             lastName: profile.last_name,
-            timezone: profile.timezone ?? "Indian/Antananarivo"
+            timezone: profile.timezone ?? branding.defaultTimezone
           }}
         />
       </section>

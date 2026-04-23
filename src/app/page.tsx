@@ -2,18 +2,30 @@ import { Hero } from "@/components/marketing/hero";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { Badge } from "@/components/ui/badge";
 import { SectionHeading } from "@/components/ui/section-heading";
+import { getDefaultOrganizationBranding } from "@/lib/organization";
 import {
   experienceBlocks,
   productPillars,
   roadmapPhases
 } from "@/lib/mock-data";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const branding = await getDefaultOrganizationBranding();
+
   return (
     <main className="marketing-page">
       <div className="marketing-shell">
-        <SiteHeader />
-        <Hero />
+        <SiteHeader
+          brandMark={branding.brandMark}
+          displayName={branding.displayName}
+          platformTagline={branding.platformTagline}
+        />
+        <Hero
+          displayName={branding.displayName}
+          marketingHeadline={branding.marketingHeadline}
+          marketingSubheadline={branding.marketingSubheadline}
+          shortName={branding.shortName}
+        />
 
         <section className="section" id="produit">
           <SectionHeading

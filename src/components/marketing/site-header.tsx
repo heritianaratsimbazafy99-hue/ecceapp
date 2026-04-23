@@ -1,13 +1,19 @@
 import Link from "next/link";
 
-export function SiteHeader() {
+type SiteHeaderProps = {
+  brandMark: string;
+  displayName: string;
+  platformTagline: string;
+};
+
+export function SiteHeader({ brandMark, displayName, platformTagline }: SiteHeaderProps) {
   return (
     <header className="site-header">
       <Link className="brand" href="/">
-        <span className="brand-mark">ECCE</span>
+        <span className="brand-mark">{brandMark}</span>
         <span className="brand-copy">
-          <strong>Coaching Platform</strong>
-          <small>parcours, évaluation, accompagnement</small>
+          <strong>{displayName}</strong>
+          <small>{platformTagline}</small>
         </span>
       </Link>
 

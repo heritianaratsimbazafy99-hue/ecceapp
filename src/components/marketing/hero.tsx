@@ -2,19 +2,25 @@ import Link from "next/link";
 
 import { heroMetrics } from "@/lib/mock-data";
 
-export function Hero() {
+type HeroProps = {
+  displayName: string;
+  marketingHeadline: string;
+  marketingSubheadline: string;
+  shortName: string;
+};
+
+export function Hero({
+  displayName,
+  marketingHeadline,
+  marketingSubheadline,
+  shortName
+}: HeroProps) {
   return (
     <section className="hero">
       <div className="hero-copy">
-        <span className="eyebrow">Plateforme ECCE</span>
-        <h1>
-          Une expérience de coaching moderne, conçue pour apprendre, suivre et
-          faire progresser chaque coaché.
-        </h1>
-        <p>
-          ECCE réunit parcours pédagogiques, bibliothèque de contenus, quiz,
-          corrections, deadlines et cockpit coach dans un seul produit premium.
-        </p>
+        <span className="eyebrow">Plateforme {shortName}</span>
+        <h1>{marketingHeadline}</h1>
+        <p>{marketingSubheadline}</p>
 
         <div className="hero-actions">
           <Link className="button" href="/dashboard">
@@ -28,7 +34,7 @@ export function Hero() {
 
       <div className="hero-panel">
         <div className="hero-panel-header">
-          <span>Vue consolidée ECCE</span>
+          <span>Vue consolidée {shortName}</span>
           <span>coaché + coach + admin</span>
         </div>
 
@@ -45,7 +51,7 @@ export function Hero() {
           <div className="preview-column">
             <span>Coaché</span>
             <strong>Continuer le module 3</strong>
-            <small>Quiz à rendre demain</small>
+            <small>{displayName} · quiz à rendre demain</small>
           </div>
           <div className="preview-column">
             <span>Coach</span>

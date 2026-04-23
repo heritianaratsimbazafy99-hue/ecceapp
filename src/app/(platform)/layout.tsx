@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AccountChip } from "@/components/layout/account-chip";
 import { PlatformSidebar } from "@/components/layout/platform-sidebar";
 import { getCurrentUserContext, isSuspendedStatus, requiresOnboarding } from "@/lib/auth";
+import { getOrganizationBrandingById } from "@/lib/organization";
 
 export default async function PlatformLayout({
   children
@@ -13,6 +14,10 @@ export default async function PlatformLayout({
   const { user, profile, role, roles } = await getCurrentUserContext();
 
   if (!user) {
+    redirect("/auth/sign-in");
+  }
+
+  if (!profile) {
     redirect("/auth/sign-in");
   }
 
@@ -28,10 +33,18 @@ export default async function PlatformLayout({
     profile?.first_name && profile?.last_name
       ? `${profile.first_name} ${profile.last_name}`
       : user.email ?? "Utilisateur ECCE";
+  const branding = await getOrganizationBrandingById(profile.organization_id);
 
   return (
     <main className="platform-layout">
-      <PlatformSidebar role={role} roles={roles} userName={displayName} />
+      <PlatformSidebar
+        brandMark={branding.brandMark}
+        brandName={branding.displayName}
+        platformTagline={branding.platformTagline}
+        role={role}
+        roles={roles}
+        userName={displayName}
+      />
       <section className="platform-content">
         <AccountChip
           email={user.email ?? "email inconnu"}

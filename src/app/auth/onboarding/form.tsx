@@ -17,6 +17,7 @@ const TIMEZONE_OPTIONS = [
 ];
 
 type OnboardingFormProps = {
+  brandName: string;
   defaultValues: {
     bio: string;
     firstName: string;
@@ -25,8 +26,11 @@ type OnboardingFormProps = {
   };
 };
 
-export function OnboardingForm({ defaultValues }: OnboardingFormProps) {
+export function OnboardingForm({ brandName, defaultValues }: OnboardingFormProps) {
   const [state, formAction, pending] = useActionState(completeOnboardingAction, initialState);
+  const timezoneOptions = TIMEZONE_OPTIONS.some((option) => option.value === defaultValues.timezone)
+    ? TIMEZONE_OPTIONS
+    : [{ value: defaultValues.timezone, label: `Personnalisé · ${defaultValues.timezone}` }, ...TIMEZONE_OPTIONS];
 
   return (
     <form action={formAction} className="auth-form auth-form-shell">
@@ -45,7 +49,7 @@ export function OnboardingForm({ defaultValues }: OnboardingFormProps) {
       <label>
         Fuseau horaire
         <select defaultValue={defaultValues.timezone} name="timezone">
-          {TIMEZONE_OPTIONS.map((option) => (
+          {timezoneOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -74,11 +78,11 @@ export function OnboardingForm({ defaultValues }: OnboardingFormProps) {
       <div className="auth-form-footer">
         <p>
           En validant, ton profil passe de <strong>invited</strong> à <strong>active</strong> et
-          l&apos;espace ECCE se débloque automatiquement.
+          l&apos;espace {brandName} se débloque automatiquement.
         </p>
 
         <button className="button button-block" disabled={pending} type="submit">
-          {pending ? "Activation en cours..." : "Activer mon espace ECCE"}
+          {pending ? "Activation en cours..." : `Activer mon espace ${brandName}`}
         </button>
       </div>
     </form>

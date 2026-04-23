@@ -9,10 +9,12 @@ import {
   getCurrentUserContext,
   isSuspendedStatus
 } from "@/lib/auth";
+import { getDefaultOrganizationBranding } from "@/lib/organization";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default async function SignInPage() {
   const supabaseReady = isSupabaseConfigured();
+  const branding = await getDefaultOrganizationBranding();
   const { user, role, roles, profile } = await getCurrentUserContext();
 
   if (user) {
@@ -33,11 +35,8 @@ export default async function SignInPage() {
           <Badge tone={supabaseReady ? "success" : "warning"}>
             {supabaseReady ? "Supabase prêt" : "Configurer .env.local"}
           </Badge>
-          <h1>Un point d&apos;entrée plus premium pour toute l&apos;équipe ECCE.</h1>
-          <p>
-            Connexion, redirection par rôle, première mise en route guidée et verrouillage propre
-            des profils avant l&apos;entrée dans la plateforme.
-          </p>
+          <h1>{branding.marketingHeadline}</h1>
+          <p>{branding.marketingSubheadline}</p>
         </div>
 
         <div className="auth-showcase-grid">
@@ -86,7 +85,7 @@ export default async function SignInPage() {
           <>
             <div className="auth-card-copy">
               <Badge tone="warning">Accès suspendu</Badge>
-              <h1>Ton espace ECCE est momentanément bloqué.</h1>
+              <h1>Ton espace {branding.shortName} est momentanément bloqué.</h1>
               <p>
                 Le compte <strong>{user?.email ?? "utilisateur"}</strong> est actuellement suspendu.
                 Déconnecte-toi puis contacte l&apos;équipe pédagogique pour réactiver l&apos;accès.
@@ -117,15 +116,21 @@ export default async function SignInPage() {
         ) : (
           <>
             <div className="auth-card-copy">
-              <Badge tone="accent">Connexion ECCE</Badge>
+              <Badge tone="accent">Connexion {branding.shortName}</Badge>
               <h1>Entre dans ton espace en quelques secondes.</h1>
               <p>
                 Le mot de passe transmis par l&apos;admin suffit. Si ton compte vient d&apos;être créé,
-                ECCE t&apos;accueillera d&apos;abord avec une mise en route courte et guidée.
+                {branding.shortName} t&apos;accueillera d&apos;abord avec une mise en route courte et guidée.
               </p>
             </div>
 
             <SignInForm />
+
+            {branding.supportEmail ? (
+              <p className="form-helper">
+                Besoin d&apos;aide ? Contacte <strong>{branding.supportEmail}</strong>.
+              </p>
+            ) : null}
 
             <Link className="button button-secondary button-block" href="/">
               Retour à la vision produit

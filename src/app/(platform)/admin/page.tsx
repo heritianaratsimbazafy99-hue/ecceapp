@@ -26,6 +26,11 @@ const studios = [
     description: "Relances, cohortes, portefeuilles coach et visibilité pédagogique."
   },
   {
+    href: "/admin/settings",
+    title: "Réglages organisation",
+    description: "Branding, support, fuseau par défaut et paramètres structurants de la plateforme."
+  },
+  {
     href: "/admin/programs",
     title: "Studio parcours",
     description: "Structurer des programmes, les découper en modules et les activer par coaché ou cohorte."
