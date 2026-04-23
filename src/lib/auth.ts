@@ -5,12 +5,15 @@ import type { User } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type AppRole = "admin" | "professor" | "coach" | "coachee";
+export type MembershipStatus = "invited" | "active" | "suspended";
 
 type ProfileRecord = {
+  bio: string | null;
   first_name: string;
   last_name: string;
   organization_id: string;
-  status: "invited" | "active" | "suspended";
+  status: MembershipStatus;
+  timezone: string;
   user_roles: Array<{ role: AppRole }>;
 };
 
@@ -23,8 +26,16 @@ type AuthenticatedUserContext = {
 
 const ROLE_PRIORITY: AppRole[] = ["admin", "coach", "professor", "coachee"];
 
-function getPrimaryRole(roles: AppRole[]) {
+export function getPrimaryRole(roles: AppRole[]) {
   return ROLE_PRIORITY.find((role) => roles.includes(role)) ?? null;
+}
+
+export function requiresOnboarding(status: MembershipStatus | string | null | undefined) {
+  return status === "invited";
+}
+
+export function isSuspendedStatus(status: MembershipStatus | string | null | undefined) {
+  return status === "suspended";
 }
 
 export const getCurrentUserContext = cache(async () => {
@@ -48,8 +59,10 @@ export const getCurrentUserContext = cache(async () => {
       `
         first_name,
         last_name,
+        bio,
         organization_id,
         status,
+        timezone,
         user_roles (
           role
         )
@@ -85,6 +98,20 @@ export function getRouteForRole(role: AppRole | string | null) {
     default:
       return "/dashboard";
   }
+}
+
+export function getAuthenticatedRedirectTarget({
+  role,
+  status
+}: {
+  role: AppRole | string | null;
+  status?: MembershipStatus | string | null;
+}) {
+  if (requiresOnboarding(status)) {
+    return "/auth/onboarding";
+  }
+
+  return getRouteForRole(role);
 }
 
 export async function requireAuthenticatedUser() {

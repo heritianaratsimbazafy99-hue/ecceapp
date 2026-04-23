@@ -158,7 +158,7 @@ export async function createUserAction(
     organization_id: organizationId,
     first_name: firstName,
     last_name: lastName,
-    status: "active"
+    status: "invited"
   });
 
   if (profileInsert.error) {
@@ -185,7 +185,7 @@ export async function createUserAction(
   revalidatePath("/coach");
   revalidatePath("/admin/learners");
 
-  return ok(`Utilisateur créé avec le rôle ${role}.`);
+  return ok(`Utilisateur créé avec le rôle ${role}. Il passera par l'onboarding ECCE à la première connexion.`);
 }
 
 export async function assignRoleAction(

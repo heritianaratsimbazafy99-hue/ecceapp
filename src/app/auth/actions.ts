@@ -1,8 +1,18 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { getRouteForRole } from "@/lib/auth";
+import {
+  getAuthenticatedRedirectTarget,
+  getPrimaryRole,
+  getRouteForRole,
+  isSuspendedStatus,
+  requireAuthenticatedUser,
+  type AppRole,
+  type MembershipStatus
+} from "@/lib/auth";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type AuthActionState = {
@@ -38,14 +48,88 @@ export async function signInAction(
     return { error: "Connexion réussie, mais la session n'a pas pu être récupérée." };
   }
 
-  const { data: roleRow } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle<{ role: "admin" | "professor" | "coach" | "coachee" }>();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select(
+      `
+        status,
+        user_roles (
+          role
+        )
+      `
+    )
+    .eq("id", user.id)
+    .maybeSingle<{ status: MembershipStatus; user_roles: Array<{ role: AppRole }> }>();
 
-  redirect(getRouteForRole(roleRow?.role ?? null));
+  if (isSuspendedStatus(profile?.status)) {
+    await supabase.auth.signOut();
+
+    return {
+      error: "Ton accès ECCE est actuellement suspendu. Contacte l'équipe pédagogique pour le réactiver."
+    };
+  }
+
+  const roles = Array.from(new Set((profile?.user_roles ?? []).map((item) => item.role)));
+  const primaryRole = getPrimaryRole(roles);
+
+  redirect(
+    getAuthenticatedRedirectTarget({
+      role: primaryRole,
+      status: profile?.status ?? null
+    })
+  );
+}
+
+export async function completeOnboardingAction(
+  _prevState: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  const context = await requireAuthenticatedUser();
+
+  if (isSuspendedStatus(context.profile.status)) {
+    return {
+      error: "Ton profil est suspendu. Contacte l'équipe ECCE pour reprendre l'accès."
+    };
+  }
+
+  const firstName = String(formData.get("first_name") ?? "").trim();
+  const lastName = String(formData.get("last_name") ?? "").trim();
+  const timezone = String(formData.get("timezone") ?? "").trim();
+  const bio = String(formData.get("bio") ?? "").trim();
+
+  if (!firstName || !lastName || !timezone) {
+    return {
+      error: "Complète au minimum ton prénom, ton nom et ton fuseau horaire."
+    };
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("profiles")
+    .update({
+      first_name: firstName,
+      last_name: lastName,
+      timezone,
+      bio: bio || null,
+      status: "active"
+    })
+    .eq("id", context.user.id)
+    .eq("organization_id", context.profile.organization_id);
+
+  if (error) {
+    return {
+      error: error.message
+    };
+  }
+
+  revalidatePath("/auth/sign-in");
+  revalidatePath("/auth/onboarding");
+  revalidatePath("/dashboard");
+  revalidatePath("/coach");
+  revalidatePath("/admin");
+  revalidatePath("/professor");
+
+  redirect(getRouteForRole(context.role));
 }
 
 export async function signOutAction() {

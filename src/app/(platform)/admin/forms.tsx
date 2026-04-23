@@ -100,6 +100,11 @@ export function CreateUserForm() {
         </label>
       </div>
 
+      <p className="form-helper">
+        Le nouvel utilisateur sera créé en statut <strong>invited</strong> puis activera lui-même son
+        espace via l&apos;onboarding ECCE.
+      </p>
+
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Créer l'utilisateur" pendingLabel="Création..." />
     </form>

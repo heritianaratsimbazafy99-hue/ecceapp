@@ -114,7 +114,7 @@ export default async function AdminPage() {
         <div className="panel">
           <div className="panel-header">
             <h3>Créer un utilisateur</h3>
-            <p>Création du compte Supabase, du profil ECCE et du rôle initial.</p>
+            <p>Création du compte Supabase, du profil ECCE et du rôle initial avec onboarding guidé à la première connexion.</p>
           </div>
           <CreateUserForm />
         </div>

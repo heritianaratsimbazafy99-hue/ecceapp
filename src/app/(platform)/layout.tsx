@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { AccountChip } from "@/components/layout/account-chip";
 import { PlatformSidebar } from "@/components/layout/platform-sidebar";
-import { getCurrentUserContext } from "@/lib/auth";
+import { getCurrentUserContext, isSuspendedStatus, requiresOnboarding } from "@/lib/auth";
 
 export default async function PlatformLayout({
   children
@@ -14,6 +14,14 @@ export default async function PlatformLayout({
 
   if (!user) {
     redirect("/auth/sign-in");
+  }
+
+  if (profile && isSuspendedStatus(profile.status)) {
+    redirect("/auth/sign-in");
+  }
+
+  if (profile && requiresOnboarding(profile.status)) {
+    redirect("/auth/onboarding");
   }
 
   const displayName =
