@@ -456,6 +456,7 @@ function getProgramProgressTone(progress: number): "neutral" | "accent" | "warni
 }
 
 type AdminProgramLane = "priority" | "scaffold" | "draft" | "active";
+type LearnerProgramLane = "urgent" | "momentum" | "launch" | "completed";
 
 function isAdminProgramLane(value: string | null | undefined): value is AdminProgramLane {
   return ["priority", "scaffold", "draft", "active"].includes(value ?? "");
@@ -497,6 +498,36 @@ function getProgramStatusTone(status: string): BadgeTone {
       return "warning";
     default:
       return "neutral";
+  }
+}
+
+function isLearnerProgramLane(value: string | null | undefined): value is LearnerProgramLane {
+  return ["urgent", "momentum", "launch", "completed"].includes(value ?? "");
+}
+
+function getLearnerProgramLaneLabel(lane: LearnerProgramLane) {
+  switch (lane) {
+    case "urgent":
+      return "A securiser";
+    case "momentum":
+      return "En cours";
+    case "launch":
+      return "A lancer";
+    default:
+      return "Complete";
+  }
+}
+
+function getLearnerProgramLaneTone(lane: LearnerProgramLane): BadgeTone {
+  switch (lane) {
+    case "urgent":
+      return "warning";
+    case "momentum":
+      return "accent";
+    case "launch":
+      return "neutral";
+    default:
+      return "success";
   }
 }
 
@@ -7679,7 +7710,10 @@ export async function getAgendaPageData() {
   };
 }
 
-export async function getLearnerProgramsPageData() {
+export async function getLearnerProgramsPageData(filters?: {
+  query?: string;
+  lane?: string;
+}) {
   const context = await requireRole(["admin", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
@@ -7700,6 +7734,11 @@ export async function getLearnerProgramsPageData() {
   if (!programIds.length) {
     return {
       context,
+      filters: {
+        query: filters?.query?.trim() ?? "",
+        lane: "all" as const,
+        summary: "Aucun parcours actif"
+      },
       metrics: [
         {
           label: "Parcours actifs",
@@ -7712,11 +7751,65 @@ export async function getLearnerProgramsPageData() {
           delta: "Dès qu'un parcours sera activé, la progression apparaîtra ici"
         },
         {
-          label: "Modules visibles",
+          label: "Étapes ouvertes",
           value: "0",
           delta: "Le studio admin peut maintenant structurer les parcours"
+        },
+        {
+          label: "Modules visibles",
+          value: "0",
+          delta: "Le cockpit apprenant se remplira automatiquement"
         }
       ],
+      hero: {
+        title: "Tes parcours apparaîtront ici dès leur activation",
+        summary:
+          "La vue premium des parcours reste prête: progression, modules, prochaines étapes et signaux d’élan émergeront dès qu’un programme sera attribué."
+      },
+      laneBreakdown: [
+        {
+          id: "urgent" as LearnerProgramLane,
+          label: "A securiser",
+          count: 0,
+          tone: "warning" as const,
+          isActive: false
+        },
+        {
+          id: "momentum" as LearnerProgramLane,
+          label: "En cours",
+          count: 0,
+          tone: "accent" as const,
+          isActive: false
+        },
+        {
+          id: "launch" as LearnerProgramLane,
+          label: "A lancer",
+          count: 0,
+          tone: "neutral" as const,
+          isActive: false
+        },
+        {
+          id: "completed" as LearnerProgramLane,
+          label: "Completes",
+          count: 0,
+          tone: "success" as const,
+          isActive: false
+        }
+      ],
+      focusProgram: null,
+      moduleRadar: [],
+      recentCompletionsFeed: [],
+      responsePlaybook: [
+        {
+          id: "launch",
+          title: "Aucun parcours a lancer pour l'instant",
+          body: "Dès qu’un coach ou l’admin activera un programme, tu verras ici sa prochaine étape utile.",
+          href: "/dashboard",
+          ctaLabel: "Retour au dashboard",
+          tone: "neutral" as const
+        }
+      ],
+      programWatchlist: [],
       programs: []
     };
   }
@@ -7846,7 +7939,10 @@ export async function getLearnerProgramsPageData() {
     return map;
   }, new Map<string, ProgramModuleRow[]>());
 
-  const programCards = programs.map((program) => {
+  const normalizedQuery = filters?.query?.trim().toLowerCase() ?? "";
+  const laneFilter: LearnerProgramLane | "all" = isLearnerProgramLane(filters?.lane) ? filters.lane : "all";
+
+  const allPrograms = programs.map((program) => {
     const programModules = (moduleListByProgramId.get(program.id) ?? []).sort((left, right) => left.position - right.position);
 
     const moduleCards = programModules.map((module) => {
@@ -7858,6 +7954,19 @@ export async function getLearnerProgramsPageData() {
           const assignment = assignmentByContentId.get(content.id) ?? null;
           const submission = latestSubmissionByContentId.get(content.id) ?? null;
           const completed = Boolean(submission && ["submitted", "reviewed", "late"].includes(submission.status));
+          const dueState = getDeadlineState(assignment?.due_at, completed);
+          const activityAt = submission?.submitted_at ?? submission?.reviewed_at ?? assignment?.published_at ?? content.created_at;
+          const stateLabel = completed
+            ? submission?.status === "reviewed"
+              ? "Corrigé"
+              : "Terminé"
+            : dueState === "overdue"
+              ? "En retard"
+              : dueState === "soon"
+                ? "A ouvrir vite"
+                : assignment?.due_at
+                  ? "Planifié"
+                  : "Libre";
 
           return {
             id: content.id,
@@ -7867,13 +7976,31 @@ export async function getLearnerProgramsPageData() {
             completed,
             href: assignment ? `/assignments/${assignment.id}` : `/library/${content.slug}`,
             dueLabel: assignment?.due_at ? formatDate(assignment.due_at) : "Accessible maintenant",
-            tone: completed ? "success" : assignment?.due_at ? getDeadlineStateTone(getDeadlineState(assignment.due_at)) : "neutral"
+            tone: completed ? "success" : assignment?.due_at ? getDeadlineStateTone(dueState) : "neutral",
+            dueState,
+            stateLabel,
+            ctaLabel: completed ? "Revoir la ressource" : assignment ? "Ouvrir la mission" : "Ouvrir la ressource",
+            metaLabel: content.category || content.content_type,
+            activityAt
           };
         }),
         ...moduleQuizzes.map((quiz) => {
           const assignment = assignmentByQuizId.get(quiz.id) ?? null;
           const attempt = latestAttemptByQuizId.get(quiz.id) ?? null;
           const completed = Boolean(attempt && ["submitted", "graded"].includes(attempt.status));
+          const dueState = getDeadlineState(assignment?.due_at, completed);
+          const activityAt = attempt?.submitted_at ?? assignment?.published_at ?? null;
+          const stateLabel = completed
+            ? attempt?.status === "graded"
+              ? "Corrigé"
+              : "Soumis"
+            : dueState === "overdue"
+              ? "En retard"
+              : dueState === "soon"
+                ? "A lancer vite"
+                : assignment?.due_at
+                  ? "Planifié"
+                  : "Ouvert";
 
           return {
             id: quiz.id,
@@ -7885,15 +8012,27 @@ export async function getLearnerProgramsPageData() {
             completed,
             href: assignment ? `/quiz/${quiz.id}?assignment=${assignment.id}` : `/quiz/${quiz.id}`,
             dueLabel: assignment?.due_at ? formatDate(assignment.due_at) : "Ouverture libre",
-            tone: completed ? "success" : assignment?.due_at ? getDeadlineStateTone(getDeadlineState(assignment.due_at)) : "accent"
+            tone: completed ? "success" : assignment?.due_at ? getDeadlineStateTone(dueState) : "accent",
+            dueState,
+            stateLabel,
+            ctaLabel: completed ? "Revoir le quiz" : "Ouvrir le quiz",
+            metaLabel: quiz.kind ?? "quiz",
+            activityAt
           };
         })
       ];
 
       const completedItems = items.filter((item) => item.completed).length;
+      const pendingItems = items.filter((item) => !item.completed).length;
+      const urgentItems = items.filter((item) => !item.completed && item.dueState === "overdue").length;
+      const soonItems = items.filter((item) => !item.completed && item.dueState === "soon").length;
       const totalItems = items.length;
       const progress = totalItems ? Math.round((completedItems / totalItems) * 100) : 0;
-      const nextItem = items.find((item) => !item.completed) ?? null;
+      const nextItem =
+        items.find((item) => !item.completed && item.dueState === "overdue") ??
+        items.find((item) => !item.completed && item.dueState === "soon") ??
+        items.find((item) => !item.completed) ??
+        null;
 
       return {
         id: module.id,
@@ -7905,58 +8044,333 @@ export async function getLearnerProgramsPageData() {
         progress,
         progressTone: getProgramProgressTone(progress),
         completedItems,
+        pendingItems,
+        urgentItems,
+        soonItems,
         totalItems,
         nextFocus: nextItem?.title ?? (items.length ? "Module complété" : "Module en préparation"),
+        nextHref: nextItem?.href ?? null,
+        nextCtaLabel: nextItem?.ctaLabel ?? null,
+        nextNeed: nextItem
+          ? `${nextItem.stateLabel} · ${nextItem.dueLabel}`
+          : items.length
+            ? "Tu as terminé ce module."
+            : "Ce module sera enrichi bientôt.",
         items
       };
     });
 
     const totalItems = moduleCards.reduce((total, module) => total + module.totalItems, 0);
     const completedItems = moduleCards.reduce((total, module) => total + module.completedItems, 0);
+    const pendingItems = moduleCards.reduce((total, module) => total + module.pendingItems, 0);
+    const overdueItems = moduleCards.reduce((total, module) => total + module.urgentItems, 0);
+    const soonItems = moduleCards.reduce((total, module) => total + module.soonItems, 0);
     const progress = totalItems ? Math.round((completedItems / totalItems) * 100) : 0;
-    const nextFocus = moduleCards.find((module) => module.completedItems < module.totalItems)?.nextFocus ?? "Parcours complété";
+    const nextModule =
+      moduleCards.find((module) => module.urgentItems > 0) ??
+      moduleCards.find((module) => module.soonItems > 0) ??
+      moduleCards.find((module) => module.pendingItems > 0) ??
+      null;
+    const nextActionItem =
+      nextModule?.items.find((item) => !item.completed && item.dueState === "overdue") ??
+      nextModule?.items.find((item) => !item.completed && item.dueState === "soon") ??
+      nextModule?.items.find((item) => !item.completed) ??
+      null;
     const enrollment = enrollments.find((item) => item.program_id === program.id);
+    const latestActivityAt = [
+      enrollment?.enrolled_at ?? null,
+      ...moduleCards.flatMap((module) => module.items.map((item) => item.activityAt ?? null))
+    ]
+      .filter(Boolean)
+      .sort((left, right) => (getDateValue(right) ?? 0) - (getDateValue(left) ?? 0))[0] ?? null;
+    const lane: LearnerProgramLane =
+      progress >= 100
+        ? "completed"
+        : overdueItems > 0 || soonItems > 0
+          ? "urgent"
+          : progress === 0
+            ? "launch"
+            : "momentum";
+    const tone = getLearnerProgramLaneTone(lane);
+    const nextNeed =
+      lane === "completed"
+        ? "Parcours terminé: tu peux consolider ou revisiter les modules clés."
+        : lane === "urgent"
+          ? overdueItems > 0
+            ? `${overdueItems} étape(s) demandent une reprise rapide pour éviter le décalage.`
+            : `${soonItems} étape(s) méritent d’être ouvertes maintenant pour garder le rythme.`
+          : lane === "launch"
+            ? "Le bon premier geste est simplement d’ouvrir la prochaine ressource ou le prochain quiz."
+            : "Le parcours est lancé: garde l’élan en ouvrant la prochaine étape utile.";
+    const searchText = [
+      program.title,
+      program.slug,
+      program.description,
+      ...moduleCards.flatMap((module) => [
+        module.title,
+        module.description,
+        ...module.items.flatMap((item) => [item.title, item.description, item.metaLabel])
+      ])
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
     return {
       id: program.id,
       title: program.title,
       description: program.description,
       status: program.status,
+      statusTone: getProgramStatusTone(program.status),
       enrolledAt: enrollment ? formatDate(enrollment.enrolled_at) : "Activation récente",
+      latestActivityLabel: latestActivityAt ? formatDate(latestActivityAt) : "Aucune activité récente",
       progress,
       progressTone: getProgramProgressTone(progress),
       completedItems,
+      pendingItems,
+      overdueItems,
+      soonItems,
       totalItems,
       moduleCount: moduleCards.length,
-      nextFocus,
-      modules: moduleCards
+      completedModules: moduleCards.filter((module) => module.progress >= 100).length,
+      lane,
+      laneLabel: getLearnerProgramLaneLabel(lane),
+      tone,
+      nextFocus: nextActionItem?.title ?? nextModule?.nextFocus ?? "Parcours complété",
+      nextNeed,
+      primaryHref: nextActionItem?.href ?? null,
+      primaryCtaLabel: nextActionItem?.ctaLabel ?? "Voir le parcours",
+      modules: moduleCards,
+      searchText
     };
   });
 
-  const averageProgress = programCards.length
-    ? Math.round(programCards.reduce((total, program) => total + program.progress, 0) / programCards.length)
+  const basePrograms = allPrograms.filter((program) => {
+    if (normalizedQuery && !program.searchText.includes(normalizedQuery)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const laneCounts = basePrograms.reduce(
+    (counts, program) => {
+      counts[program.lane] += 1;
+      return counts;
+    },
+    {
+      urgent: 0,
+      momentum: 0,
+      launch: 0,
+      completed: 0
+    } as Record<LearnerProgramLane, number>
+  );
+
+  const visiblePrograms =
+    laneFilter === "all" ? basePrograms : basePrograms.filter((program) => program.lane === laneFilter);
+  const sortedVisiblePrograms = visiblePrograms.slice().sort((left, right) => {
+    const laneRank = { urgent: 0, momentum: 1, launch: 2, completed: 3 } as const;
+
+    return (
+      laneRank[left.lane] - laneRank[right.lane] ||
+      right.overdueItems - left.overdueItems ||
+      right.soonItems - left.soonItems ||
+      left.progress - right.progress ||
+      right.pendingItems - left.pendingItems
+    );
+  });
+
+  const averageProgress = visiblePrograms.length
+    ? Math.round(visiblePrograms.reduce((total, program) => total + program.progress, 0) / visiblePrograms.length)
     : 0;
+  const openStepsCount = visiblePrograms.reduce((total, program) => total + program.pendingItems, 0);
+  const focusProgram = sortedVisiblePrograms[0] ?? null;
+  const activeFilterParts = [
+    laneFilter !== "all"
+      ? laneFilter === "urgent"
+        ? "lane à sécuriser"
+        : laneFilter === "momentum"
+          ? "lane en cours"
+          : laneFilter === "launch"
+            ? "lane à lancer"
+            : "lane complétée"
+      : null,
+    normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
+  ].filter(Boolean) as string[];
+
+  const moduleRadar = Array.from(
+    visiblePrograms
+      .flatMap((program) =>
+        program.modules.map((module) => ({
+          programId: program.id,
+          programTitle: program.title,
+          programLane: program.laneLabel,
+          tone: program.tone,
+          ...module
+        }))
+      )
+      .sort((left, right) => {
+        return (
+          right.urgentItems - left.urgentItems ||
+          right.soonItems - left.soonItems ||
+          right.pendingItems - left.pendingItems ||
+          left.progress - right.progress
+        );
+      })
+      .slice(0, 4)
+  ).map((module) => ({
+    id: module.id,
+    title: module.title,
+    programTitle: module.programTitle,
+    tone: module.urgentItems > 0 ? ("warning" as const) : module.soonItems > 0 ? ("accent" as const) : module.progress >= 100 ? ("success" as const) : ("neutral" as const),
+    summary:
+      module.pendingItems > 0
+        ? `${module.pendingItems} étape(s) ouvertes · ${module.nextNeed}`
+        : "Module entièrement complété.",
+    href: module.nextHref ?? null,
+    ctaLabel: module.nextCtaLabel ?? "Voir le module"
+  }));
+
+  const recentCompletionsFeed = visiblePrograms
+    .flatMap((program) =>
+      program.modules.flatMap((module) =>
+        module.items
+          .filter((item) => item.completed)
+          .map((item) => ({
+            id: `${program.id}-${module.id}-${item.id}`,
+            title: item.title,
+            programTitle: program.title,
+            moduleTitle: module.title,
+            completedAtValue: item.activityAt,
+            completedAt: item.activityAt ? formatDate(item.activityAt) : "Activité récente",
+            tone: item.tone,
+            href: item.href,
+            ctaLabel: item.ctaLabel
+          }))
+      )
+    )
+    .sort((left, right) => (getDateValue(right.completedAtValue) ?? 0) - (getDateValue(left.completedAtValue) ?? 0))
+    .slice(0, 6)
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      programTitle: item.programTitle,
+      moduleTitle: item.moduleTitle,
+      completedAt: item.completedAt,
+      tone: item.tone,
+      href: item.href,
+      ctaLabel: item.ctaLabel
+    }));
+
+  const responsePlaybook = [
+    focusProgram
+      ? {
+          id: "focus",
+          title: focusProgram.lane === "urgent" ? "Sécuriser d’abord le parcours focus" : "Reprendre le bon parcours maintenant",
+          body: focusProgram.nextNeed,
+          href: focusProgram.primaryHref ?? "#programs-catalog",
+          ctaLabel: focusProgram.primaryHref ? focusProgram.primaryCtaLabel : "Voir le catalogue",
+          tone: focusProgram.tone
+        }
+      : {
+          id: "focus",
+          title: "Aucun parcours à reprendre",
+          body: "Le cockpit apprenant se remplira dès qu’un parcours deviendra actif.",
+          href: "/dashboard",
+          ctaLabel: "Retour au dashboard",
+          tone: "neutral" as const
+        },
+    {
+      id: "agenda",
+      title: "Croiser les parcours avec ton agenda",
+      body: "Les deadlines et séances restent plus faciles à tenir quand tu relies ton parcours à la timeline ECCE.",
+      href: "/agenda",
+      ctaLabel: "Voir l’agenda",
+      tone: "accent" as const
+    },
+    {
+      id: "messages",
+      title: "Réutiliser le bon contexte avec ton coach",
+      body: "Si un blocage apparaît dans un module, la messagerie garde l’échange aligné avec la prochaine action.",
+      href: "/messages",
+      ctaLabel: "Ouvrir les messages",
+      tone: "success" as const
+    }
+  ];
 
   return {
     context,
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      lane: laneFilter,
+      summary: activeFilterParts.length ? `Vue filtrée · ${activeFilterParts.join(" · ")}` : "Vue globale de mes parcours"
+    },
     metrics: [
       {
-        label: "Parcours actifs",
-        value: programCards.length.toString(),
+        label: "Parcours visibles",
+        value: visiblePrograms.length.toString(),
         delta: `${enrollments.length} activation(s) enregistrée(s)`
       },
       {
         label: "Progression moyenne",
         value: `${averageProgress}%`,
-        delta: programCards[0] ? `Focus · ${programCards[0].nextFocus}` : "Aucun focus pour le moment"
+        delta: focusProgram ? `Focus · ${focusProgram.nextFocus}` : "Aucun focus pour le moment"
+      },
+      {
+        label: "Étapes ouvertes",
+        value: openStepsCount.toString(),
+        delta: `${visiblePrograms.reduce((total, program) => total + program.overdueItems + program.soonItems, 0)} à sécuriser`
       },
       {
         label: "Modules visibles",
-        value: programCards.reduce((total, program) => total + program.moduleCount, 0).toString(),
-        delta: `${programCards.reduce((total, program) => total + program.totalItems, 0)} ressources et quiz`
+        value: visiblePrograms.reduce((total, program) => total + program.moduleCount, 0).toString(),
+        delta: `${visiblePrograms.reduce((total, program) => total + program.totalItems, 0)} ressources et quiz`
       }
     ],
-    programs: programCards
+    hero: {
+      title: focusProgram
+        ? `${focusProgram.title} concentre la prochaine étape la plus utile`
+        : "Tes parcours restent prêts à t’indiquer quoi ouvrir maintenant",
+      summary: focusProgram
+        ? `${focusProgram.laneLabel} · ${focusProgram.completedItems}/${focusProgram.totalItems || 0} étapes complétées. ${focusProgram.nextNeed}`
+        : "La progression, les modules et les prochaines actions apparaîtront ici dès qu’un programme sera activé."
+    },
+    laneBreakdown: [
+      {
+        id: "urgent" as LearnerProgramLane,
+        label: "A securiser",
+        count: laneCounts.urgent,
+        tone: "warning" as const,
+        isActive: laneFilter === "urgent"
+      },
+      {
+        id: "momentum" as LearnerProgramLane,
+        label: "En cours",
+        count: laneCounts.momentum,
+        tone: "accent" as const,
+        isActive: laneFilter === "momentum"
+      },
+      {
+        id: "launch" as LearnerProgramLane,
+        label: "A lancer",
+        count: laneCounts.launch,
+        tone: "neutral" as const,
+        isActive: laneFilter === "launch"
+      },
+      {
+        id: "completed" as LearnerProgramLane,
+        label: "Completes",
+        count: laneCounts.completed,
+        tone: "success" as const,
+        isActive: laneFilter === "completed"
+      }
+    ],
+    focusProgram,
+    moduleRadar,
+    recentCompletionsFeed,
+    responsePlaybook,
+    programWatchlist: sortedVisiblePrograms.slice(0, 5),
+    programs: sortedVisiblePrograms
   };
 }
 

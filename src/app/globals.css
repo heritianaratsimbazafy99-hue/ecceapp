@@ -2738,6 +2738,227 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   }
 }
 
+.learner-programs-hero,
+.learner-programs-copy,
+.learner-programs-side,
+.learner-programs-lane-grid,
+.learner-programs-layout,
+.learner-programs-side-stack,
+.learner-programs-filter-form,
+.learner-programs-summary,
+.learner-programs-focus-metrics,
+.learner-programs-playbook-grid,
+.learner-programs-watchlist,
+.learner-programs-watch-copy,
+.learner-programs-watch-meta,
+.learner-programs-radar-list,
+.learner-programs-radar-meta,
+.learner-programs-recent-list,
+.learner-programs-recent-meta,
+.learner-programs-focus-copy {
+  display: grid;
+  gap: 24px;
+}
+
+.learner-programs-hero {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: stretch;
+  background:
+    radial-gradient(circle at top right, rgba(255, 206, 163, 0.24), transparent 32%),
+    radial-gradient(circle at 18% 18%, rgba(8, 145, 178, 0.12), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 251, 0.94));
+}
+
+.learner-programs-copy,
+.learner-programs-side,
+.learner-programs-side-stack {
+  align-content: start;
+}
+
+.learner-programs-copy {
+  gap: 16px;
+}
+
+.learner-programs-copy h3,
+.learner-programs-copy p,
+.learner-programs-playbook-card p,
+.learner-programs-watch-card p,
+.learner-programs-focus-copy p,
+.learner-programs-radar-item p,
+.learner-programs-recent-item p,
+.learner-programs-focus-note,
+.learner-programs-focus-note-inline {
+  margin: 0;
+}
+
+.learner-programs-copy h3 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.02;
+}
+
+.learner-programs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.learner-programs-lane-grid,
+.learner-programs-summary,
+.learner-programs-focus-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.learner-programs-lane-card,
+.learner-programs-summary article,
+.learner-programs-focus-metrics article,
+.learner-programs-playbook-card,
+.learner-programs-watch-card,
+.learner-programs-radar-item,
+.learner-programs-recent-item {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.learner-programs-lane-card {
+  color: inherit;
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.learner-programs-lane-card:hover,
+.learner-programs-lane-card.is-active {
+  transform: translateY(-2px);
+  border-color: rgba(8, 145, 178, 0.24);
+  box-shadow: 0 22px 48px rgba(16, 24, 32, 0.08);
+}
+
+.learner-programs-lane-card span,
+.learner-programs-summary span,
+.learner-programs-focus-metrics span,
+.learner-programs-watch-copy small,
+.learner-programs-watch-meta small,
+.learner-programs-focus-copy small,
+.learner-programs-radar-meta small,
+.learner-programs-recent-meta small {
+  color: var(--muted);
+}
+
+.learner-programs-lane-card strong,
+.learner-programs-summary strong,
+.learner-programs-focus-metrics strong {
+  font-size: 1.3rem;
+}
+
+.learner-programs-layout {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: start;
+}
+
+.learner-programs-filter-form {
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr) auto;
+  align-items: end;
+}
+
+.learner-programs-filter-actions {
+  align-self: end;
+}
+
+.learner-programs-playbook-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.learner-programs-watchlist,
+.learner-programs-radar-list,
+.learner-programs-recent-list {
+  gap: 16px;
+}
+
+.learner-programs-watch-card,
+.learner-programs-radar-item,
+.learner-programs-recent-item {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 249, 248, 0.9));
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+}
+
+.learner-programs-watch-meta,
+.learner-programs-radar-meta,
+.learner-programs-recent-meta {
+  justify-items: end;
+  gap: 10px;
+}
+
+.learner-programs-watch-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.05);
+}
+
+.learner-programs-watch-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.learner-programs-focus-copy,
+.learner-programs-watch-copy {
+  gap: 10px;
+}
+
+.learner-programs-focus-note,
+.learner-programs-focus-note-inline {
+  padding-top: 8px;
+  border-top: 1px solid rgba(16, 24, 32, 0.08);
+  color: rgba(16, 24, 32, 0.72);
+}
+
+@media (max-width: 1080px) {
+  .learner-programs-hero,
+  .learner-programs-layout,
+  .learner-programs-lane-grid,
+  .learner-programs-summary,
+  .learner-programs-focus-metrics,
+  .learner-programs-playbook-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .learner-programs-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .learner-programs-hero,
+  .learner-programs-layout,
+  .learner-programs-lane-grid,
+  .learner-programs-summary,
+  .learner-programs-focus-metrics,
+  .learner-programs-playbook-grid,
+  .learner-programs-filter-form,
+  .learner-programs-watch-card,
+  .learner-programs-radar-item,
+  .learner-programs-recent-item {
+    grid-template-columns: 1fr;
+  }
+
+  .learner-programs-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .library-search-panel {
   display: grid;
   gap: 18px;
@@ -5556,9 +5777,16 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 }
 
 .program-studio-hero-copy,
+.program-card-copy,
 .program-card-hero,
+.program-next-focus-copy,
+.program-card-actions,
 .program-module-card,
+.program-module-stats,
+.program-module-actions,
 .program-item-card,
+.program-item-copy,
+.program-item-meta,
 .program-admin-card,
 .program-inline-form,
 .program-enrollment-panel {
@@ -5732,6 +5960,15 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   align-items: start;
 }
 
+.program-card-copy p,
+.program-card-copy small,
+.program-next-focus-copy p,
+.program-module-card p,
+.program-item-copy p {
+  margin: 0;
+  color: rgba(16, 24, 32, 0.68);
+}
+
 .program-progress-track {
   height: 12px;
   border-radius: 999px;
@@ -5750,11 +5987,27 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: rgba(255, 255, 255, 0.84);
 }
 
-.program-module-meta {
+.program-next-focus {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+}
+
+.program-card-actions {
+  justify-items: end;
+}
+
+.program-module-meta,
+.program-module-stats,
+.program-item-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   color: var(--muted);
+}
+
+.program-module-actions {
+  justify-items: start;
 }
 
 .program-item-grid {
@@ -5763,10 +6016,21 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .program-item-card {
   grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   padding: 18px;
   border-radius: 22px;
   border: 1px solid rgba(16, 24, 32, 0.08);
   background: rgba(255, 255, 255, 0.84);
+}
+
+@media (max-width: 760px) {
+  .program-next-focus {
+    grid-template-columns: 1fr;
+  }
+
+  .program-card-actions {
+    justify-items: start;
+  }
 }
 
 .agenda-shell,
