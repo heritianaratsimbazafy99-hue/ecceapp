@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 import {
   gradeQuizTextAttemptAction,
   reviewSubmissionAction,
+  saveCoachingSessionNoteAction,
   scheduleCoachingSessionAction,
   type CoachActionState
 } from "@/app/(platform)/coach/actions";
@@ -367,6 +368,63 @@ export function ReviewSubmissionForm({
 
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Envoyer le feedback" pendingLabel="Envoi..." />
+    </form>
+  );
+}
+
+export function CoachingSessionNoteForm({
+  defaultStatus,
+  sessionId
+}: {
+  defaultStatus: "planned" | "completed" | "cancelled";
+  sessionId: string;
+}) {
+  const [state, formAction] = useActionState(saveCoachingSessionNoteAction, initialState);
+
+  return (
+    <form action={formAction} className="admin-form admin-form-compact">
+      <input name="session_id" type="hidden" value={sessionId} />
+
+      <div className="form-grid">
+        <label>
+          Statut de séance
+          <select defaultValue={defaultStatus} name="status">
+            <option value="planned">Planifiée</option>
+            <option value="completed">Terminée</option>
+            <option value="cancelled">Annulée</option>
+          </select>
+        </label>
+
+        <label className="form-grid-span">
+          Résumé de séance
+          <textarea
+            name="summary"
+            placeholder="Ce qui a été travaillé, décisions prises, points de compréhension."
+            rows={4}
+          />
+        </label>
+
+        <label className="form-grid-span">
+          Blocages / signaux faibles
+          <textarea
+            name="blockers"
+            placeholder="Difficultés, résistances, zones à sécuriser ou contexte humain à garder en tête."
+            rows={4}
+          />
+        </label>
+
+        <label className="form-grid-span">
+          Prochaines actions
+          <textarea
+            name="next_actions"
+            placeholder="Une action claire, une ressource à revoir, une deadline ou une décision à suivre."
+            rows={4}
+          />
+        </label>
+      </div>
+
+      <ActionFeedback state={state} />
+      <SubmitButton idleLabel="Enregistrer la note" pendingLabel="Enregistrement..." />
     </form>
   );
 }

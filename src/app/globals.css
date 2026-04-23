@@ -4327,6 +4327,86 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   gap: 8px;
 }
 
+.session-workspace-hero,
+.session-workspace-copy,
+.session-workspace-side,
+.session-workspace-layout,
+.session-workspace-main,
+.session-workspace-context,
+.session-note-list,
+.session-note-card,
+.session-context-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.session-workspace-hero {
+  grid-template-columns: minmax(0, 1.12fr) minmax(300px, 0.88fr);
+  align-items: stretch;
+  background:
+    radial-gradient(circle at top right, rgba(53, 104, 151, 0.14), transparent 26%),
+    radial-gradient(circle at 12% 20%, rgba(168, 225, 195, 0.2), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 252, 0.94));
+}
+
+.session-workspace-copy {
+  align-content: center;
+  gap: 16px;
+}
+
+.session-workspace-copy h3,
+.session-workspace-copy p,
+.session-workspace-side p,
+.session-note-card p,
+.session-context-card p {
+  margin: 0;
+}
+
+.session-workspace-copy h3 {
+  font-size: clamp(2rem, 4vw, 3.05rem);
+  line-height: 1.02;
+}
+
+.session-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.session-workspace-side {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.session-workspace-side article,
+.session-note-card,
+.session-context-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 16px 38px rgba(16, 24, 32, 0.05);
+}
+
+.session-workspace-side strong {
+  font-size: 1.25rem;
+  line-height: 1.16;
+}
+
+.session-workspace-layout {
+  grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
+  align-items: start;
+}
+
+.session-note-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .assignment-page-shell,
 .assignment-submission-studio {
   display: grid;
@@ -7396,6 +7476,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .coach-learner-reference-grid,
   .coach-learner-assignment-grid,
   .coach-learner-mini-grid,
+  .session-workspace-side,
   .assignment-history-grid,
   .learner-spotlight-grid,
   .dashboard-resource-grid,
@@ -7451,7 +7532,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .review-command-hero,
   .review-command-layout,
   .coach-learner-hero,
-  .coach-learner-layout {
+  .coach-learner-layout,
+  .session-workspace-hero,
+  .session-workspace-layout {
     grid-template-columns: 1fr;
   }
 
@@ -7582,6 +7665,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .coach-learner-reference-grid,
   .coach-learner-assignment-grid,
   .coach-learner-mini-grid,
+  .session-workspace-hero,
+  .session-workspace-layout,
+  .session-workspace-side,
   .assignment-history-grid,
   .assignment-submission-studio,
   .learner-spotlight-hero,

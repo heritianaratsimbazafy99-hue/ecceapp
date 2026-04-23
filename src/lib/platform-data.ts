@@ -218,6 +218,16 @@ type SessionAnalyticsRow = {
   status: string;
 };
 
+type CoachingNoteRow = {
+  id: string;
+  session_id: string;
+  coach_id: string;
+  summary: string | null;
+  blockers: string | null;
+  next_actions: string | null;
+  created_at: string;
+};
+
 type AuditEventRow = {
   id: string;
   actor_id: string | null;
@@ -7468,6 +7478,149 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
   };
 }
 
+export async function getCoachSessionPageData(sessionId: string) {
+  const context = await requireRole(["admin", "coach"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const sessionResult = await admin
+    .from("coaching_sessions")
+    .select("id, organization_id, coach_id, coachee_id, cohort_id, starts_at, ends_at, status, video_link, created_at")
+    .eq("organization_id", organizationId)
+    .eq("id", sessionId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      coach_id: string;
+      coachee_id: string;
+      cohort_id: string | null;
+      starts_at: string;
+      ends_at: string | null;
+      status: "planned" | "completed" | "cancelled";
+      video_link: string | null;
+      created_at: string;
+    }>();
+
+  if (sessionResult.error || !sessionResult.data) {
+    return null;
+  }
+
+  const session = sessionResult.data;
+
+  if (context.role === "coach" && session.coach_id !== context.user.id) {
+    return null;
+  }
+
+  const [profilesResult, cohortResult, notesResult, learnerDetail] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, status, bio, timezone")
+      .eq("organization_id", organizationId)
+      .in("id", [session.coach_id, session.coachee_id]),
+    session.cohort_id
+      ? admin
+          .from("cohorts")
+          .select("id, name")
+          .eq("organization_id", organizationId)
+          .eq("id", session.cohort_id)
+          .maybeSingle<{ id: string; name: string }>()
+      : Promise.resolve({ data: null as { id: string; name: string } | null }),
+    admin
+      .from("coaching_notes")
+      .select("id, session_id, coach_id, summary, blockers, next_actions, created_at")
+      .eq("session_id", session.id)
+      .order("created_at", { ascending: false }),
+    getCoachLearnerDetailPageData(session.coachee_id)
+  ]);
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const coach = profileById.get(session.coach_id) ?? null;
+  const learner = profileById.get(session.coachee_id) ?? null;
+  const notes = ((notesResult.data ?? []) as CoachingNoteRow[]).map((note) => ({
+    id: note.id,
+    summary: note.summary,
+    blockers: note.blockers,
+    nextActions: note.next_actions,
+    createdAt: formatDate(note.created_at),
+    authorName: profileById.get(note.coach_id) ? formatUserName(profileById.get(note.coach_id)!) : "Coach"
+  }));
+  const timestamp = getDateValue(session.starts_at) ?? Date.now();
+  const now = Date.now();
+  const isPast = timestamp < now;
+  const noteCompleteness = notes.reduce((total, note) => {
+    return total + [note.summary, note.blockers, note.nextActions].filter((value) => value && value.trim()).length;
+  }, 0);
+  const learnerEngagement = learnerDetail?.engagement ?? null;
+
+  return {
+    context,
+    session: {
+      id: session.id,
+      status: session.status,
+      statusTone:
+        session.status === "completed"
+          ? ("success" as const)
+          : session.status === "cancelled"
+            ? ("warning" as const)
+            : ("accent" as const),
+      date: formatDate(session.starts_at),
+      dayLabel: getRelativeDayLabel(session.starts_at),
+      timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
+      videoLink: session.video_link,
+      isPast,
+      cohort: cohortResult.data?.name ?? null,
+      createdAt: formatDate(session.created_at)
+    },
+    coach: coach
+      ? {
+          id: coach.id,
+          name: formatUserName(coach),
+          status: coach.status
+        }
+      : null,
+    learner: learner
+      ? {
+          id: learner.id,
+          name: formatUserName(learner),
+          status: learner.status,
+          timezone: learner.timezone ?? "UTC",
+          bio: learner.bio ?? null,
+          engagement: learnerEngagement
+        }
+      : null,
+    metrics: [
+      {
+        label: "Statut séance",
+        value: session.status,
+        delta: isPast ? "créneau passé" : "créneau à venir"
+      },
+      {
+        label: "Notes",
+        value: notes.length.toString(),
+        delta: `${noteCompleteness} champ(s) documenté(s)`
+      },
+      {
+        label: "Engagement coaché",
+        value: learnerEngagement ? `${learnerEngagement.score}%` : "—",
+        delta: learnerEngagement?.nextFocus ?? "signal à consolider"
+      },
+      {
+        label: "Rythme",
+        value: getRelativeDayLabel(session.starts_at),
+        delta: formatTimeOnly(session.starts_at)
+      }
+    ],
+    notes,
+    learnerSnapshot: learnerDetail
+      ? {
+          assignments: learnerDetail.assignmentCards.slice(0, 4),
+          attempts: learnerDetail.recentAttempts.slice(0, 4),
+          submissions: learnerDetail.submissionCards.slice(0, 4),
+          activity: learnerDetail.activityFeed.slice(0, 5)
+        }
+      : null
+  };
+}
+
 export async function getCoachPageData() {
   const context = await requireRole(["admin", "coach"]);
   const admin = createSupabaseAdminClient();
@@ -8357,8 +8510,8 @@ export async function getAgendaPageData(filters?: {
             ? ("warning" as const)
             : ("accent" as const),
       audienceLabel,
-      href: session.video_link || null,
-      ctaLabel: session.video_link ? "Rejoindre" : null,
+      href: context.role === "coachee" ? session.video_link || null : `/coach/sessions/${session.id}`,
+      ctaLabel: context.role === "coachee" ? (session.video_link ? "Rejoindre" : null) : "Ouvrir la séance",
       isOverdue,
       isToday,
       lane,

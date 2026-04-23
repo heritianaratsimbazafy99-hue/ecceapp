@@ -87,6 +87,9 @@ export default async function CoachPage() {
                       {session.cohort ? ` · ${session.cohort}` : ""}
                     </p>
                   </div>
+                  <Link className="button button-secondary button-small" href={`/coach/sessions/${session.id}`}>
+                    Ouvrir
+                  </Link>
                 </article>
               ))}
             </div>

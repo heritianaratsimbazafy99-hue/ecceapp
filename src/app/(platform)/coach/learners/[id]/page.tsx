@@ -268,6 +268,9 @@ export default async function CoachLearnerDetailPage({
                     </div>
                     <strong>{session.date}</strong>
                     <p>{session.cohort ? `Cohorte ${session.cohort}` : session.end}</p>
+                    <Link className="button button-secondary button-small" href={`/coach/sessions/${session.id}`}>
+                      Ouvrir la séance
+                    </Link>
                     {session.videoLink ? (
                       <Link className="button button-secondary button-small" href={session.videoLink} target="_blank">
                         Rejoindre

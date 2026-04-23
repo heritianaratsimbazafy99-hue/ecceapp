@@ -199,6 +199,102 @@ export async function scheduleCoachingSessionAction(
   );
 }
 
+export async function saveCoachingSessionNoteAction(
+  _prevState: CoachActionState,
+  formData: FormData
+): Promise<CoachActionState> {
+  const context = await requireRole(["admin", "coach"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const sessionId = String(formData.get("session_id") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const summary = String(formData.get("summary") ?? "").trim();
+  const blockers = String(formData.get("blockers") ?? "").trim();
+  const nextActions = String(formData.get("next_actions") ?? "").trim();
+
+  if (!sessionId) {
+    return fail("Séance introuvable.");
+  }
+
+  if (!["planned", "completed", "cancelled"].includes(status)) {
+    return fail("Statut de séance invalide.");
+  }
+
+  if (!summary && !blockers && !nextActions) {
+    return fail("Ajoute au moins un résumé, un blocage ou une prochaine action.");
+  }
+
+  const sessionResult = await admin
+    .from("coaching_sessions")
+    .select("id, organization_id, coach_id, coachee_id, status")
+    .eq("organization_id", organizationId)
+    .eq("id", sessionId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      coach_id: string;
+      coachee_id: string;
+      status: string;
+    }>();
+
+  if (sessionResult.error || !sessionResult.data) {
+    return fail(sessionResult.error?.message ?? "Séance introuvable.");
+  }
+
+  if (context.role === "coach" && sessionResult.data.coach_id !== context.user.id) {
+    return fail("Tu ne peux documenter que tes propres séances.");
+  }
+
+  const { error: noteError } = await admin.from("coaching_notes").insert({
+    session_id: sessionId,
+    coach_id: context.user.id,
+    summary: summary || null,
+    blockers: blockers || null,
+    next_actions: nextActions || null
+  });
+
+  if (noteError) {
+    return fail(noteError.message);
+  }
+
+  if (status !== sessionResult.data.status) {
+    const { error: sessionError } = await admin
+      .from("coaching_sessions")
+      .update({
+        status
+      })
+      .eq("id", sessionId);
+
+    if (sessionError) {
+      return fail(sessionError.message);
+    }
+  }
+
+  await createNotifications([
+    {
+      organizationId,
+      recipientId: sessionResult.data.coachee_id,
+      actorId: context.user.id,
+      kind: "session" as const,
+      title: status === "completed" ? "Séance de coaching documentée" : "Note de coaching ajoutée",
+      body:
+        nextActions || summary
+          ? `Ton coach a ajouté une note de séance${nextActions ? " avec une prochaine action" : ""}.`
+          : "Ton coach a mis à jour la séance.",
+      deeplink: "/dashboard"
+    }
+  ]);
+
+  revalidatePath("/coach");
+  revalidatePath("/agenda");
+  revalidatePath(`/coach/sessions/${sessionId}`);
+  revalidatePath(`/coach/learners/${sessionResult.data.coachee_id}`);
+  revalidatePath("/dashboard");
+
+  return ok(status === "completed" ? "Note enregistrée et séance marquée comme terminée." : "Note de séance enregistrée.");
+}
+
 export async function reviewSubmissionAction(
   _prevState: CoachActionState,
   formData: FormData
