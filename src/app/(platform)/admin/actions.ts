@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { createAuditEvent } from "@/lib/audit";
 import { requireRole, type AppRole } from "@/lib/auth";
 import { getOrganizationBrandingById } from "@/lib/organization";
 import { createNotifications, getAssignmentRecipientIds } from "@/lib/platform-events";
@@ -65,6 +66,17 @@ function ok(success: string): AdminActionState {
 
 function fail(error: string): AdminActionState {
   return { error };
+}
+
+function revalidateAdminAudit() {
+  revalidatePath("/admin/audit");
+}
+
+function formatDateForAudit(value: string) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
 }
 
 async function ensureProgramBelongsToOrganization(
@@ -231,8 +243,22 @@ export async function createUserAction(
     return fail(roleInsert.error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "access",
+    action: "user.created",
+    summary: `Compte ${firstName} ${lastName} créé avec le rôle ${role}.`,
+    targetType: "profile",
+    targetId: newUserId,
+    targetLabel: `${firstName} ${lastName}`,
+    targetUserId: newUserId,
+    highlights: [`rôle ${role}`, "statut invited", email]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/users");
+  revalidateAdminAudit();
   revalidatePath("/coach");
   revalidatePath("/admin/learners");
 
@@ -254,6 +280,17 @@ export async function assignRoleAction(
     return fail("Sélectionne un utilisateur et un rôle valides.");
   }
 
+  const profileResult = await admin
+    .from("profiles")
+    .select("id, first_name, last_name")
+    .eq("organization_id", organizationId)
+    .eq("id", userId)
+    .maybeSingle<{ id: string; first_name: string; last_name: string }>();
+
+  if (profileResult.error || !profileResult.data) {
+    return fail("Utilisateur introuvable dans cette organisation.");
+  }
+
   const { error } = await admin.from("user_roles").upsert(
     {
       organization_id: organizationId,
@@ -270,8 +307,22 @@ export async function assignRoleAction(
     return fail(error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "access",
+    action: "user.role_assigned",
+    summary: `Rôle ${role} ajouté à ${profileResult.data.first_name} ${profileResult.data.last_name}.`,
+    targetType: "profile",
+    targetId: userId,
+    targetLabel: `${profileResult.data.first_name} ${profileResult.data.last_name}`,
+    targetUserId: userId,
+    highlights: [`rôle ${role}`]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/users");
+  revalidateAdminAudit();
   revalidatePath("/coach");
   revalidatePath("/dashboard");
   revalidatePath("/admin/learners");
@@ -323,8 +374,22 @@ export async function updateUserProfileAction(
     return fail(error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "access",
+    action: "user.profile_updated",
+    summary: `Profil de ${firstName} ${lastName} mis à jour.`,
+    targetType: "profile",
+    targetId: userId,
+    targetLabel: `${firstName} ${lastName}`,
+    targetUserId: userId,
+    highlights: [timezone, bio ? "bio mise à jour" : "bio vide"]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/users");
+  revalidateAdminAudit();
   revalidatePath("/coach");
   revalidatePath("/dashboard");
   revalidatePath("/messages");
@@ -402,8 +467,24 @@ export async function updateUserStatusAction(
     return fail(error.message);
   }
 
+  const displayName = `${targetProfile.first_name} ${targetProfile.last_name}`.trim();
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "access",
+    action: "user.status_updated",
+    summary: `Statut de ${displayName} changé vers ${nextStatus}.`,
+    targetType: "profile",
+    targetId: userId,
+    targetLabel: displayName,
+    targetUserId: userId,
+    highlights: [`statut ${nextStatus}`]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/users");
+  revalidateAdminAudit();
   revalidatePath("/coach");
   revalidatePath("/dashboard");
   revalidatePath("/messages");
@@ -411,8 +492,6 @@ export async function updateUserStatusAction(
   revalidatePath("/agenda");
   revalidatePath("/auth/sign-in");
   revalidatePath("/auth/onboarding");
-
-  const displayName = `${targetProfile.first_name} ${targetProfile.last_name}`.trim();
 
   if (nextStatus === "active") {
     return ok(`${displayName} est maintenant actif(ve) sur ECCE.`);
@@ -501,7 +580,21 @@ export async function assignCoacheeToCohortAction(
     }
   ]);
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "delivery",
+    action: "cohort.member_added",
+    summary: `${profileResult.data.first_name} ${profileResult.data.last_name} ajouté(e) à la cohorte ${cohortResult.data.name}.`,
+    targetType: "cohort",
+    targetId: cohortId,
+    targetLabel: cohortResult.data.name,
+    targetUserId: coacheeId,
+    highlights: [cohortResult.data.name]
+  });
+
   revalidatePath("/admin");
+  revalidateAdminAudit();
   revalidatePath("/coach");
   revalidatePath("/dashboard");
   revalidatePath("/admin/learners");
@@ -554,17 +647,28 @@ export async function assignCoachAction(
   const coachProfile = coachProfileResult.data;
   let successLabel = `${coachProfile.first_name} ${coachProfile.last_name}`;
   let notificationTargets: string[] = [];
+  let auditTargetType = "coach_assignment";
+  let auditTargetId: string | null = null;
+  let auditTargetLabel = `${coachProfile.first_name} ${coachProfile.last_name}`;
 
   if (coacheeId) {
-    const coacheeRoleResult = await admin
-      .from("user_roles")
-      .select("user_id")
-      .eq("organization_id", organizationId)
-      .eq("user_id", coacheeId)
-      .eq("role", "coachee")
-      .maybeSingle<{ user_id: string }>();
+    const [coacheeRoleResult, coacheeProfileResult] = await Promise.all([
+      admin
+        .from("user_roles")
+        .select("user_id")
+        .eq("organization_id", organizationId)
+        .eq("user_id", coacheeId)
+        .eq("role", "coachee")
+        .maybeSingle<{ user_id: string }>(),
+      admin
+        .from("profiles")
+        .select("first_name, last_name")
+        .eq("organization_id", organizationId)
+        .eq("id", coacheeId)
+        .maybeSingle<{ first_name: string; last_name: string }>()
+    ]);
 
-    if (coacheeRoleResult.error || !coacheeRoleResult.data) {
+    if (coacheeRoleResult.error || !coacheeRoleResult.data || coacheeProfileResult.error || !coacheeProfileResult.data) {
       return fail("Coaché introuvable.");
     }
 
@@ -581,6 +685,9 @@ export async function assignCoachAction(
 
     notificationTargets = [coacheeId];
     successLabel += " suit maintenant ce coaché.";
+    auditTargetType = "coachee";
+    auditTargetId = coacheeId;
+    auditTargetLabel = `${coacheeProfileResult.data.first_name} ${coacheeProfileResult.data.last_name}`;
   }
 
   if (cohortId) {
@@ -615,6 +722,9 @@ export async function assignCoachAction(
       new Set((cohortMembersResult.data ?? []).map((item) => item.user_id))
     );
     successLabel += ` suit maintenant la cohorte ${cohortResult.data.name}.`;
+    auditTargetType = "cohort";
+    auditTargetId = cohortId;
+    auditTargetLabel = cohortResult.data.name;
   }
 
   if (notificationTargets.length) {
@@ -631,8 +741,22 @@ export async function assignCoachAction(
     );
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "delivery",
+    action: "coach.assignment_created",
+    summary: successLabel,
+    targetType: auditTargetType,
+    targetId: auditTargetId,
+    targetLabel: auditTargetLabel,
+    targetUserId: coacheeId || null,
+    highlights: [`coach ${coachProfile.first_name} ${coachProfile.last_name}`, `${notificationTargets.length} destinataire(s)`]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/learners");
+  revalidateAdminAudit();
   revalidatePath("/coach");
   revalidatePath("/dashboard");
 
@@ -706,8 +830,20 @@ export async function createContentAction(
     return fail(error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content.created",
+    summary: `Contenu "${title}" créé.`,
+    targetType: "content",
+    targetLabel: title,
+    highlights: [contentType, status, estimatedMinutes > 0 ? `${estimatedMinutes} min` : "durée libre"]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/content");
+  revalidateAdminAudit();
   revalidatePath("/library");
   revalidatePath("/dashboard");
 
@@ -875,8 +1011,21 @@ export async function createQuizAction(
     }
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "quiz.created",
+    summary: `Quiz "${title}" créé.`,
+    targetType: "quiz",
+    targetId: quizInsert.data.id,
+    targetLabel: title,
+    highlights: [kind, status, `${normalizedQuestions.length} question(s)`]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/quizzes");
+  revalidateAdminAudit();
   revalidatePath("/library");
   revalidatePath("/dashboard");
 
@@ -914,10 +1063,10 @@ export async function addQuizQuestionAction(
 
   const quizResult = await admin
     .from("quizzes")
-    .select("id")
+    .select("id, title")
     .eq("organization_id", organizationId)
     .eq("id", quizId)
-    .maybeSingle<{ id: string }>();
+    .maybeSingle<{ id: string; title: string }>();
 
   if (quizResult.error || !quizResult.data) {
     return fail("Quiz introuvable.");
@@ -976,8 +1125,21 @@ export async function addQuizQuestionAction(
     }
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "quiz.question_added",
+    summary: `Question ajoutée au quiz "${quizResult.data.title}".`,
+    targetType: "quiz",
+    targetId: quizId,
+    targetLabel: quizResult.data.title,
+    highlights: [questionType, `${choices.length} choix`, `position ${Number.isFinite(nextPosition) ? nextPosition : 0}`]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/quizzes");
+  revalidateAdminAudit();
   revalidatePath(`/quiz/${quizId}`);
 
   return ok("Question ajoutée au quiz.");
@@ -1000,11 +1162,11 @@ export async function deleteQuizQuestionAction(
 
   const questionResult = await admin
     .from("quiz_questions")
-    .select("id, quiz_id, quizzes!inner(id, organization_id)")
+    .select("id, quiz_id, prompt, quizzes!inner(id, organization_id, title)")
     .eq("id", questionId)
     .eq("quiz_id", quizId)
     .eq("quizzes.organization_id", organizationId)
-    .maybeSingle<{ id: string; quiz_id: string }>();
+    .maybeSingle<{ id: string; quiz_id: string; prompt: string; quizzes: { title: string } }>();
 
   if (questionResult.error || !questionResult.data) {
     return fail("Question introuvable dans ce quiz.");
@@ -1026,8 +1188,21 @@ export async function deleteQuizQuestionAction(
     return fail(error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "quiz.question_deleted",
+    summary: `Question retirée du quiz "${questionResult.data.quizzes.title}".`,
+    targetType: "quiz",
+    targetId: quizId,
+    targetLabel: questionResult.data.quizzes.title,
+    highlights: [questionResult.data.prompt.slice(0, 48)]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/quizzes");
+  revalidateAdminAudit();
   revalidatePath(`/quiz/${quizId}`);
 
   return ok("Question supprimée.");
@@ -1122,8 +1297,21 @@ export async function createProgramAction(
     return fail(moduleInsert.error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "program.created",
+    summary: `Parcours "${title}" créé avec ${normalizedModules.length} module(s).`,
+    targetType: "program",
+    targetId: programInsert.data.id,
+    targetLabel: title,
+    highlights: [status, `${normalizedModules.length} module(s)`]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/programs");
+  revalidateAdminAudit();
   revalidatePath("/admin/content");
   revalidatePath("/admin/quizzes");
   revalidatePath("/programs");
@@ -1180,7 +1368,20 @@ export async function addProgramModuleAction(
     return fail(moduleInsert.error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "program.module_added",
+    summary: `Module "${title}" ajouté au parcours ${programResult.title}.`,
+    targetType: "program",
+    targetId: programId,
+    targetLabel: programResult.title,
+    highlights: [status, title]
+  });
+
   revalidatePath("/admin/programs");
+  revalidateAdminAudit();
   revalidatePath("/admin/content");
   revalidatePath("/admin/quizzes");
   revalidatePath("/programs");
@@ -1285,7 +1486,20 @@ export async function enrollProgramAction(
     }))
   );
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "delivery",
+    action: "program.enrolled",
+    summary: `Parcours "${programResult.title}" activé pour ${recipientIds.size} coaché(s).`,
+    targetType: "program",
+    targetId: programId,
+    targetLabel: programResult.title,
+    highlights: [`${recipientIds.size} coaché(s)`]
+  });
+
   revalidatePath("/admin/programs");
+  revalidateAdminAudit();
   revalidatePath("/dashboard");
   revalidatePath("/programs");
 
@@ -1369,8 +1583,25 @@ export async function createAssignmentAction(
     }))
   );
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "delivery",
+    action: "assignment.created",
+    summary: `Assignation "${title}" créée.`,
+    targetType: quizId ? "quiz_assignment" : "content_assignment",
+    targetId: assignmentInsert.data.id,
+    targetLabel: title,
+    highlights: [
+      quizId ? "quiz" : "contenu",
+      dueAt ? `deadline ${formatDateForAudit(dueAt)}` : "sans deadline",
+      `${recipientIds.length} destinataire(s)`
+    ]
+  });
+
   revalidatePath("/admin");
   revalidatePath("/admin/assignments");
+  revalidateAdminAudit();
   revalidatePath("/dashboard");
   revalidatePath("/coach");
 

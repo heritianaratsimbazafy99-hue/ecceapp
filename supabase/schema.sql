@@ -305,7 +305,25 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.audit_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  actor_id uuid references public.profiles (id) on delete set null,
+  category text not null check (category in ('access', 'curriculum', 'delivery', 'organization')),
+  action text not null,
+  summary text not null,
+  target_type text,
+  target_id text,
+  target_label text,
+  target_user_id uuid references public.profiles (id) on delete set null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_profiles_organization_id on public.profiles (organization_id);
+create index if not exists idx_audit_events_organization_created_at on public.audit_events (organization_id, created_at desc);
+create index if not exists idx_audit_events_actor_id on public.audit_events (actor_id);
+create index if not exists idx_audit_events_target_user_id on public.audit_events (target_user_id);
 create index if not exists idx_user_notification_preferences_organization_id on public.user_notification_preferences (organization_id);
 create index if not exists idx_user_roles_user_id on public.user_roles (user_id);
 create index if not exists idx_cohorts_organization_id on public.cohorts (organization_id);
@@ -419,6 +437,7 @@ alter table public.submission_reviews enable row level security;
 alter table public.coaching_sessions enable row level security;
 alter table public.coaching_notes enable row level security;
 alter table public.notifications enable row level security;
+alter table public.audit_events enable row level security;
 
 create policy "organization members can read organizations"
 on public.organizations
@@ -1031,8 +1050,21 @@ with check (
   or public.has_org_role(organization_id, 'coach')
 );
 
+create policy "admins can read audit events"
+on public.audit_events
+for select
+using (public.has_org_role(organization_id, 'admin'));
+
+create policy "admins can create audit events"
+on public.audit_events
+for insert
+with check (public.has_org_role(organization_id, 'admin'));
+
 comment on table public.learning_assignments is
 'Table pivot pour gérer deadlines et publications ciblées sur une cohorte ou un coaché.';
 
 comment on table public.coaching_notes is
 'Journal structuré des séances de coaching: synthèse, blocages, prochaines actions.';
+
+comment on table public.audit_events is
+'Journal d''audit des actions sensibles côté administration ECCE.';

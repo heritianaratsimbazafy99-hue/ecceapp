@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { createAuditEvent } from "@/lib/audit";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
@@ -66,6 +67,7 @@ function revalidateOrganizationSurfaces() {
   revalidatePath("/coach");
   revalidatePath("/admin");
   revalidatePath("/admin/settings");
+  revalidatePath("/admin/audit");
   revalidatePath("/agenda");
   revalidatePath("/messages");
   revalidatePath("/notifications");
@@ -145,6 +147,18 @@ export async function updateOrganizationBrandingAction(
     return fail(settingsUpdate.error.message);
   }
 
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "organization",
+    action: "organization.branding_updated",
+    summary: "Branding organisationnel mis à jour.",
+    targetType: "organization",
+    targetId: organizationId,
+    targetLabel: displayName ?? name,
+    highlights: [shortName ?? "marque longue", supportEmail ?? "sans email support", websiteUrl ?? "sans site web"]
+  });
+
   revalidateOrganizationSurfaces();
 
   return ok("Branding organisationnel enregistré.");
@@ -185,6 +199,22 @@ export async function updateOrganizationPlatformSettingsAction(
   if (settingsUpdate.error) {
     return fail(settingsUpdate.error.message);
   }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "organization",
+    action: "organization.platform_settings_updated",
+    summary: "Paramètres plateforme mis à jour.",
+    targetType: "organization",
+    targetId: organizationId,
+    targetLabel: "ECCE",
+    highlights: [
+      defaultTimezone,
+      defaultLocale,
+      allowCoachSelfSchedule ? "planner coach ouvert" : "planner coach verrouillé"
+    ]
+  });
 
   revalidateOrganizationSurfaces();
 

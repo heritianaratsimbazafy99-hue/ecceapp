@@ -4735,6 +4735,109 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   color: var(--muted);
 }
 
+.audit-hero,
+.audit-hero-copy,
+.audit-hero-side,
+.audit-sidebar-stack,
+.audit-category-grid,
+.audit-filter-form,
+.audit-filter-actions,
+.audit-event-feed {
+  display: grid;
+  gap: 24px;
+}
+
+.audit-hero {
+  grid-template-columns: minmax(0, 1.14fr) minmax(280px, 0.86fr);
+  align-items: stretch;
+}
+
+.audit-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.audit-hero-side,
+.audit-category-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.audit-hero-side article,
+.audit-category-item {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.audit-hero-copy h3,
+.audit-hero-copy p {
+  margin: 0;
+}
+
+.audit-filter-form {
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.8fr) minmax(240px, 0.9fr) auto;
+  align-items: end;
+}
+
+.audit-filter-actions {
+  align-self: end;
+}
+
+.audit-category-item strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.audit-category-item span {
+  color: var(--muted);
+}
+
+.audit-event-feed {
+  gap: 16px;
+}
+
+.audit-event-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 18px 44px rgba(16, 24, 32, 0.05);
+}
+
+.audit-event-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.audit-event-card-head strong,
+.audit-hero-side strong {
+  word-break: break-word;
+}
+
+.audit-event-card-head p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.audit-event-meta {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  color: var(--muted);
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
 .account-settings-hero,
 .account-settings-grid,
 .account-settings-stack,
@@ -5178,6 +5281,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-users-hero-side,
   .admin-user-detail-metrics,
   .admin-users-filter-form,
+  .audit-hero,
+  .audit-hero-side,
+  .audit-category-grid,
+  .audit-filter-form,
   .organization-settings-hero,
   .organization-settings-grid,
   .organization-settings-metrics,

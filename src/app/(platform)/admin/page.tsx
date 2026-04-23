@@ -26,6 +26,11 @@ const studios = [
     description: "Piloter les profils, les statuts invited/active/suspended et les rôles depuis une vue dédiée."
   },
   {
+    href: "/admin/audit",
+    title: "Journal d'audit",
+    description: "Relire les changements sensibles sur les accès, le catalogue et les opérations admin sans perdre l'historique."
+  },
+  {
     href: "/admin/learners",
     title: "Parcours coachés",
     description: "Relances, cohortes, portefeuilles coach et visibilité pédagogique."

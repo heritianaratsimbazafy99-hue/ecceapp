@@ -1,3 +1,4 @@
+import { AUDIT_CATEGORY_LABELS, AUDIT_EVENT_CATEGORIES, type AuditEventCategory } from "@/lib/audit";
 import { getAssignedCoachIdsForCoachee, getCoachAssignmentScope } from "@/lib/coach-assignments";
 import { requireRole, type AppRole } from "@/lib/auth";
 import { getOrganizationBrandingById } from "@/lib/organization";
@@ -203,6 +204,20 @@ type SessionAnalyticsRow = {
   coachee_id: string;
   starts_at: string;
   status: string;
+};
+
+type AuditEventRow = {
+  id: string;
+  actor_id: string | null;
+  category: AuditEventCategory;
+  action: string;
+  summary: string;
+  target_type: string | null;
+  target_id: string | null;
+  target_label: string | null;
+  target_user_id: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 };
 
 const VALID_ROLES: AppRole[] = ["admin", "professor", "coach", "coachee"];
@@ -438,6 +453,18 @@ function formatMessagePreview(value: string | null) {
   }
 
   return value.length > 96 ? `${value.slice(0, 93)}...` : value;
+}
+
+function getAuditHighlights(metadata: Record<string, unknown> | null | undefined) {
+  const highlights = metadata?.highlights;
+
+  if (!Array.isArray(highlights)) {
+    return [];
+  }
+
+  return highlights
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .slice(0, 4);
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -1716,6 +1743,207 @@ export async function getAdminUsersPageData(filters?: {
             selectedUser.roles.includes("admin") && selectedUser.status === "active" && activeAdminCount === 1
         }
       : null
+  };
+}
+
+export async function getAdminAuditPageData(filters?: {
+  query?: string;
+  category?: string;
+  actorId?: string;
+}) {
+  const context = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const query = String(filters?.query ?? "").trim();
+  const normalizedQuery = query.toLowerCase();
+  const categoryFilter = AUDIT_EVENT_CATEGORIES.includes(String(filters?.category ?? "").trim() as AuditEventCategory)
+    ? (String(filters?.category ?? "").trim() as AuditEventCategory)
+    : "all";
+  const actorFilter = String(filters?.actorId ?? "").trim();
+
+  const [eventsResult, profilesResult] = await Promise.all([
+    admin
+      .from("audit_events")
+      .select("id, actor_id, category, action, summary, target_type, target_id, target_label, target_user_id, metadata, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, status, user_roles(role)")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+  ]);
+
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+
+  if (eventsResult.error) {
+    return {
+      context,
+      auditEnabled: false,
+      errorMessage: eventsResult.error.message,
+      filters: {
+        query,
+        category: categoryFilter,
+        actorId: actorFilter
+      },
+      metrics: [
+        {
+          label: "Événements récents",
+          value: "0",
+          delta: "Journal non disponible tant que le SQL n'est pas appliqué"
+        },
+        {
+          label: "Admins actifs",
+          value: profiles
+            .filter((profile) => profile.status === "active" && (profile.user_roles ?? []).some((item) => item.role === "admin"))
+            .length.toString(),
+          delta: "Population potentiellement concernée"
+        },
+        {
+          label: "Filtres",
+          value: "0",
+          delta: "Aucun événement à lire pour l'instant"
+        },
+        {
+          label: "Traceabilité",
+          value: "off",
+          delta: "La table audit_events manque probablement côté Supabase"
+        }
+      ],
+      actorOptions: [] as Array<{ id: string; label: string }>,
+      categoryOptions: AUDIT_EVENT_CATEGORIES.map((category) => ({
+        id: category,
+        label: AUDIT_CATEGORY_LABELS[category]
+      })),
+      categoryBreakdown: AUDIT_EVENT_CATEGORIES.map((category) => ({
+        id: category,
+        label: AUDIT_CATEGORY_LABELS[category],
+        count: 0
+      })),
+      events: [] as Array<{
+        id: string;
+        category: AuditEventCategory;
+        categoryLabel: string;
+        action: string;
+        summary: string;
+        actorId: string | null;
+        actorName: string;
+        actorStatus: ProfileRow["status"] | "system";
+        targetLabel: string;
+        targetType: string;
+        createdAtLabel: string;
+        createdAtCompact: string;
+        highlights: string[];
+      }>,
+      latestEvent: null as null
+    };
+  }
+
+  const rows = (eventsResult.data ?? []) as AuditEventRow[];
+  const events = rows.map((event) => {
+    const actorProfile = event.actor_id ? profileById.get(event.actor_id) ?? null : null;
+    const targetProfile = event.target_user_id ? profileById.get(event.target_user_id) ?? null : null;
+    const actorName = actorProfile
+      ? formatUserName(actorProfile)
+      : event.actor_id
+        ? "Profil supprimé"
+        : "Système ECCE";
+    const targetLabel =
+      event.target_label ??
+      (targetProfile
+        ? formatUserName(targetProfile)
+        : event.target_id
+          ? `${event.target_type ?? "cible"} · ${event.target_id}`
+          : "Organisation ECCE");
+
+    return {
+      id: event.id,
+      category: event.category,
+      categoryLabel: AUDIT_CATEGORY_LABELS[event.category],
+      action: event.action,
+      summary: event.summary,
+      actorId: event.actor_id,
+      actorName,
+      actorStatus: actorProfile?.status ?? "system",
+      targetLabel,
+      targetType: event.target_type ?? "organization",
+      createdAtLabel: formatDate(event.created_at),
+      createdAtCompact: formatDateCompact(event.created_at),
+      createdAtRaw: event.created_at,
+      highlights: getAuditHighlights(event.metadata)
+    };
+  });
+
+  const filteredEvents = events.filter((event) => {
+    const matchesCategory = categoryFilter === "all" ? true : event.category === categoryFilter;
+    const matchesActor = actorFilter ? event.actorId === actorFilter : true;
+    const matchesQuery = normalizedQuery
+      ? `${event.summary} ${event.actorName} ${event.targetLabel}`.toLowerCase().includes(normalizedQuery)
+      : true;
+
+    return matchesCategory && matchesActor && matchesQuery;
+  });
+
+  const actorOptions = uniqueById(
+    events
+      .filter((event) => event.actorId)
+      .map((event) => ({
+        id: event.actorId as string,
+        label: event.actorName
+      }))
+  );
+
+  const categoryBreakdown = AUDIT_EVENT_CATEGORIES.map((category) => ({
+    id: category,
+    label: AUDIT_CATEGORY_LABELS[category],
+    count: filteredEvents.filter((event) => event.category === category).length
+  }));
+
+  const recentWindow = events.filter((event) => isWithinDays(event.createdAtRaw, 7));
+  const activeActorCount = new Set(recentWindow.map((event) => event.actorId).filter(Boolean)).size;
+  const latestEvent = filteredEvents[0] ?? events[0] ?? null;
+
+  return {
+    context,
+    auditEnabled: true,
+    errorMessage: null,
+    filters: {
+      query,
+      category: categoryFilter,
+      actorId: actorFilter
+    },
+    metrics: [
+      {
+        label: "Événements 7 jours",
+        value: recentWindow.length.toString(),
+        delta: `${events.length} événement(s) chargés`
+      },
+      {
+        label: "Actions d'accès",
+        value: events.filter((event) => event.category === "access").length.toString(),
+        delta: "Rôles, statuts et profils"
+      },
+      {
+        label: "Ops pédagogiques",
+        value: events.filter((event) => event.category === "delivery").length.toString(),
+        delta: "Assignations, cohortes, parcours"
+      },
+      {
+        label: "Acteurs actifs",
+        value: activeActorCount.toString(),
+        delta: "Admins ayant déclenché au moins un événement sur 7 jours"
+      }
+    ],
+    actorOptions,
+    categoryOptions: AUDIT_EVENT_CATEGORIES.map((category) => ({
+      id: category,
+      label: AUDIT_CATEGORY_LABELS[category]
+    })),
+    categoryBreakdown,
+    events: filteredEvents,
+    latestEvent
   };
 }
 
