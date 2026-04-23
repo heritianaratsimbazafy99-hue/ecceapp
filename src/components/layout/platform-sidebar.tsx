@@ -13,6 +13,7 @@ const navigation = [
   { href: "/programs", label: "Parcours", shortLabel: "PA", match: "exact", roles: ["coachee"] },
   { href: "/library", label: "Bibliothèque", shortLabel: "BI", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/professor", label: "Insights prof", shortLabel: "PR", match: "exact", roles: ["admin", "professor"] },
+  { href: "/professor/coaching", label: "Pilotage coaching", shortLabel: "CG", match: "prefix", roles: ["admin", "professor"] },
   { href: "/messages", label: "Messages", shortLabel: "MS", match: "exact", roles: ["coach", "coachee"] },
   { href: "/notifications", label: "Notifications", shortLabel: "NT", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/account", label: "Mon compte", shortLabel: "MC", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },

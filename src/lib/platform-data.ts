@@ -4331,6 +4331,442 @@ export async function getProfessorPageData(params?: {
   };
 }
 
+export async function getProfessorCoachingOpsPageData(filters?: {
+  query?: string;
+  coachId?: string;
+  cohortId?: string;
+  status?: string;
+  period?: string;
+}) {
+  const context = await requireRole(["admin", "professor"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const normalizedQuery = normalizeDataSearchQuery(filters?.query);
+  const statusFilter =
+    filters?.status === "planned" || filters?.status === "completed" || filters?.status === "cancelled"
+      ? filters.status
+      : "all";
+  const periodFilter =
+    filters?.period === "week" ||
+    filters?.period === "month" ||
+    filters?.period === "past" ||
+    filters?.period === "all"
+      ? filters.period
+      : "upcoming";
+  const now = Date.now();
+  const today = new Date(now);
+  const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const periodWindow =
+    periodFilter === "week"
+      ? { start: dayStart, end: dayStart + 7 * 24 * 60 * 60 * 1000, label: "7 prochains jours" }
+      : periodFilter === "month"
+        ? { start: dayStart, end: dayStart + 30 * 24 * 60 * 60 * 1000, label: "30 prochains jours" }
+        : periodFilter === "past"
+          ? { start: null, end: now, label: "Historique" }
+          : periodFilter === "all"
+            ? { start: null, end: null, label: "Toutes les séances" }
+            : { start: now, end: null, label: "À venir" };
+
+  const [rolesResult, profilesResult, cohortsResult, cohortMembersResult, noteSearchResult] = await Promise.all([
+    admin
+      .from("user_roles")
+      .select("user_id, role")
+      .eq("organization_id", organizationId)
+      .in("role", ["coach", "coachee"]),
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, status, bio, timezone")
+      .eq("organization_id", organizationId)
+      .order("last_name"),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin.from("cohort_members").select("user_id, cohort_id"),
+    normalizedQuery
+      ? admin
+          .from("coaching_notes")
+          .select("session_id")
+          .or(
+            `summary.ilike.%${normalizedQuery}%,blockers.ilike.%${normalizedQuery}%,next_actions.ilike.%${normalizedQuery}%`
+          )
+          .limit(120)
+      : Promise.resolve({ data: [] as Array<{ session_id: string }> })
+  ]);
+  const roleRows = (rolesResult.data ?? []) as Array<{ user_id: string; role: AppRole }>;
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const coachIds = new Set(roleRows.filter((row) => row.role === "coach").map((row) => row.user_id));
+  const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const cohortNameById = new Map(cohorts.map((cohort) => [cohort.id, cohort.name]));
+  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
+  const cohortNamesByUserId = cohortMembers.reduce((map, member) => {
+    const cohortName = cohortNameById.get(member.cohort_id);
+
+    if (!cohortName) {
+      return map;
+    }
+
+    const current = map.get(member.user_id) ?? [];
+    current.push(cohortName);
+    map.set(member.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
+  const coachOptions = profiles
+    .filter((profile) => coachIds.has(profile.id))
+    .map((profile) => ({
+      id: profile.id,
+      label: formatUserName(profile)
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label, "fr"));
+  const cohortOptions = cohorts.map((cohort) => ({
+    id: cohort.id,
+    label: cohort.name
+  }));
+  const selectedCoachId = filters?.coachId && coachOptions.some((coach) => coach.id === filters.coachId) ? filters.coachId : "";
+  const selectedCohortId =
+    filters?.cohortId && cohortOptions.some((cohort) => cohort.id === filters.cohortId) ? filters.cohortId : "";
+  const matchingProfileIds = normalizedQuery
+    ? profiles
+        .filter((profile) =>
+          matchesDataSearch(
+            [
+              profile.first_name,
+              profile.last_name,
+              profile.bio,
+              profile.timezone,
+              (cohortNamesByUserId.get(profile.id) ?? []).join(" ")
+            ],
+            normalizedQuery
+          )
+        )
+        .map((profile) => profile.id)
+    : [];
+  const matchingCohortIds = normalizedQuery
+    ? cohorts
+        .filter((cohort) => matchesDataSearch([cohort.name], normalizedQuery))
+        .map((cohort) => cohort.id)
+    : [];
+  const matchingNoteSessionIds = Array.from(
+    new Set(((noteSearchResult.data ?? []) as Array<{ session_id: string }>).map((note) => note.session_id))
+  );
+  const searchFilters = normalizedQuery
+    ? [
+        matchingProfileIds.length ? `coach_id.in.(${matchingProfileIds.join(",")})` : null,
+        matchingProfileIds.length ? `coachee_id.in.(${matchingProfileIds.join(",")})` : null,
+        matchingCohortIds.length ? `cohort_id.in.(${matchingCohortIds.join(",")})` : null,
+        matchingNoteSessionIds.length ? `id.in.(${matchingNoteSessionIds.join(",")})` : null,
+        `video_link.ilike.%${normalizedQuery}%`
+      ].filter(Boolean)
+    : [];
+
+  const sessionsResult = await (() => {
+    let query = admin
+      .from("coaching_sessions")
+      .select("id, coach_id, coachee_id, cohort_id, starts_at, ends_at, status, video_link, created_at")
+      .eq("organization_id", organizationId)
+      .order("starts_at", { ascending: periodFilter !== "past" })
+      .limit(120);
+
+    if (selectedCoachId) {
+      query = query.eq("coach_id", selectedCoachId);
+    }
+
+    if (selectedCohortId) {
+      query = query.eq("cohort_id", selectedCohortId);
+    }
+
+    if (statusFilter !== "all") {
+      query = query.eq("status", statusFilter);
+    }
+
+    if (periodWindow.start !== null) {
+      query = query.gte("starts_at", new Date(periodWindow.start).toISOString());
+    }
+
+    if (periodWindow.end !== null) {
+      query = query.lt("starts_at", new Date(periodWindow.end).toISOString());
+    }
+
+    if (searchFilters.length) {
+      query = query.or(searchFilters.join(","));
+    }
+
+    return query;
+  })();
+  const sessions = (sessionsResult.data ?? []) as Array<{
+    id: string;
+    coach_id: string;
+    coachee_id: string;
+    cohort_id: string | null;
+    starts_at: string;
+    ends_at: string | null;
+    status: "planned" | "completed" | "cancelled";
+    video_link: string | null;
+    created_at: string;
+  }>;
+  const sessionIds = sessions.map((session) => session.id);
+  const notesResult = sessionIds.length
+    ? await admin
+        .from("coaching_notes")
+        .select("id, session_id, coach_id, summary, blockers, next_actions, created_at")
+        .in("session_id", sessionIds)
+        .order("created_at", { ascending: false })
+    : { data: [] as CoachingNoteRow[] };
+  const notesBySessionId = ((notesResult.data ?? []) as CoachingNoteRow[]).reduce((map, note) => {
+    const current = map.get(note.session_id) ?? [];
+    current.push(note);
+    map.set(note.session_id, current);
+    return map;
+  }, new Map<string, CoachingNoteRow[]>());
+  const getStatusLabel = (status: "planned" | "completed" | "cancelled") => {
+    switch (status) {
+      case "completed":
+        return "réalisée";
+      case "cancelled":
+        return "annulée";
+      default:
+        return "planifiée";
+    }
+  };
+  const getStatusTone = (status: "planned" | "completed" | "cancelled") =>
+    status === "completed" ? ("success" as const) : status === "cancelled" ? ("warning" as const) : ("accent" as const);
+  const visibleSessions = sessions.map((session) => {
+    const sessionNotes = notesBySessionId.get(session.id) ?? [];
+    const latestNote = sessionNotes[0] ?? null;
+    const timestamp = getDateValue(session.starts_at) ?? 0;
+    const learner = profileById.get(session.coachee_id) ?? null;
+    const coach = profileById.get(session.coach_id) ?? null;
+    const fallbackCohort = learner ? (cohortNamesByUserId.get(learner.id) ?? [])[0] ?? null : null;
+    const isPast = timestamp < now;
+    const needsNote = session.status !== "cancelled" && isPast && sessionNotes.length === 0;
+
+    return {
+      id: session.id,
+      coachId: session.coach_id,
+      coacheeId: session.coachee_id,
+      coachName: coach ? formatUserName(coach) : "Coach inconnu",
+      learnerName: learner ? formatUserName(learner) : "Coaché inconnu",
+      learnerStatus: learner?.status ?? "active",
+      cohortName: session.cohort_id ? cohortNameById.get(session.cohort_id) ?? fallbackCohort : fallbackCohort,
+      status: session.status,
+      statusLabel: getStatusLabel(session.status),
+      statusTone: getStatusTone(session.status),
+      date: formatDate(session.starts_at),
+      dayLabel: getRelativeDayLabel(session.starts_at),
+      timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
+      timestamp,
+      hasVideo: Boolean(session.video_link),
+      noteCount: sessionNotes.length,
+      latestNoteSummary: latestNote?.summary ?? latestNote?.next_actions ?? latestNote?.blockers ?? null,
+      latestNoteAt: latestNote ? formatDate(latestNote.created_at) : null,
+      needsNote,
+      href: `/coach/sessions/${session.id}`
+    };
+  });
+  const plannedCount = visibleSessions.filter((session) => session.status === "planned").length;
+  const completedCount = visibleSessions.filter((session) => session.status === "completed").length;
+  const cancelledCount = visibleSessions.filter((session) => session.status === "cancelled").length;
+  const upcomingCount = visibleSessions.filter(
+    (session) => session.status === "planned" && session.timestamp >= now
+  ).length;
+  const stalePlannedSessions = visibleSessions.filter(
+    (session) => session.status === "planned" && session.timestamp < now
+  );
+  const sessionsNeedingNotes = visibleSessions.filter((session) => session.needsNote);
+  const actionableSessions = visibleSessions.filter(
+    (session) => session.status !== "cancelled" && (session.status === "completed" || session.timestamp < now)
+  );
+  const documentedActionableSessions = actionableSessions.filter((session) => session.noteCount > 0).length;
+  const noteCoverage = actionableSessions.length
+    ? roundMetric((documentedActionableSessions / actionableSessions.length) * 100)
+    : 0;
+  const nextSession =
+    [...visibleSessions]
+      .filter((session) => session.status === "planned" && session.timestamp >= now)
+      .sort((left, right) => left.timestamp - right.timestamp)[0] ?? null;
+  const coachLoads = coachOptions
+    .map((coach) => {
+      const coachSessions = visibleSessions.filter((session) => session.coachId === coach.id);
+      const learnerNames = Array.from(new Set(coachSessions.map((session) => session.learnerName))).slice(0, 3);
+
+      return {
+        id: coach.id,
+        name: coach.label,
+        sessionCount: coachSessions.length,
+        plannedCount: coachSessions.filter((session) => session.status === "planned").length,
+        completedCount: coachSessions.filter((session) => session.status === "completed").length,
+        needsNoteCount: coachSessions.filter((session) => session.needsNote).length,
+        learnerNames,
+        isActive: selectedCoachId === coach.id
+      };
+    })
+    .filter((coach) => coach.sessionCount > 0 || !selectedCoachId)
+    .sort(
+      (left, right) =>
+        Number(right.isActive) - Number(left.isActive) ||
+        right.needsNoteCount - left.needsNoteCount ||
+        right.plannedCount - left.plannedCount ||
+        right.sessionCount - left.sessionCount
+    )
+    .slice(0, 8);
+  const cohortLoads = cohortOptions
+    .map((cohort) => {
+      const cohortSessions = visibleSessions.filter((session) => session.cohortName === cohort.label);
+
+      return {
+        id: cohort.id,
+        name: cohort.label,
+        sessionCount: cohortSessions.length,
+        upcomingCount: cohortSessions.filter((session) => session.status === "planned" && session.timestamp >= now).length,
+        needsNoteCount: cohortSessions.filter((session) => session.needsNote).length,
+        completedCount: cohortSessions.filter((session) => session.status === "completed").length,
+        isActive: selectedCohortId === cohort.id
+      };
+    })
+    .filter((cohort) => cohort.sessionCount > 0 || !selectedCohortId)
+    .sort(
+      (left, right) =>
+        Number(right.isActive) - Number(left.isActive) ||
+        right.needsNoteCount - left.needsNoteCount ||
+        right.upcomingCount - left.upcomingCount ||
+        right.sessionCount - left.sessionCount
+    )
+    .slice(0, 8);
+  const statusBreakdown = [
+    { id: "planned", label: "Planifiées", count: plannedCount, tone: "accent" as const },
+    { id: "completed", label: "Réalisées", count: completedCount, tone: "success" as const },
+    { id: "cancelled", label: "Annulées", count: cancelledCount, tone: "warning" as const }
+  ].map((status) => ({
+    ...status,
+    isActive: statusFilter === status.id
+  }));
+  const priorityActions = [
+    stalePlannedSessions[0]
+      ? {
+          id: "stale",
+          eyebrow: "Statut à clarifier",
+          title: `${stalePlannedSessions.length} séance(s) planifiée(s) dans le passé`,
+          description: `${stalePlannedSessions[0].learnerName} · ${stalePlannedSessions[0].date}.`,
+          tone: "warning" as const,
+          href: stalePlannedSessions[0].href,
+          cta: "Ouvrir"
+        }
+      : {
+          id: "stale",
+          eyebrow: "Cadence saine",
+          title: "Aucune séance passée encore ouverte",
+          description: "Les créneaux planifiés restent cohérents avec le calendrier visible.",
+          tone: "success" as const,
+          href: "/agenda",
+          cta: "Agenda"
+        },
+    sessionsNeedingNotes[0]
+      ? {
+          id: "notes",
+          eyebrow: "Mémoire coach",
+          title: `${sessionsNeedingNotes.length} séance(s) sans note`,
+          description: `${sessionsNeedingNotes[0].learnerName} · ${sessionsNeedingNotes[0].coachName}.`,
+          tone: "accent" as const,
+          href: sessionsNeedingNotes[0].href,
+          cta: "Documenter"
+        }
+      : {
+          id: "notes",
+          eyebrow: "Mémoire coach",
+          title: "Les séances passées sont documentées",
+          description: "La couverture des notes est propre sur le périmètre filtré.",
+          tone: "success" as const,
+          href: "/professor/coaching",
+          cta: "Vue globale"
+        },
+    nextSession
+      ? {
+          id: "next",
+          eyebrow: "Prochain direct",
+          title: `${nextSession.learnerName} · ${nextSession.dayLabel}`,
+          description: `${nextSession.timeLabel} avec ${nextSession.coachName}.`,
+          tone: "neutral" as const,
+          href: nextSession.href,
+          cta: "Préparer"
+        }
+      : {
+          id: "next",
+          eyebrow: "Planification",
+          title: "Aucune séance à venir dans cette vue",
+          description: "Élargis la période ou ouvre l'agenda pour planifier les prochains créneaux.",
+          tone: "neutral" as const,
+          href: "/agenda",
+          cta: "Planifier"
+        }
+  ];
+  const activeFilterParts = [
+    periodWindow.label,
+    statusFilter !== "all" ? getStatusLabel(statusFilter) : null,
+    selectedCoachId ? coachOptions.find((coach) => coach.id === selectedCoachId)?.label ?? "Coach ciblé" : null,
+    selectedCohortId ? cohortNameById.get(selectedCohortId) ?? "Cohorte ciblée" : null,
+    normalizedQuery ? `Recherche « ${normalizedQuery} »` : null
+  ].filter(Boolean) as string[];
+  const meterBand: EngagementBand = noteCoverage >= 75 ? "strong" : noteCoverage >= 45 ? "watch" : "risk";
+
+  return {
+    context,
+    canOpenSessionWorkspace: context.roles.includes("admin"),
+    filters: {
+      query: normalizedQuery,
+      coachId: selectedCoachId,
+      cohortId: selectedCohortId,
+      status: statusFilter,
+      period: periodFilter,
+      summary: activeFilterParts.join(" · ")
+    },
+    coachOptions,
+    cohortOptions,
+    periodOptions: [
+      { id: "upcoming", label: "À venir" },
+      { id: "week", label: "7 prochains jours" },
+      { id: "month", label: "30 prochains jours" },
+      { id: "past", label: "Historique" },
+      { id: "all", label: "Tout afficher" }
+    ],
+    statusBreakdown,
+    priorityActions,
+    coachLoads,
+    cohortLoads,
+    sessions: visibleSessions,
+    focus: {
+      nextSession,
+      noteCoverage,
+      meterBand,
+      staleCount: stalePlannedSessions.length,
+      needsNoteCount: sessionsNeedingNotes.length,
+      upcomingCount
+    },
+    metrics: [
+      {
+        label: "Séances visibles",
+        value: visibleSessions.length.toString(),
+        delta: `${periodWindow.label} · ${statusFilter === "all" ? "tous statuts" : getStatusLabel(statusFilter)}`
+      },
+      {
+        label: "À venir",
+        value: upcomingCount.toString(),
+        delta: nextSession ? `${nextSession.learnerName} · ${nextSession.dayLabel}` : "aucun créneau futur"
+      },
+      {
+        label: "Notes couvertes",
+        value: `${noteCoverage}%`,
+        delta: `${documentedActionableSessions}/${actionableSessions.length || 0} séance(s) actionnables`
+      },
+      {
+        label: "À clarifier",
+        value: (stalePlannedSessions.length + sessionsNeedingNotes.length).toString(),
+        delta:
+          stalePlannedSessions.length > 0
+            ? `${stalePlannedSessions.length} statut(s) passé(s)`
+            : `${sessionsNeedingNotes.length} note(s) manquante(s)`
+      }
+    ]
+  };
+}
+
 export async function getAdminContentStudioPageData(filters?: {
   query?: string;
   category?: string;

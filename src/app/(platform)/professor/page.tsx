@@ -81,6 +81,16 @@ export default async function ProfessorPage({
   return (
     <div className="page-shell">
       <PlatformTopbar
+        actions={
+          <>
+            <Link className="button button-secondary" href="/professor/coaching">
+              Pilotage coaching
+            </Link>
+            <Link className="button" href="/agenda">
+              Agenda
+            </Link>
+          </>
+        }
         title="Insights professor"
         description="Cockpit professor premium pour arbitrer la santé pédagogique, filtrer les cohortes et transformer les signaux faibles en décisions rapides."
       />
