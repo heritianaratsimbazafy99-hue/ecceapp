@@ -2009,10 +2009,18 @@ export async function getAdminLearnerOpsPageData() {
   };
 }
 
-export async function getProfessorPageData() {
+export async function getProfessorPageData(params?: {
+  query?: string;
+  cohortId?: string;
+  band?: string;
+}) {
   const context = await requireRole(["admin", "professor"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
+  const query = params?.query?.trim() ?? "";
+  const normalizedQuery = query.toLowerCase();
+  const bandFilter =
+    params?.band === "risk" || params?.band === "watch" || params?.band === "strong" ? params.band : "all";
 
   const [
     coacheeRolesResult,
@@ -2075,6 +2083,12 @@ export async function getProfessorPageData() {
   const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
   const cohortRows = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
   const cohortNameById = new Map(cohortRows.map((item) => [item.id, item.name]));
+  const cohortIdsByUserId = cohortMembers.reduce((map, item) => {
+    const current = map.get(item.user_id) ?? [];
+    current.push(item.cohort_id);
+    map.set(item.user_id, current);
+    return map;
+  }, new Map<string, string[]>());
   const cohortNamesByUserId = cohortMembers.reduce((map, item) => {
     const current = map.get(item.user_id) ?? [];
     const cohortName = cohortNameById.get(item.cohort_id);
@@ -2140,6 +2154,7 @@ export async function getProfessorPageData() {
   const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
   const attempts = (analyticsAttemptsResult.data ?? []) as QuizAttemptResultRow[];
   const submissions = (analyticsSubmissionsResult.data ?? []) as SubmissionRow[];
+  const sessions = (analyticsSessionsResult.data ?? []) as SessionAnalyticsRow[];
 
   const engagementSignals = buildEngagementSignals({
     learnerIds,
@@ -2149,16 +2164,36 @@ export async function getProfessorPageData() {
     cohortMembers,
     attempts,
     submissions,
-    sessions: (analyticsSessionsResult.data ?? []) as SessionAnalyticsRow[],
+    sessions,
     notifications: (analyticsNotificationsResult.data ?? []) as NotificationAnalyticsRow[],
     badges: (analyticsBadgesResult.data ?? []) as BadgeAwardAnalyticsRow[]
   });
-  const engagementOverview = buildEngagementOverview(engagementSignals);
-  const attentionLearners = [...engagementSignals]
-    .filter((signal) => signal.band !== "strong")
-    .sort((left, right) => right.overdueCount - left.overdueCount || left.score - right.score)
-    .slice(0, 6);
+  const baselineOverview = buildEngagementOverview(engagementSignals);
   const engagementSignalById = new Map(engagementSignals.map((signal) => [signal.id, signal]));
+  const bandRank = {
+    risk: 0,
+    watch: 1,
+    strong: 2
+  } satisfies Record<EngagementBand, number>;
+  const sortSignalsByPriority = (left: LearnerEngagementSignal, right: LearnerEngagementSignal) =>
+    bandRank[left.band] - bandRank[right.band] ||
+    right.overdueCount - left.overdueCount ||
+    right.dueSoonCount - left.dueSoonCount ||
+    left.score - right.score ||
+    (getDateValue(left.lastActivityAt) ?? 0) - (getDateValue(right.lastActivityAt) ?? 0);
+  const sortSignalsByMomentum = (left: LearnerEngagementSignal, right: LearnerEngagementSignal) => {
+    const leftBandScore = left.band === "strong" ? 2 : left.band === "watch" ? 1 : 0;
+    const rightBandScore = right.band === "strong" ? 2 : right.band === "watch" ? 1 : 0;
+    const leftTrendScore = left.trend === "up" ? 2 : left.trend === "steady" ? 1 : 0;
+    const rightTrendScore = right.trend === "up" ? 2 : right.trend === "steady" ? 1 : 0;
+
+    return (
+      rightBandScore - leftBandScore ||
+      rightTrendScore - leftTrendScore ||
+      right.score - left.score ||
+      right.recentActivityCount - left.recentActivityCount
+    );
+  };
 
   const cohortHealth = cohortRows
     .map((cohort) => {
@@ -2181,9 +2216,8 @@ export async function getProfessorPageData() {
         : null;
       const atRiskCount = signals.filter((signal) => signal.band === "risk").length;
       const watchCount = signals.filter((signal) => signal.band === "watch").length;
-      const topFocus = [...signals]
-        .sort((left, right) => right.overdueCount - left.overdueCount || left.score - right.score)[0]?.nextFocus ??
-        "Aucun signal remonté pour le moment";
+      const topFocus =
+        [...signals].sort(sortSignalsByPriority)[0]?.nextFocus ?? "Aucun signal remonté pour le moment";
 
       return {
         id: cohort.id,
@@ -2203,12 +2237,91 @@ export async function getProfessorPageData() {
     })
     .sort((left, right) => right.atRiskCount - left.atRiskCount || left.averageScore - right.averageScore);
 
+  const selectedCohortId =
+    params?.cohortId && cohortRows.some((cohort) => cohort.id === params.cohortId) ? params.cohortId : "";
+  const filteredSignals = engagementSignals.filter((signal) => {
+    const matchesCohort = selectedCohortId
+      ? (cohortIdsByUserId.get(signal.id) ?? []).includes(selectedCohortId)
+      : true;
+    const matchesBand = bandFilter === "all" ? true : signal.band === bandFilter;
+    const matchesQuery = normalizedQuery
+      ? `${signal.name} ${signal.cohorts.join(" ")} ${signal.nextFocus}`.toLowerCase().includes(normalizedQuery)
+      : true;
+
+    return matchesCohort && matchesBand && matchesQuery;
+  });
+  const filteredOverview = buildEngagementOverview(filteredSignals);
+  const filteredLearnerIds = new Set(filteredSignals.map((signal) => signal.id));
+  const attentionLearners = [...filteredSignals]
+    .filter((signal) => signal.band !== "strong")
+    .sort(sortSignalsByPriority)
+    .slice(0, 6);
+  const learnerSpotlights = [...filteredSignals].sort(sortSignalsByPriority).slice(0, 6);
+  const championLearners = [...filteredSignals].sort(sortSignalsByMomentum).slice(0, 5);
+  const focusCohortId = selectedCohortId || cohortHealth[0]?.id || "";
+  const focusCohortBase = cohortHealth.find((cohort) => cohort.id === focusCohortId) ?? null;
+  const focusCohortSignals = focusCohortId
+    ? engagementSignals.filter((signal) => (cohortIdsByUserId.get(signal.id) ?? []).includes(focusCohortId))
+    : [];
+  const focusCohort = focusCohortBase
+    ? {
+        ...focusCohortBase,
+        shareOfPopulation: profiles.length ? roundMetric((focusCohortBase.memberCount / profiles.length) * 100) : 0,
+        statusLabel:
+          focusCohortBase.atRiskCount > 0
+            ? `${focusCohortBase.atRiskCount} coaché(s) à relancer vite`
+            : focusCohortBase.watchCount > 0
+              ? `${focusCohortBase.watchCount} coaché(s) encore à surveiller`
+              : "Rythme homogène à maintenir",
+        learners: [...focusCohortSignals]
+          .sort(sortSignalsByPriority)
+          .slice(0, 4)
+          .map((signal) => ({
+            id: signal.id,
+            name: signal.name,
+            band: signal.band,
+            bandLabel: signal.bandLabel,
+            score: signal.score,
+            nextFocus: signal.nextFocus,
+            lastActivityLabel: signal.lastActivityLabel
+          }))
+      }
+    : null;
+  const cohortHealthWithSelection = cohortHealth
+    .map((cohort) => ({
+      ...cohort,
+      isActive: cohort.id === focusCohortId
+    }))
+    .sort(
+      (left, right) =>
+        Number(right.isActive) - Number(left.isActive) ||
+        right.atRiskCount - left.atRiskCount ||
+        left.averageScore - right.averageScore
+    );
+  const cohortOptions = cohortHealth.map((cohort) => ({
+    id: cohort.id,
+    label: cohort.name,
+    memberCount: cohort.memberCount,
+    atRiskCount: cohort.atRiskCount
+  }));
+  const bandBreakdown = (["risk", "watch", "strong"] as EngagementBand[]).map((band) => ({
+    id: band,
+    label: getEngagementBandLabel(band),
+    count: filteredSignals.filter((signal) => signal.band === band).length,
+    tone: (band === "risk" ? "warning" : band === "watch" ? "accent" : "success") as
+      | "warning"
+      | "accent"
+      | "success",
+    isActive: bandFilter === band
+  }));
+
   const quizById = new Map(quizzes.map((quiz) => [quiz.id, quiz]));
-  const attemptCountByQuizId = attempts.reduce((map, attempt) => {
+  const visibleAttempts = attempts.filter((attempt) => filteredLearnerIds.has(attempt.user_id));
+  const attemptCountByQuizId = visibleAttempts.reduce((map, attempt) => {
     map.set(attempt.quiz_id, (map.get(attempt.quiz_id) ?? 0) + 1);
     return map;
   }, new Map<string, number>());
-  const gradedAttemptsByQuizId = attempts.reduce((map, attempt) => {
+  const gradedAttemptsByQuizId = visibleAttempts.reduce((map, attempt) => {
     if (attempt.status !== "graded" || attempt.score === null) {
       return map;
     }
@@ -2218,21 +2331,56 @@ export async function getProfessorPageData() {
     map.set(attempt.quiz_id, current);
     return map;
   }, new Map<string, number[]>());
-  const quizPulse = quizzes
+  const quizAnalytics = quizzes
     .map((quiz) => {
       const grades = gradedAttemptsByQuizId.get(quiz.id) ?? [];
+      const averageScore = grades.length ? roundMetric(grades.reduce((total, score) => total + score, 0) / grades.length) : null;
+      const attemptCount = attemptCountByQuizId.get(quiz.id) ?? 0;
+      let signalTone: "neutral" | "warning" | "accent" | "success" = "neutral";
+      let signalLabel = "À lancer";
+      let insight = "Quiz publié mais encore sans tentatives visibles.";
+
+      if (attemptCount > 0 && averageScore !== null && averageScore < 60) {
+        signalTone = "warning";
+        signalLabel = "Fragile";
+        insight = `${averageScore}% de moyenne sur ${attemptCount} tentative(s).`;
+      } else if (attemptCount > 0 && averageScore !== null && averageScore < 75) {
+        signalTone = "accent";
+        signalLabel = "À consolider";
+        insight = `${averageScore}% de moyenne sur ${attemptCount} tentative(s).`;
+      } else if (attemptCount > 0) {
+        signalTone = "success";
+        signalLabel = "Stable";
+        insight = `${attemptCount} tentative(s) déjà remontée(s).`;
+      }
+
       return {
         id: quiz.id,
         title: quiz.title,
         kind: quiz.kind ?? "quiz",
         questionCount: quiz.quiz_questions?.length ?? 0,
-        attemptCount: attemptCountByQuizId.get(quiz.id) ?? 0,
-        averageScore: grades.length ? roundMetric(grades.reduce((total, score) => total + score, 0) / grades.length) : null,
-        timeLimitMinutes: quiz.time_limit_minutes ?? null
+        attemptCount,
+        averageScore,
+        timeLimitMinutes: quiz.time_limit_minutes ?? null,
+        signalTone,
+        signalLabel,
+        insight
       };
     })
-    .sort((left, right) => right.attemptCount - left.attemptCount || (right.averageScore ?? 0) - (left.averageScore ?? 0))
-    .slice(0, 6);
+    .sort((left, right) => {
+      const leftPriority =
+        left.attemptCount === 0 ? 3 : left.averageScore !== null && left.averageScore < 60 ? 0 : left.averageScore !== null && left.averageScore < 75 ? 1 : 2;
+      const rightPriority =
+        right.attemptCount === 0 ? 3 : right.averageScore !== null && right.averageScore < 60 ? 0 : right.averageScore !== null && right.averageScore < 75 ? 1 : 2;
+
+      return rightPriority === leftPriority
+        ? right.attemptCount - left.attemptCount || (left.averageScore ?? 101) - (right.averageScore ?? 101)
+        : leftPriority - rightPriority;
+    });
+  const quizWatchlist = quizAnalytics.slice(0, 6);
+  const fragileQuizCount = quizAnalytics.filter(
+    (quiz) => quiz.attemptCount > 0 && quiz.averageScore !== null && quiz.averageScore < 75
+  ).length;
 
   const assignmentCountByContentId = assignments.reduce((map, assignment) => {
     if (!assignment.content_item_id) {
@@ -2250,13 +2398,18 @@ export async function getProfessorPageData() {
     map.set(quiz.content_item_id, (map.get(quiz.content_item_id) ?? 0) + 1);
     return map;
   }, new Map<string, number>());
-  const contentSpotlight = [...contents]
+  const filteredContents = normalizedQuery
+    ? contents.filter((content) =>
+        `${content.title} ${content.summary ?? ""} ${content.category ?? ""}`.toLowerCase().includes(normalizedQuery)
+      )
+    : contents;
+  const contentSpotlight = [...(filteredContents.length ? filteredContents : contents)]
     .sort(
       (left, right) =>
         (assignmentCountByContentId.get(right.id) ?? 0) - (assignmentCountByContentId.get(left.id) ?? 0) ||
         (linkedQuizCountByContentId.get(right.id) ?? 0) - (linkedQuizCountByContentId.get(left.id) ?? 0)
     )
-    .slice(0, 6)
+    .slice(0, 4)
     .map((content) => ({
       id: content.id,
       title: content.title,
@@ -2270,11 +2423,16 @@ export async function getProfessorPageData() {
     }));
 
   const recentQuizResults = attempts
-    .slice(0, 8)
+    .filter((attempt) => filteredLearnerIds.has(attempt.user_id))
     .map((attempt) => {
       const learner = profileById.get(attempt.user_id);
       const quiz = quizById.get(attempt.quiz_id);
-      const tone: "success" | "accent" = attempt.status === "graded" ? "success" : "accent";
+      const tone: "success" | "accent" | "warning" =
+        attempt.status === "graded"
+          ? attempt.score !== null && attempt.score < 60
+            ? "warning"
+            : "success"
+          : "accent";
 
       return {
         id: attempt.id,
@@ -2285,46 +2443,240 @@ export async function getProfessorPageData() {
         score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
         tone
       };
-    });
+    })
+    .filter((result) =>
+      normalizedQuery ? `${result.learner} ${result.quizTitle}`.toLowerCase().includes(normalizedQuery) : true
+    )
+    .slice(0, 8);
+  const pedagogicalFeed = [
+    ...attempts
+      .filter((attempt) => filteredLearnerIds.has(attempt.user_id))
+      .map((attempt) => {
+        const learner = profileById.get(attempt.user_id);
+        const quiz = quizById.get(attempt.quiz_id);
+
+        return {
+          id: `attempt-${attempt.id}`,
+          type: "Quiz",
+          title: `${learner ? formatUserName(learner) : "Coaché"} · ${quiz?.title ?? "Quiz"}`,
+          description:
+            attempt.status === "graded"
+              ? `Copie notée ${attempt.score !== null ? `${attempt.score}%` : "sans score"} · tentative ${attempt.attempt_number}`
+              : `Tentative ${attempt.attempt_number} encore en correction`,
+          createdAt: attempt.submitted_at,
+          createdAtLabel: formatDate(attempt.submitted_at),
+          tone: (attempt.status === "graded"
+            ? attempt.score !== null && attempt.score < 60
+              ? "warning"
+              : "success"
+            : "accent") as "warning" | "success" | "accent"
+        };
+      }),
+    ...submissions
+      .filter((submission) => filteredLearnerIds.has(submission.user_id))
+      .map((submission) => {
+        const learner = profileById.get(submission.user_id);
+        const submittedAt = submission.submitted_at ?? submission.created_at ?? null;
+
+        return {
+          id: `submission-${submission.id}`,
+          type: "Soumission",
+          title: `${learner ? formatUserName(learner) : "Coaché"} · ${submission.title}`,
+          description:
+            submission.status === "reviewed"
+              ? "Soumission déjà relue et refermée dans le flux pédagogique."
+              : "Soumission déposée, utile pour la prochaine boucle de feedback.",
+          createdAt: submittedAt,
+          createdAtLabel: formatDate(submittedAt),
+          tone: (submission.status === "reviewed" ? "success" : "accent") as "success" | "accent"
+        };
+      }),
+    ...sessions
+      .filter((session) => filteredLearnerIds.has(session.coachee_id))
+      .map((session) => {
+        const learner = profileById.get(session.coachee_id);
+
+        return {
+          id: `session-${session.coachee_id}-${session.starts_at}`,
+          type: "Séance",
+          title: `${learner ? formatUserName(learner) : "Coaché"} · séance ${session.status === "cancelled" ? "annulée" : "coach"}`,
+          description: `${getRelativeDayLabel(session.starts_at)} · ${formatTimeOnly(session.starts_at)}`,
+          createdAt: session.starts_at,
+          createdAtLabel: formatDate(session.starts_at),
+          tone: (session.status === "cancelled" ? "warning" : "accent") as "warning" | "accent"
+        };
+      })
+  ]
+    .filter((item) => Boolean(item.createdAt))
+    .filter((item) =>
+      normalizedQuery ? `${item.title} ${item.description}`.toLowerCase().includes(normalizedQuery) : true
+    )
+    .sort((left, right) => (getDateValue(right.createdAt) ?? 0) - (getDateValue(left.createdAt) ?? 0))
+    .slice(0, 8);
 
   const learnersWithoutCohort = profiles.filter((profile) => !(cohortNamesByUserId.get(profile.id) ?? []).length).length;
+  const overdueTotal = filteredSignals.reduce((total, signal) => total + signal.overdueCount, 0);
+  const dueSoonTotal = filteredSignals.reduce((total, signal) => total + signal.dueSoonCount, 0);
+  const topPriorityLearner = attentionLearners[0] ?? learnerSpotlights[0] ?? null;
+  const topFragileQuiz =
+    quizAnalytics.find((quiz) => quiz.attemptCount > 0 && quiz.averageScore !== null && quiz.averageScore < 75) ??
+    quizAnalytics[0] ??
+    null;
+  const leadContent = contentSpotlight[0] ?? null;
+  const selectedCohortLabel = selectedCohortId ? cohortNameById.get(selectedCohortId) ?? "Cohorte ciblée" : "Vue globale";
+  const activeFilterParts = [
+    selectedCohortId ? selectedCohortLabel : null,
+    bandFilter !== "all" ? getEngagementBandLabel(bandFilter) : null,
+    query ? `Recherche « ${query} »` : null
+  ].filter(Boolean) as string[];
+  const priorityActions = [
+    topPriorityLearner
+      ? {
+          id: "learners",
+          eyebrow: "Relance apprenant",
+          title:
+            topPriorityLearner.band === "strong"
+              ? `Préserver la dynamique de ${topPriorityLearner.name}`
+              : `Traiter le signal de ${topPriorityLearner.name}`,
+          description: `${topPriorityLearner.nextFocus} · ${topPriorityLearner.lastActivityLabel}.`,
+          href: "/notifications",
+          ctaLabel: "Notifier",
+          tone: (topPriorityLearner.band === "risk"
+            ? "warning"
+            : topPriorityLearner.band === "watch"
+              ? "accent"
+              : "success") as "warning" | "accent" | "success"
+        }
+      : {
+          id: "learners",
+          eyebrow: "Population visible",
+          title: "Aucun apprenant dans le radar courant",
+          description: "Change les filtres pour réouvrir une cohorte ou une bande d'engagement plus large.",
+          href: "/professor",
+          ctaLabel: "Réinitialiser",
+          tone: "neutral" as const
+        },
+    {
+      id: "deadlines",
+      eyebrow: "Cadence",
+      title:
+        overdueTotal > 0
+          ? `${overdueTotal} échéance(s) déjà dépassée(s)`
+          : dueSoonTotal > 0
+            ? `${dueSoonTotal} deadline(s) arrivent cette semaine`
+            : "Cadence des échéances sous contrôle",
+      description:
+        overdueTotal > 0
+          ? "Le cockpit professor pointe une tension réelle sur les apprenants actuellement visibles."
+          : dueSoonTotal > 0
+            ? "Le bon moment pour rééquilibrer les relances avant le pic de charge."
+            : "Aucun goulot d'étranglement fort n'est remonté sur ce périmètre.",
+      href: "/agenda",
+      ctaLabel: "Ouvrir l'agenda",
+      tone: (overdueTotal > 0 ? "warning" : dueSoonTotal > 0 ? "accent" : "success") as
+        | "warning"
+        | "accent"
+        | "success"
+    },
+    topFragileQuiz
+      ? {
+          id: "quiz",
+          eyebrow: "Calibration quiz",
+          title:
+            topFragileQuiz.averageScore !== null && topFragileQuiz.averageScore < 75
+              ? `Revoir ${topFragileQuiz.title}`
+              : `Suivre ${topFragileQuiz.title}`,
+          description: topFragileQuiz.insight,
+          href: "/admin/quizzes",
+          ctaLabel: "Ouvrir les quiz",
+          tone: topFragileQuiz.signalTone
+        }
+      : {
+          id: "quiz",
+          eyebrow: "Calibration quiz",
+          title: "Aucun quiz publié",
+          description: "Le radar professor mettra en avant ici le quiz le plus utile à recalibrer.",
+          href: "/admin/quizzes",
+          ctaLabel: "Créer un quiz",
+          tone: "neutral" as const
+        },
+    leadContent
+      ? {
+          id: "content",
+          eyebrow: "Ressource pivot",
+          title: `Capitaliser sur ${leadContent.title}`,
+          description: `${leadContent.assignmentCount} assignation(s) · ${leadContent.linkedQuizCount} quiz lié(s).`,
+          href: `/library/${leadContent.slug}`,
+          ctaLabel: "Voir la ressource",
+          tone: "success" as const
+        }
+      : {
+          id: "content",
+          eyebrow: "Ressource pivot",
+          title: "Bibliothèque à enrichir",
+          description: "Aucune ressource publiée n'est encore remontée comme pivot pédagogique.",
+          href: "/library",
+          ctaLabel: "Ouvrir la bibliothèque",
+          tone: "neutral" as const
+        }
+  ];
 
   return {
     context,
+    filters: {
+      query,
+      cohortId: selectedCohortId,
+      band: bandFilter,
+      summary: activeFilterParts.length ? activeFilterParts.join(" · ") : "Vue globale"
+    },
+    cohortOptions,
     metrics: [
       {
-        label: "Cohortes actives",
-        value: cohortRows.length.toString(),
-        delta: `${learnersWithoutCohort} coaché(s) sans cohorte`
+        label: "Apprenants visibles",
+        value: filteredSignals.length.toString(),
+        delta: `${profiles.length} coaché(s) suivis · ${selectedCohortId ? selectedCohortLabel : `${cohortRows.length} cohorte(s)`}`
       },
       {
         label: "Engagement moyen",
-        value: `${engagementOverview.averageScore}%`,
-        delta: `${engagementOverview.recentlyActiveCount} actifs cette semaine`
+        value: `${filteredOverview.averageScore}%`,
+        delta: `${filteredOverview.recentlyActiveCount} actif(s) sur 7 jours`
       },
       {
-        label: "Coachés à surveiller",
-        value: engagementOverview.atRiskCount.toString(),
-        delta: `${engagementOverview.watchCount} à suivre de près`
+        label: "Relances prioritaires",
+        value: attentionLearners.length.toString(),
+        delta: overdueTotal > 0 ? `${overdueTotal} échéance(s) en retard` : `${dueSoonTotal} deadline(s) à venir`
       },
       {
-        label: "Quiz moyen",
-        value: engagementOverview.averageQuizScore !== null ? `${engagementOverview.averageQuizScore}%` : "n/a",
-        delta: `${quizzes.length} quiz publiés`
+        label: "Quiz sous vigilance",
+        value: fragileQuizCount.toString(),
+        delta:
+          filteredOverview.averageQuizScore !== null
+            ? `${filteredOverview.averageQuizScore}% de moyenne`
+            : `${quizzes.length} quiz publiés`
       }
     ],
     analyticsOverview: {
-      ...engagementOverview,
+      ...filteredOverview,
       totalPublishedContents: contents.length,
       totalQuizzes: quizzes.length,
       totalAssignments: assignments.length,
       totalLearners: profiles.length
     },
-    cohortHealth,
+    bandBreakdown,
+    focusCohort,
+    priorityActions,
+    cohortHealth: cohortHealthWithSelection,
     attentionLearners,
+    learnerSpotlights,
+    championLearners,
+    pedagogicalFeed,
     recentQuizResults,
-    quizPulse,
-    contentSpotlight
+    quizWatchlist,
+    contentSpotlight,
+    baseline: {
+      averageScore: baselineOverview.averageScore,
+      learnersWithoutCohort
+    }
   };
 }
 
