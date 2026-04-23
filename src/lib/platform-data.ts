@@ -93,6 +93,7 @@ type QuizRow = {
   passing_score?: number | null;
   randomize_questions?: boolean;
   content_item_id?: string | null;
+  created_at?: string;
   quiz_questions?: QuizQuestionRow[];
 };
 
@@ -4043,7 +4044,12 @@ export async function getAdminContentStudioPageData(filters?: {
   };
 }
 
-export async function getAdminQuizStudioPageData() {
+export async function getAdminQuizStudioPageData(filters?: {
+  query?: string;
+  kind?: string;
+  status?: string;
+  lane?: string;
+}) {
   const context = await requireRole(["admin"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
@@ -4056,7 +4062,7 @@ export async function getAdminQuizStudioPageData() {
   const programs = (programsResult.data ?? []) as ProgramRow[];
   const programIds = programs.map((program) => program.id);
 
-  const [contentsResult, quizzesResult, modulesResult] = await Promise.all([
+  const [contentsResult, quizzesResult, modulesResult, assignmentsResult, attemptsResult, profilesResult] = await Promise.all([
     admin
       .from("content_items")
       .select("id, title, status")
@@ -4071,6 +4077,8 @@ export async function getAdminQuizStudioPageData() {
           description,
           kind,
           status,
+          module_id,
+          created_at,
           attempts_allowed,
           time_limit_minutes,
           passing_score,
@@ -4098,36 +4106,513 @@ export async function getAdminQuizStudioPageData() {
           .from("program_modules")
           .select("id, program_id, title, description, position, status, available_at")
           .in("program_id", programIds)
-      : Promise.resolve({ data: [] as ProgramModuleRow[] })
+      : Promise.resolve({ data: [] as ProgramModuleRow[] }),
+    admin
+      .from("learning_assignments")
+      .select("id, quiz_id, due_at, published_at")
+      .eq("organization_id", organizationId)
+      .not("quiz_id", "is", null),
+    admin
+      .from("quiz_attempts")
+      .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+      .order("submitted_at", { ascending: false }),
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name")
+      .eq("organization_id", organizationId)
   ]);
 
   const contents = (contentsResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
   const quizzes = (quizzesResult.data ?? []) as QuizRow[];
   const modules = (modulesResult.data ?? []) as ProgramModuleRow[];
+  const assignments = (assignmentsResult.data ?? []) as Array<{
+    id: string;
+    quiz_id: string | null;
+    due_at: string | null;
+    published_at: string | null;
+  }>;
+  const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
+  const profiles = (profilesResult.data ?? []) as Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+  }>;
+  const contentTitleById = new Map(contents.map((content) => [content.id, content.title]));
+  const profileNameById = new Map(
+    profiles.map((profile) => [profile.id, `${profile.first_name} ${profile.last_name}`.trim()])
+  );
+  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  const assignmentStatsByQuizId = assignments.reduce((map, assignment) => {
+    if (!assignment.quiz_id) {
+      return map;
+    }
+
+    const current =
+      map.get(assignment.quiz_id) ??
+      ({
+        assignmentCount: 0,
+        overdueCount: 0,
+        dueSoonCount: 0
+      } as {
+        assignmentCount: number;
+        overdueCount: number;
+        dueSoonCount: number;
+      });
+    const state = getDeadlineState(assignment.due_at, false);
+
+    current.assignmentCount += 1;
+    if (state === "overdue") {
+      current.overdueCount += 1;
+    } else if (state === "soon") {
+      current.dueSoonCount += 1;
+    }
+
+    map.set(assignment.quiz_id, current);
+    return map;
+  }, new Map<
+    string,
+    {
+      assignmentCount: number;
+      overdueCount: number;
+      dueSoonCount: number;
+    }
+  >());
+  const attemptScoresByQuizId = attempts.reduce((map, attempt) => {
+    if (attempt.status !== "graded" || attempt.score === null) {
+      return map;
+    }
+
+    const current = map.get(attempt.quiz_id) ?? [];
+    current.push(attempt.score);
+    map.set(attempt.quiz_id, current);
+    return map;
+  }, new Map<string, number[]>());
+  const attemptCountByQuizId = attempts.reduce((map, attempt) => {
+    map.set(attempt.quiz_id, (map.get(attempt.quiz_id) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+  const normalizedQuery = String(filters?.query ?? "").trim().toLowerCase();
+  const kinds = Array.from(new Set(quizzes.map((quiz) => quiz.kind?.trim()).filter(Boolean) as string[])).sort((left, right) =>
+    left.localeCompare(right)
+  );
+  const selectedKind = filters?.kind && kinds.includes(String(filters.kind)) ? String(filters.kind) : "";
+  const statuses = Array.from(new Set(quizzes.map((quiz) => String(quiz.status ?? ""))).values()).filter(Boolean);
+  const selectedStatus =
+    filters?.status && filters.status !== "all" && statuses.includes(String(filters.status)) ? String(filters.status) : "all";
+  const laneFilter =
+    filters?.lane === "fragile" ||
+    filters?.lane === "active" ||
+    filters?.lane === "draft" ||
+    filters?.lane === "ready"
+      ? filters.lane
+      : "all";
+
+  const quizRows = quizzes.map((quiz) => {
+    const sortedQuestions = [...(quiz.quiz_questions ?? [])].sort((left, right) => left.position - right.position);
+    const questionCount = sortedQuestions.length;
+    const totalPoints = sortedQuestions.reduce((total, question) => total + question.points, 0);
+    const openQuestionCount = sortedQuestions.filter((question) => question.question_type === "text").length;
+    const assignmentStats = assignmentStatsByQuizId.get(quiz.id) ?? {
+      assignmentCount: 0,
+      overdueCount: 0,
+      dueSoonCount: 0
+    };
+    const attemptCount = attemptCountByQuizId.get(quiz.id) ?? 0;
+    const scores = attemptScoresByQuizId.get(quiz.id) ?? [];
+    const averageScore = scores.length
+      ? roundMetric(scores.reduce((total, score) => total + score, 0) / scores.length)
+      : null;
+    const programModule = quiz.module_id ? moduleById.get(quiz.module_id) ?? null : null;
+    const moduleLabel = programModule
+      ? `${programTitleById.get(programModule.program_id) ?? "Parcours"} · Module ${programModule.position + 1} · ${programModule.title}`
+      : "Hors parcours";
+    const linkedContentLabel = quiz.content_item_id ? contentTitleById.get(quiz.content_item_id) ?? "Contenu lié" : null;
+    const readinessScore = [
+      Boolean(quiz.title.trim()),
+      Boolean(quiz.description?.trim()),
+      questionCount >= 3,
+      Boolean(quiz.content_item_id || quiz.module_id),
+      quiz.status === "published"
+    ].filter(Boolean).length;
+    const lane: "fragile" | "active" | "draft" | "ready" =
+      quiz.status !== "published" || questionCount === 0
+        ? "draft"
+        : assignmentStats.overdueCount > 0 || (attemptCount > 0 && averageScore !== null && averageScore < 60)
+          ? "fragile"
+          : assignmentStats.assignmentCount > 0 || attemptCount > 0
+            ? "active"
+            : "ready";
+    const tone: BadgeTone =
+      lane === "fragile" ? "warning" : lane === "active" ? "accent" : lane === "draft" ? "neutral" : "success";
+    const statusTone: BadgeTone =
+      quiz.status === "published" ? "success" : quiz.status === "draft" ? "warning" : "neutral";
+
+    return {
+      ...quiz,
+      status: quiz.status ?? "draft",
+      quiz_questions: sortedQuestions,
+      questionCount,
+      totalPoints,
+      openQuestionCount,
+      assignmentCount: assignmentStats.assignmentCount,
+      overdueCount: assignmentStats.overdueCount,
+      dueSoonCount: assignmentStats.dueSoonCount,
+      attemptCount,
+      averageScore,
+      readinessScore,
+      lane,
+      tone,
+      statusTone,
+      moduleLabel,
+      linkedContentLabel,
+      laneLabel:
+        lane === "fragile"
+          ? "Fragile"
+          : lane === "active"
+            ? "Actif"
+            : lane === "draft"
+              ? "Brouillon"
+              : "Prêt",
+      nextNeed:
+        lane === "draft"
+          ? "Compléter puis publier pour rendre le quiz exploitable."
+          : lane === "fragile"
+            ? "Le quiz diffuse déjà, mais sa calibration ou ses deadlines demandent une reprise."
+            : lane === "active"
+              ? "Le quiz tourne déjà dans ECCE et mérite un suivi régulier."
+              : "Bonne base prête à être branchée dans des assignations ou parcours.",
+      previewHref: `/quiz/${quiz.id}`,
+      createdAtValue: getDateValue(quiz.created_at) ?? 0
+    };
+  });
+
+  const scopedQuizzes = quizRows.filter((quiz) => {
+    const matchesQuery = normalizedQuery
+      ? `${quiz.title} ${quiz.description ?? ""} ${quiz.kind ?? ""} ${quiz.linkedContentLabel ?? ""} ${quiz.moduleLabel}`.toLowerCase().includes(normalizedQuery)
+      : true;
+    const matchesKind = selectedKind ? quiz.kind === selectedKind : true;
+    const matchesStatus = selectedStatus === "all" ? true : quiz.status === selectedStatus;
+    return matchesQuery && matchesKind && matchesStatus;
+  });
+
+  const laneCounts = {
+    fragile: scopedQuizzes.filter((quiz) => quiz.lane === "fragile").length,
+    active: scopedQuizzes.filter((quiz) => quiz.lane === "active").length,
+    draft: scopedQuizzes.filter((quiz) => quiz.lane === "draft").length,
+    ready: scopedQuizzes.filter((quiz) => quiz.lane === "ready").length
+  };
+
+  const visibleQuizzes = scopedQuizzes.filter((quiz) => (laneFilter === "all" ? true : quiz.lane === laneFilter));
+  const publishedVisibleCount = visibleQuizzes.filter((quiz) => quiz.status === "published").length;
+  const linkedVisibleCount = visibleQuizzes.filter((quiz) => Boolean(quiz.content_item_id || quiz.module_id)).length;
+  const activeVisibleCount = visibleQuizzes.filter((quiz) => quiz.assignmentCount > 0 || quiz.attemptCount > 0).length;
+  const totalQuestions = visibleQuizzes.reduce((total, quiz) => total + quiz.questionCount, 0);
+  const averageReadiness = visibleQuizzes.length
+    ? roundMetric((visibleQuizzes.reduce((total, quiz) => total + quiz.readinessScore, 0) / (visibleQuizzes.length * 5)) * 100)
+    : 0;
+  const calibrationScore = visibleQuizzes.length
+    ? roundMetric(
+        (publishedVisibleCount / visibleQuizzes.length) * 30 +
+          (linkedVisibleCount / visibleQuizzes.length) * 20 +
+          (activeVisibleCount / visibleQuizzes.length) * 20 +
+          (averageReadiness / 100) * 30
+      )
+    : 0;
+  const calibrationBand: EngagementBand =
+    calibrationScore >= 75 ? "strong" : calibrationScore >= 45 ? "watch" : "risk";
+  const sortedVisibleQuizzes = visibleQuizzes
+    .slice()
+    .sort((left, right) => {
+      const laneRank = { fragile: 0, draft: 1, active: 2, ready: 3 } as const;
+      return (
+        laneRank[left.lane] - laneRank[right.lane] ||
+        right.overdueCount - left.overdueCount ||
+        right.attemptCount - left.attemptCount ||
+        right.questionCount - left.questionCount ||
+        right.createdAtValue - left.createdAtValue
+      );
+    });
+  const focusQuiz = sortedVisibleQuizzes[0] ?? null;
+  const contentBridgeRadar = Array.from(
+    visibleQuizzes.reduce((map, quiz) => {
+      const key = quiz.linkedContentLabel ?? "Sans ressource liée";
+      const current =
+        map.get(key) ??
+        ({
+          id: key,
+          label: key,
+          count: 0,
+          assignmentLoad: 0,
+          attemptLoad: 0,
+          fragileCount: 0
+        } as {
+          id: string;
+          label: string;
+          count: number;
+          assignmentLoad: number;
+          attemptLoad: number;
+          fragileCount: number;
+        });
+
+      current.count += 1;
+      current.assignmentLoad += quiz.assignmentCount;
+      current.attemptLoad += quiz.attemptCount;
+      if (quiz.lane === "fragile") {
+        current.fragileCount += 1;
+      }
+
+      map.set(key, current);
+      return map;
+    }, new Map<
+      string,
+      {
+        id: string;
+        label: string;
+        count: number;
+        assignmentLoad: number;
+        attemptLoad: number;
+        fragileCount: number;
+      }
+    >()).values()
+  )
+    .map((bridge) => ({
+      ...bridge,
+      tone:
+        bridge.fragileCount > 0
+          ? ("warning" as const)
+          : bridge.assignmentLoad > 0 || bridge.attemptLoad > 0
+            ? ("accent" as const)
+            : ("neutral" as const)
+    }))
+    .sort((left, right) => {
+      return (
+        right.fragileCount - left.fragileCount ||
+        right.assignmentLoad - left.assignmentLoad ||
+        right.count - left.count
+      );
+    })
+    .slice(0, 6);
+  const recentAttemptsFeed = attempts
+    .filter((attempt) => visibleQuizzes.some((quiz) => quiz.id === attempt.quiz_id))
+    .slice(0, 8)
+    .map((attempt) => {
+      const quiz = visibleQuizzes.find((item) => item.id === attempt.quiz_id);
+      const learnerName = profileNameById.get(attempt.user_id) ?? "Coaché inconnu";
+      const tone: BadgeTone =
+        attempt.status === "graded"
+          ? attempt.score !== null && attempt.score < 60
+            ? "warning"
+            : "success"
+          : "accent";
+
+      return {
+        id: attempt.id,
+        learnerName,
+        quizTitle: quiz?.title ?? "Quiz",
+        submittedAt: formatDate(attempt.submitted_at),
+        attemptLabel: `Tentative ${attempt.attempt_number}`,
+        scoreLabel:
+          attempt.status === "submitted"
+            ? "En correction"
+            : attempt.score !== null
+              ? `${attempt.score}%`
+              : "Non noté",
+        tone
+      };
+    });
+  const activeFilterParts = [
+    selectedKind ? `type ${selectedKind}` : null,
+    selectedStatus !== "all" ? `statut ${selectedStatus}` : null,
+    laneFilter !== "all"
+      ? laneFilter === "fragile"
+        ? "lane fragile"
+        : laneFilter === "active"
+          ? "lane active"
+          : laneFilter === "draft"
+            ? "lane brouillon"
+            : "lane prêt"
+      : null,
+    normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
+  ].filter(Boolean) as string[];
+  const priorityActions = [
+    laneCounts.fragile > 0
+      ? {
+          id: "fragile",
+          title: `${laneCounts.fragile} quiz demandent une recalibration`,
+          description: "Le vrai risque n'est pas la création brute, mais la qualité de calibration sur les quiz déjà utilisés.",
+          href: "#quiz-watchlist",
+          ctaLabel: "Ouvrir la watchlist",
+          tone: "warning" as const
+        }
+      : {
+          id: "fragile",
+          title: "Aucun quiz fragile sur la vue active",
+          description: "La calibration visible reste saine sur le périmètre courant.",
+          href: "#quiz-watchlist",
+          ctaLabel: "Relire les quiz",
+          tone: "success" as const
+        },
+    laneCounts.draft > 0
+      ? {
+          id: "draft",
+          title: `${laneCounts.draft} quiz restent encore en brouillon`,
+          description: "Le prochain gain rapide est souvent dans la finalisation, pas forcément dans un nouveau quiz.",
+          href: "#quiz-studio",
+          ctaLabel: "Compléter le builder",
+          tone: "accent" as const
+        }
+      : {
+          id: "draft",
+          title: "Le builder visible est déjà publié",
+          description: "Le studio peut se concentrer sur la diffusion et la qualité pédagogique.",
+          href: "/admin/assignments",
+          ctaLabel: "Ouvrir les assignations",
+          tone: "success" as const
+        },
+    visibleQuizzes.filter((quiz) => quiz.status === "published" && quiz.assignmentCount === 0 && quiz.attemptCount === 0).length > 0
+      ? {
+          id: "distribution",
+          title: `${visibleQuizzes.filter((quiz) => quiz.status === "published" && quiz.assignmentCount === 0 && quiz.attemptCount === 0).length} quiz publiés restent sous-exploités`,
+          description: "Ces quiz sont prêts, mais encore peu branchés dans les parcours ou les missions.",
+          href: "/admin/assignments",
+          ctaLabel: "Programmer des assignations",
+          tone: "accent" as const
+        }
+      : {
+          id: "distribution",
+          title: "Diffusion quiz déjà branchée",
+          description: "Les quiz visibles sont déjà connectés à l'exécution pédagogique ou aux tentatives réelles.",
+          href: "/agenda",
+          ctaLabel: "Ouvrir l'agenda",
+          tone: "success" as const
+        },
+    focusQuiz
+      ? {
+          id: "pivot",
+          title: `Quiz pivot · ${focusQuiz.title}`,
+          description:
+            focusQuiz.attemptCount > 0
+              ? `${focusQuiz.attemptCount} tentative(s) · ${focusQuiz.averageScore ?? "n/a"}% de moyenne`
+              : `${focusQuiz.questionCount} question(s) · ${focusQuiz.totalPoints} point(s)`,
+          href: focusQuiz.previewHref,
+          ctaLabel: "Prévisualiser",
+          tone: focusQuiz.tone
+        }
+      : {
+          id: "pivot",
+          title: "Aucun quiz focus",
+          description: "Crée ou élargis la vue pour faire remonter un quiz pivot.",
+          href: "#quiz-studio",
+          ctaLabel: "Créer un quiz",
+          tone: "neutral" as const
+        }
+  ];
 
   return {
     context,
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      kind: selectedKind,
+      status: selectedStatus,
+      lane: laneFilter,
+      summary: activeFilterParts.length ? `Vue filtrée · ${activeFilterParts.join(" · ")}` : "Vue globale du studio quiz"
+    },
     metrics: [
       {
-        label: "Quiz",
-        value: quizzes.length.toString(),
-        delta: `${quizzes.filter((quiz) => quiz.status === "published").length} publiés`
+        label: "Quiz visibles",
+        value: visibleQuizzes.length.toString(),
+        delta: `${publishedVisibleCount} publiés`
+      },
+      {
+        label: "Calibration",
+        value: `${calibrationScore}%`,
+        delta: `${laneCounts.fragile} fragiles · ${laneCounts.active} actifs`
       },
       {
         label: "Questions",
-        value: quizzes.reduce((total, quiz) => total + (quiz.quiz_questions?.length ?? 0), 0).toString(),
-        delta: "dans le builder"
+        value: totalQuestions.toString(),
+        delta: `${linkedVisibleCount} quiz reliés à un contenu ou module`
+      },
+      {
+        label: "Diffusion réelle",
+        value: activeVisibleCount.toString(),
+        delta: `${recentAttemptsFeed.length} tentative(s) récentes visibles`
       }
     ],
+    hero: {
+      title: focusQuiz
+        ? `${focusQuiz.title} concentre le point d’attention principal`
+        : "Le studio quiz est prêt à piloter la calibration ECCE",
+      summary: focusQuiz
+        ? `${focusQuiz.laneLabel} · ${focusQuiz.questionCount} question(s) · ${focusQuiz.assignmentCount} assignation(s) · ${focusQuiz.attemptCount} tentative(s). ${focusQuiz.nextNeed}`
+        : "La vue se remplira dès que des quiz seront visibles dans le studio."
+    },
+    calibrationPulse: {
+      score: calibrationScore,
+      band: calibrationBand,
+      bandLabel:
+        calibrationBand === "strong"
+          ? "Calibration solide"
+          : calibrationBand === "watch"
+            ? "Équilibre à consolider"
+            : "Refonte quiz prioritaire",
+      caption: `${visibleQuizzes.length} quiz visibles · ${totalQuestions} question(s)`,
+      trend:
+        laneCounts.fragile > 0
+          ? ("down" as const)
+          : laneCounts.active > 0
+            ? ("steady" as const)
+            : ("up" as const),
+      trendLabel:
+        laneCounts.fragile > 0
+          ? `${laneCounts.fragile} quiz demandent une reprise`
+          : laneCounts.active > 0
+            ? `${laneCounts.active} quiz tournent déjà dans ECCE`
+            : "base prête à diffuser"
+    },
+    laneBreakdown: [
+      {
+        id: "fragile",
+        label: "Fragiles",
+        count: laneCounts.fragile,
+        tone: "warning" as const,
+        isActive: laneFilter === "fragile"
+      },
+      {
+        id: "active",
+        label: "Actifs",
+        count: laneCounts.active,
+        tone: "accent" as const,
+        isActive: laneFilter === "active"
+      },
+      {
+        id: "draft",
+        label: "Brouillons",
+        count: laneCounts.draft,
+        tone: "neutral" as const,
+        isActive: laneFilter === "draft"
+      },
+      {
+        id: "ready",
+        label: "Prêts",
+        count: laneCounts.ready,
+        tone: "success" as const,
+        isActive: laneFilter === "ready"
+      }
+    ],
+    focusQuiz,
+    priorityActions,
+    kinds,
     contentOptions: contents.map((content) => ({
       id: content.id,
       label: `${content.title} · ${content.status}`
     })),
     moduleOptions: buildProgramModuleOptions(programs, modules),
-    quizzes: quizzes.map((quiz) => ({
-      ...quiz,
-      quiz_questions: [...(quiz.quiz_questions ?? [])].sort((left, right) => left.position - right.position)
-    }))
+    contentBridgeRadar,
+    recentAttemptsFeed,
+    quizzes: visibleQuizzes,
+    quizWatchlist: sortedVisibleQuizzes.slice(0, 6)
   };
 }
 

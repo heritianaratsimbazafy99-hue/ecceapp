@@ -1812,6 +1812,191 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   border-top: 1px solid rgba(16, 24, 32, 0.08);
 }
 
+.admin-quizzes-hero,
+.admin-quizzes-copy,
+.admin-quizzes-side,
+.admin-quizzes-lane-grid,
+.admin-quizzes-layout,
+.admin-quizzes-side-stack,
+.admin-quizzes-filter-form,
+.admin-quizzes-summary,
+.admin-quizzes-focus-metrics,
+.admin-quizzes-priority-list,
+.admin-quizzes-watchlist,
+.admin-quizzes-card-meta,
+.admin-quizzes-card-progress,
+.admin-quizzes-bridge-grid,
+.admin-quizzes-actions,
+.admin-quizzes-focus-copy {
+  display: grid;
+  gap: 24px;
+}
+
+.admin-quizzes-hero {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: stretch;
+  background:
+    radial-gradient(circle at top right, rgba(255, 211, 166, 0.26), transparent 28%),
+    radial-gradient(circle at 18% 18%, rgba(47, 104, 85, 0.14), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 252, 0.94));
+}
+
+.admin-quizzes-copy,
+.admin-quizzes-side,
+.admin-quizzes-side-stack {
+  align-content: start;
+}
+
+.admin-quizzes-copy {
+  gap: 16px;
+}
+
+.admin-quizzes-copy h3,
+.admin-quizzes-copy p,
+.admin-quizzes-priority-card p,
+.admin-quizzes-focus-copy p,
+.admin-quizzes-bridge-card p {
+  margin: 0;
+}
+
+.admin-quizzes-copy h3 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.02;
+}
+
+.admin-quizzes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-quizzes-lane-grid,
+.admin-quizzes-watchlist,
+.admin-quizzes-bridge-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.admin-quizzes-lane-card,
+.admin-quizzes-card,
+.admin-quizzes-bridge-card,
+.admin-quizzes-focus-metrics article,
+.admin-quizzes-priority-card,
+.admin-quizzes-summary article {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.admin-quizzes-lane-card {
+  color: inherit;
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.admin-quizzes-lane-card:hover,
+.admin-quizzes-lane-card.is-active {
+  transform: translateY(-2px);
+  border-color: rgba(255, 106, 61, 0.24);
+  box-shadow: 0 22px 48px rgba(16, 24, 32, 0.08);
+}
+
+.admin-quizzes-lane-card span,
+.admin-quizzes-summary span,
+.admin-quizzes-card-meta span,
+.admin-quizzes-card-progress span,
+.admin-quizzes-focus-metrics span {
+  color: var(--muted);
+}
+
+.admin-quizzes-lane-card strong,
+.admin-quizzes-summary strong,
+.admin-quizzes-card-progress strong,
+.admin-quizzes-focus-metrics strong {
+  font-size: 1.3rem;
+}
+
+.admin-quizzes-layout {
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  align-items: start;
+}
+
+.admin-quizzes-filter-form {
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr) auto;
+  align-items: end;
+}
+
+.admin-quizzes-filter-actions {
+  align-self: end;
+}
+
+.admin-quizzes-summary,
+.admin-quizzes-focus-metrics,
+.admin-quizzes-card-progress {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.admin-quizzes-priority-list {
+  gap: 16px;
+}
+
+.admin-quizzes-card-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-quizzes-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.05);
+}
+
+@media (max-width: 1080px) {
+  .admin-quizzes-hero,
+  .admin-quizzes-layout,
+  .admin-quizzes-lane-grid,
+  .admin-quizzes-watchlist,
+  .admin-quizzes-bridge-grid,
+  .admin-quizzes-summary,
+  .admin-quizzes-focus-metrics,
+  .admin-quizzes-card-progress,
+  .admin-quizzes-card-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-quizzes-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-quizzes-hero,
+  .admin-quizzes-layout,
+  .admin-quizzes-lane-grid,
+  .admin-quizzes-watchlist,
+  .admin-quizzes-bridge-grid,
+  .admin-quizzes-summary,
+  .admin-quizzes-focus-metrics,
+  .admin-quizzes-card-progress,
+  .admin-quizzes-card-meta,
+  .admin-quizzes-filter-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-quizzes-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .quiz-player-progress {
   gap: 10px;
 }
