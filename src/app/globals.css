@@ -6499,6 +6499,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 }
 
 .conversation-search input,
+.conversation-composer-field input,
 .conversation-composer-field select,
 .conversation-composer-field textarea {
   width: 100%;
@@ -6513,6 +6514,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 }
 
 .conversation-search input:focus,
+.conversation-composer-field input:focus,
 .conversation-composer-field select:focus,
 .conversation-composer-field textarea:focus {
   outline: none;
@@ -6579,6 +6581,18 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   color: #9d4d16;
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.conversation-note-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.14);
+  color: #075985;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .conversation-list-item:hover,
@@ -6726,6 +6740,61 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .conversation-stage p {
   margin: 0;
   color: rgba(15, 23, 42, 0.68);
+}
+
+.conversation-internal-note {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(14, 165, 233, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.8);
+}
+
+.conversation-internal-note-head,
+.conversation-internal-note-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conversation-internal-note-head div {
+  display: grid;
+  gap: 4px;
+}
+
+.conversation-internal-note-head span,
+.conversation-note-follow-up {
+  color: rgba(15, 23, 42, 0.58);
+  font-size: 0.9rem;
+}
+
+.conversation-note-follow-up {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #075985;
+  font-weight: 800;
+}
+
+.conversation-internal-note-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.44fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.conversation-internal-note-actions > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .conversation-messages {
@@ -8779,6 +8848,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .messages-contact-item,
   .conversation-recipient-grid,
   .conversation-stage,
+  .conversation-internal-note-grid,
   .conversation-quick-replies,
   .conversation-composer-grid {
     grid-template-columns: 1fr;
@@ -8994,6 +9064,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .dashboard-attempt-card,
   .notification-feed-card,
   .conversation-panel-head,
+  .conversation-internal-note-head,
+  .conversation-internal-note-actions,
   .professor-pulse-item {
     flex-direction: column;
     align-items: flex-start;
@@ -9078,6 +9150,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   }
 
   .conversation-quick-reply-list,
+  .conversation-internal-note-actions > div,
   .conversation-composer-actions {
     justify-content: flex-start;
   }

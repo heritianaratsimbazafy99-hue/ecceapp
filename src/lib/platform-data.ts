@@ -218,6 +218,13 @@ type MessageRow = {
   read_at: string | null;
 };
 
+type CoachConversationNoteRow = {
+  conversation_id: string;
+  body: string;
+  next_follow_up_at: string | null;
+  updated_at: string;
+};
+
 type NotificationAnalyticsRow = {
   recipient_id: string;
   created_at: string;
@@ -1269,9 +1276,22 @@ async function getMessagingWorkspace(params: {
         .order("created_at", { ascending: false })
         .limit(recentMessageLimit)).data ?? []) as MessageRow[]
     : [];
+  let noteRows: CoachConversationNoteRow[] = [];
+
+  if (params.viewerRole === "coach" && conversationIds.length) {
+    const notesResult = await admin
+      .from("coach_conversation_notes")
+      .select("conversation_id, body, next_follow_up_at, updated_at")
+      .eq("organization_id", params.organizationId)
+      .eq("coach_id", params.userId)
+      .in("conversation_id", conversationIds);
+
+    noteRows = notesResult.error ? [] : ((notesResult.data ?? []) as CoachConversationNoteRow[]);
+  }
 
   const lastMessageByConversationId = new Map<string, MessageRow>();
   const unreadCountByConversationId = new Map<string, number>();
+  const noteByConversationId = new Map(noteRows.map((note) => [note.conversation_id, note]));
 
   for (const message of messageRows) {
     if (!lastMessageByConversationId.has(message.conversation_id)) {
@@ -1298,7 +1318,14 @@ async function getMessagingWorkspace(params: {
       counterpartName: contactMap.get(counterpartId) ?? "Participant ECCE",
       lastMessagePreview: formatMessagePreview(lastMessage?.body ?? null),
       lastMessageAt: lastMessage?.created_at ?? conversation.updated_at,
-      unreadCount: unreadCountByConversationId.get(conversation.id) ?? 0
+      unreadCount: unreadCountByConversationId.get(conversation.id) ?? 0,
+      coachNote: noteByConversationId.has(conversation.id)
+        ? {
+            body: noteByConversationId.get(conversation.id)?.body ?? "",
+            nextFollowUpAt: noteByConversationId.get(conversation.id)?.next_follow_up_at ?? null,
+            updatedAt: noteByConversationId.get(conversation.id)?.updated_at ?? conversation.updated_at
+          }
+        : null
     };
   });
 

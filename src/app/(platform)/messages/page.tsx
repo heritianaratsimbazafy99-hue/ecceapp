@@ -190,6 +190,7 @@ export default async function MessagesPage({
               : "Dès qu'un coach sera rattaché à ton parcours, tu pourras échanger ici."
           }
           emptyTitle="Aucune conversation lancée."
+          canManageInternalNotes={viewerIsCoach}
           initialConversationId={messagingWorkspace.initialConversationId}
           initialMessages={messagingWorkspace.initialMessages}
           quickReplies={quickReplies}

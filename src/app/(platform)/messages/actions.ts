@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { createAuditEvent } from "@/lib/audit";
 import { coachCanAccessCoachee, getAssignedCoachIdsForCoachee } from "@/lib/coach-assignments";
 import { requireRole, type AppRole } from "@/lib/auth";
 import { createNotifications } from "@/lib/platform-events";
@@ -21,6 +22,17 @@ export type MessageActionState = {
   recipientId?: string;
 };
 
+export type CoachConversationNoteActionState = {
+  conversationId?: string;
+  error?: string;
+  note?: {
+    body: string;
+    nextFollowUpAt: string | null;
+    updatedAt: string;
+  } | null;
+  success?: string;
+};
+
 const initialError = "La messagerie ECCE est réservée aux échanges entre coach et coaché.";
 
 function ok(payload: Omit<MessageActionState, "error">): MessageActionState {
@@ -29,6 +41,159 @@ function ok(payload: Omit<MessageActionState, "error">): MessageActionState {
 
 function fail(error: string): MessageActionState {
   return { error };
+}
+
+function okNote(payload: Omit<CoachConversationNoteActionState, "error">): CoachConversationNoteActionState {
+  return payload;
+}
+
+function failNote(error: string): CoachConversationNoteActionState {
+  return { error };
+}
+
+function parseFollowUpDate(value: string) {
+  if (!value) {
+    return { value: null };
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      value: null,
+      error: "La date de relance interne est invalide."
+    };
+  }
+
+  return { value: parsed.toISOString() };
+}
+
+export async function updateCoachConversationNoteAction(
+  _prevState: CoachConversationNoteActionState,
+  formData: FormData
+): Promise<CoachConversationNoteActionState> {
+  const context = await requireRole(["coach"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const conversationId = String(formData.get("conversation_id") ?? "").trim();
+  const body = String(formData.get("note_body") ?? "").trim();
+  const followUpInput = String(formData.get("next_follow_up_at") ?? "").trim();
+  const shouldDelete = String(formData.get("delete_note") ?? "").trim() === "true";
+
+  if (!conversationId) {
+    return failNote("La conversation à annoter est introuvable.");
+  }
+
+  const conversationResult = await admin
+    .from("coach_conversations")
+    .select("id, coach_id, coachee_id, organization_id")
+    .eq("organization_id", organizationId)
+    .eq("coach_id", context.user.id)
+    .eq("id", conversationId)
+    .maybeSingle<{
+      id: string;
+      coach_id: string;
+      coachee_id: string;
+      organization_id: string;
+    }>();
+
+  if (conversationResult.error || !conversationResult.data) {
+    return failNote("Cette conversation n'est pas dans ton portefeuille coach.");
+  }
+
+  if (shouldDelete || !body) {
+    const deleteResult = await admin
+      .from("coach_conversation_notes")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("conversation_id", conversationId)
+      .eq("coach_id", context.user.id);
+
+    if (deleteResult.error) {
+      return failNote(deleteResult.error.message);
+    }
+
+    await createAuditEvent({
+      organizationId,
+      actorId: context.user.id,
+      category: "delivery",
+      action: "messaging.internal_note.deleted",
+      summary: "Note interne de conversation retirée.",
+      targetType: "coach_conversation",
+      targetId: conversationId,
+      targetUserId: conversationResult.data.coachee_id,
+      highlights: ["note interne", "coach uniquement"]
+    });
+
+    revalidatePath("/messages");
+    revalidatePath("/coach");
+
+    return okNote({
+      conversationId,
+      note: null,
+      success: "Note interne retirée."
+    });
+  }
+
+  const followUp = parseFollowUpDate(followUpInput);
+
+  if (followUp.error) {
+    return failNote(followUp.error);
+  }
+
+  const noteResult = await admin
+    .from("coach_conversation_notes")
+    .upsert(
+      {
+        organization_id: organizationId,
+        conversation_id: conversationId,
+        coach_id: context.user.id,
+        body,
+        next_follow_up_at: followUp.value
+      },
+      {
+        onConflict: "conversation_id,coach_id"
+      }
+    )
+    .select("body, next_follow_up_at, updated_at")
+    .single<{
+      body: string;
+      next_follow_up_at: string | null;
+      updated_at: string;
+    }>();
+
+  if (noteResult.error || !noteResult.data) {
+    return failNote(noteResult.error?.message ?? "Impossible d'enregistrer la note interne.");
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "delivery",
+    action: "messaging.internal_note.updated",
+    summary: "Note interne de conversation mise à jour.",
+    targetType: "coach_conversation",
+    targetId: conversationId,
+    targetUserId: conversationResult.data.coachee_id,
+    highlights: [
+      followUp.value ? "relance planifiée" : "sans relance",
+      `${body.length} caractère(s)`
+    ]
+  });
+
+  revalidatePath("/messages");
+  revalidatePath("/coach");
+
+  return okNote({
+    conversationId,
+    note: {
+      body: noteResult.data.body,
+      nextFollowUpAt: noteResult.data.next_follow_up_at,
+      updatedAt: noteResult.data.updated_at
+    },
+    success: "Note interne enregistrée."
+  });
 }
 
 export async function sendConversationMessageAction(

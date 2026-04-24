@@ -6,6 +6,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   sendConversationMessageAction,
+  updateCoachConversationNoteAction,
+  type CoachConversationNoteActionState,
   type MessageActionState
 } from "@/app/(platform)/messages/actions";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -20,9 +22,16 @@ type ConversationSummary = {
   id: string;
   counterpartId: string;
   counterpartName: string;
+  coachNote?: ConversationNote | null;
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
+};
+
+type ConversationNote = {
+  body: string;
+  nextFollowUpAt: string | null;
+  updatedAt: string;
 };
 
 type ConversationMessage = {
@@ -54,6 +63,7 @@ type MessagingHubProps = {
   composerPlaceholder: string;
   emptyTitle: string;
   emptyBody: string;
+  canManageInternalNotes?: boolean;
   quickReplies?: Array<{
     label: string;
     body: string;
@@ -62,6 +72,7 @@ type MessagingHubProps = {
 };
 
 const initialState: MessageActionState = {};
+const initialNoteState: CoachConversationNoteActionState = {};
 
 function sortConversations(items: ConversationSummary[]) {
   return [...items].sort((left, right) => {
@@ -87,6 +98,21 @@ function formatThreadDate(dateString: string | null) {
     dateStyle: "short",
     timeStyle: "short"
   }).format(new Date(dateString));
+}
+
+function formatDateTimeInput(dateString: string | null) {
+  if (!dateString) {
+    return "";
+  }
+
+  const date = new Date(dateString);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const offset = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 function formatThreadDay(dateString: string) {
@@ -202,6 +228,7 @@ export function RealtimeConversationHub({
   composerPlaceholder,
   emptyTitle,
   emptyBody,
+  canManageInternalNotes = false,
   quickReplies = [],
   variant = "embedded"
 }: MessagingHubProps) {
@@ -211,9 +238,16 @@ export function RealtimeConversationHub({
     [contacts]
   );
   const [state, formAction] = useActionState(sendConversationMessageAction, initialState);
+  const [noteState, noteFormAction, notePending] = useActionState(
+    updateCoachConversationNoteAction,
+    initialNoteState
+  );
   const [conversations, setConversations] = useState(() => sortConversations(initialConversations));
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, ConversationMessage[]>>(
     () => (initialConversationId ? { [initialConversationId]: initialMessages } : {})
+  );
+  const [notesByConversation, setNotesByConversation] = useState<Record<string, ConversationNote | null>>(() =>
+    Object.fromEntries(initialConversations.map((conversation) => [conversation.id, conversation.coachNote ?? null]))
   );
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(initialConversationId);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string>(
@@ -222,6 +256,8 @@ export function RealtimeConversationHub({
   const [liveBanner, setLiveBanner] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
+  const [followUpDraft, setFollowUpDraft] = useState("");
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -246,6 +282,7 @@ export function RealtimeConversationHub({
 
   const selectedConversation = conversations.find((item) => item.id === selectedConversationId) ?? null;
   const currentRecipientId = selectedConversation?.counterpartId ?? selectedRecipientId;
+  const selectedNote = selectedConversationId ? notesByConversation[selectedConversationId] ?? null : null;
   const currentMessages = useMemo(
     () => (selectedConversationId ? messagesByConversation[selectedConversationId] ?? [] : []),
     [messagesByConversation, selectedConversationId]
@@ -282,6 +319,11 @@ export function RealtimeConversationHub({
   useEffect(() => {
     selectedConversationRef.current = selectedConversationId;
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    setNoteDraft(selectedNote?.body ?? "");
+    setFollowUpDraft(formatDateTimeInput(selectedNote?.nextFollowUpAt ?? null));
+  }, [selectedConversationId, selectedNote]);
 
   useEffect(() => {
     const conversationFromUrl = new URLSearchParams(window.location.search).get("conversation");
@@ -357,6 +399,17 @@ export function RealtimeConversationHub({
       setSelectedRecipientId(state.recipientId);
     }
   }, [state]);
+
+  useEffect(() => {
+    if (!noteState.success || !noteState.conversationId) {
+      return;
+    }
+
+    setNotesByConversation((current) => ({
+      ...current,
+      [noteState.conversationId ?? ""]: noteState.note ?? null
+    }));
+  }, [noteState]);
 
   useEffect(() => {
     const channel = supabase
@@ -652,6 +705,9 @@ export function RealtimeConversationHub({
                       <div className="conversation-list-item-topline">
                         <strong>{conversation.counterpartName}</strong>
                         {conversation.unreadCount ? <span className="conversation-state-pill">À répondre</span> : null}
+                        {canManageInternalNotes && notesByConversation[conversation.id]?.body ? (
+                          <span className="conversation-note-pill">Note</span>
+                        ) : null}
                       </div>
                       <p>{shortenPreview(conversation.lastMessagePreview)}</p>
                     </div>
@@ -731,6 +787,79 @@ export function RealtimeConversationHub({
                 </p>
               </article>
             </div>
+
+            {canManageInternalNotes && selectedConversationId ? (
+              <form action={noteFormAction} className="conversation-internal-note">
+                <input name="conversation_id" type="hidden" value={selectedConversationId} />
+
+                <div className="conversation-internal-note-head">
+                  <div>
+                    <strong>Note interne coach</strong>
+                    <span>
+                      {selectedNote?.updatedAt
+                        ? `Dernière mise à jour ${formatThreadDate(selectedNote.updatedAt)}`
+                        : "Aucun contexte interne enregistré"}
+                    </span>
+                  </div>
+                  {selectedNote?.nextFollowUpAt ? (
+                    <span className="conversation-note-follow-up">
+                      Relance {formatThreadDate(selectedNote.nextFollowUpAt)}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="conversation-internal-note-grid">
+                  <label className="conversation-composer-field is-wide">
+                    <span>Contexte privé</span>
+                    <textarea
+                      maxLength={1000}
+                      name="note_body"
+                      onChange={(event) => setNoteDraft(event.target.value)}
+                      placeholder="Objectif du coaché, tension actuelle, prochaine relance..."
+                      rows={3}
+                      value={noteDraft}
+                    />
+                  </label>
+
+                  <label className="conversation-composer-field">
+                    <span>Relance interne</span>
+                    <input
+                      name="next_follow_up_at"
+                      onChange={(event) => setFollowUpDraft(event.target.value)}
+                      type="datetime-local"
+                      value={followUpDraft}
+                    />
+                  </label>
+                </div>
+
+                {noteState.error ? <p className="form-error">{noteState.error}</p> : null}
+                {noteState.success && noteState.conversationId === selectedConversationId ? (
+                  <p className="form-success">{noteState.success}</p>
+                ) : null}
+
+                <div className="conversation-internal-note-actions">
+                  <span className="form-helper">{noteDraft.trim().length}/1000 · privé coach</span>
+                  <div>
+                    <button
+                      className="button button-secondary button-small"
+                      disabled={notePending}
+                      type="submit"
+                    >
+                      {notePending ? "Sauvegarde..." : "Enregistrer"}
+                    </button>
+                    <button
+                      className="button button-ghost button-small"
+                      disabled={notePending || !selectedNote}
+                      name="delete_note"
+                      type="submit"
+                      value="true"
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : null}
 
             <div className="conversation-messages" ref={scrollerRef}>
               {selectedConversationId && currentMessages.length ? (
