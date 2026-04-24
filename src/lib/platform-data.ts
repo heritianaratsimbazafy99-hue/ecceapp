@@ -472,6 +472,37 @@ function formatUserName(user: ProfileRow) {
   return `${user.first_name} ${user.last_name}`.trim();
 }
 
+function getAppRoleLabel(role: AppRole) {
+  switch (role) {
+    case "admin":
+      return "Admin";
+    case "professor":
+      return "Professor";
+    case "coach":
+      return "Coach";
+    case "coachee":
+      return "Coaché";
+    default:
+      return role;
+  }
+}
+
+function getCommunityRoleTone(roles: AppRole[]): BadgeTone {
+  if (roles.includes("admin")) {
+    return "warning";
+  }
+
+  if (roles.includes("professor")) {
+    return "accent";
+  }
+
+  if (roles.includes("coach")) {
+    return "success";
+  }
+
+  return "neutral";
+}
+
 function normalizeDataSearchQuery(value: string | null | undefined) {
   return (value ?? "")
     .trim()
@@ -9725,6 +9756,68 @@ export async function getCoachPageData() {
     cohortLabels: cohortNamesByUserId.get(profile.id) ?? []
   }));
 
+  const followUpNotesResult = context.roles.includes("coach")
+    ? await admin
+        .from("coach_conversation_notes")
+        .select("conversation_id, body, next_follow_up_at, updated_at")
+        .eq("organization_id", organizationId)
+        .eq("coach_id", context.user.id)
+        .not("next_follow_up_at", "is", null)
+        .order("next_follow_up_at", { ascending: true })
+        .limit(12)
+    : { data: [] as CoachConversationNoteRow[], error: null };
+  const followUpNotes = followUpNotesResult.error
+    ? []
+    : ((followUpNotesResult.data ?? []) as CoachConversationNoteRow[]);
+  const followUpConversationIds = followUpNotes.map((note) => note.conversation_id);
+  const followUpConversationsResult = followUpConversationIds.length
+    ? await admin
+        .from("coach_conversations")
+        .select("id, coachee_id")
+        .eq("organization_id", organizationId)
+        .eq("coach_id", context.user.id)
+        .in("id", followUpConversationIds)
+    : { data: [] as Array<{ id: string; coachee_id: string }> };
+  const followUpConversationById = new Map(
+    ((followUpConversationsResult.data ?? []) as Array<{ id: string; coachee_id: string }>).map((conversation) => [
+      conversation.id,
+      conversation
+    ])
+  );
+  const now = Date.now();
+  const nextDay = now + 24 * 60 * 60 * 1000;
+  const internalFollowUps = followUpNotes
+    .map((note) => {
+      const dueValue = getDateValue(note.next_follow_up_at);
+      const conversation = followUpConversationById.get(note.conversation_id);
+      const learner = conversation ? profileById.get(conversation.coachee_id) : null;
+      const urgency =
+        dueValue !== null && dueValue < now
+          ? "overdue"
+          : dueValue !== null && dueValue <= nextDay
+            ? "today"
+            : "upcoming";
+      const tone: BadgeTone = urgency === "overdue" ? "warning" : urgency === "today" ? "accent" : "neutral";
+
+      return {
+        id: note.conversation_id,
+        conversationId: note.conversation_id,
+        learnerId: conversation?.coachee_id ?? null,
+        learnerName: learner ? formatUserName(learner) : "Coaché inconnu",
+        dueAt: formatDate(note.next_follow_up_at),
+        dueLabel: urgency === "overdue" ? "En retard" : getRelativeDayLabel(note.next_follow_up_at),
+        bodyPreview: formatMessagePreview(note.body),
+        updatedAt: formatDate(note.updated_at),
+        urgency,
+        tone,
+        href: `/messages?conversation=${note.conversation_id}#messages-hub`,
+        sortValue: dueValue ?? Number.MAX_SAFE_INTEGER
+      };
+    })
+    .filter((item) => Boolean(item.learnerId))
+    .sort((left, right) => left.sortValue - right.sortValue)
+    .slice(0, 6);
+
   const messagingWorkspace = context.roles.includes("coach")
     ? await getMessagingWorkspace({
         organizationId,
@@ -9774,6 +9867,7 @@ export async function getCoachPageData() {
     recentQuizResults,
     textReviewQueue,
     reviewQueue,
+    internalFollowUps,
     messagingWorkspace,
     sessions: sessions.map((session) => ({
       id: session.id,
@@ -9783,6 +9877,315 @@ export async function getCoachPageData() {
       date: formatDate(session.starts_at),
       cohort: session.cohort_id ? (cohortNameById.get(session.cohort_id) ?? null) : null
     }))
+  };
+}
+
+export async function getCommunityPageData(filters?: {
+  query?: string;
+  cohortId?: string;
+  role?: string;
+}) {
+  const context = await requireRole(["admin", "professor", "coach", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const query = normalizeDataSearchQuery(filters?.query);
+  const requestedCohortId = String(filters?.cohortId ?? "").trim();
+  const roleFilter = VALID_ROLES.includes(String(filters?.role ?? "").trim() as AppRole)
+    ? (String(filters?.role ?? "").trim() as AppRole)
+    : "all";
+  const coachScope =
+    context.role === "coach"
+      ? await getCoachAssignmentScope({
+          organizationId,
+          coachId: context.user.id
+        })
+      : null;
+
+  const [
+    profilesResult,
+    rolesResult,
+    cohortsResult,
+    cohortMembersResult,
+    coachAssignmentsResult
+  ] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("id, first_name, last_name, bio, timezone, status, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    admin.from("user_roles").select("user_id, role").eq("organization_id", organizationId),
+    admin.from("cohorts").select("id, name").eq("organization_id", organizationId).order("name"),
+    admin.from("cohort_members").select("user_id, cohort_id"),
+    admin
+      .from("coach_assignments")
+      .select("coach_id, coachee_id, cohort_id")
+      .eq("organization_id", organizationId)
+  ]);
+
+  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const profileIds = new Set(profileById.keys());
+  const roleRows = (rolesResult.data ?? []) as Array<{ user_id: string; role: AppRole }>;
+  const rolesByUserId = roleRows.reduce((map, item) => {
+    const roles = map.get(item.user_id) ?? [];
+    roles.push(item.role);
+    map.set(item.user_id, roles);
+    return map;
+  }, new Map<string, AppRole[]>());
+  const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const cohortNameById = new Map(cohorts.map((cohort) => [cohort.id, cohort.name]));
+  const cohortMembers = ((cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>).filter(
+    (item) => profileIds.has(item.user_id) && cohortNameById.has(item.cohort_id)
+  );
+  const coachAssignments = (coachAssignmentsResult.data ?? []) as Array<{
+    coach_id: string;
+    coachee_id: string | null;
+    cohort_id: string | null;
+  }>;
+  const cohortIdsByUserId = cohortMembers.reduce((map, item) => {
+    const ids = map.get(item.user_id) ?? [];
+    ids.push(item.cohort_id);
+    map.set(item.user_id, ids);
+    return map;
+  }, new Map<string, string[]>());
+  const cohortLabelsByUserId = new Map(
+    Array.from(cohortIdsByUserId.entries()).map(([userId, cohortIds]) => [
+      userId,
+      cohortIds.map((cohortId) => cohortNameById.get(cohortId)).filter(Boolean) as string[]
+    ])
+  );
+
+  let visibleProfileIds = new Set(profileIds);
+
+  if (context.role === "coach") {
+    visibleProfileIds = new Set([context.user.id, ...(coachScope?.coacheeIds ?? [])]);
+  }
+
+  if (context.role === "coachee") {
+    const ownCohortIds = cohortIdsByUserId.get(context.user.id) ?? [];
+    const cohortPeerIds = cohortMembers
+      .filter((member) => ownCohortIds.includes(member.cohort_id))
+      .map((member) => member.user_id);
+    const assignedCoachIds = await getAssignedCoachIdsForCoachee({
+      organizationId,
+      coacheeId: context.user.id,
+      cohortIds: ownCohortIds
+    });
+
+    visibleProfileIds = new Set([context.user.id, ...cohortPeerIds, ...assignedCoachIds]);
+  }
+
+  const visibleCohortIds =
+    context.role === "coach"
+      ? new Set([
+          ...(coachScope?.cohortIds ?? []),
+          ...Array.from(visibleProfileIds).flatMap((userId) => cohortIdsByUserId.get(userId) ?? [])
+        ])
+      : context.role === "coachee"
+        ? new Set(cohortIdsByUserId.get(context.user.id) ?? [])
+        : new Set(cohorts.map((cohort) => cohort.id));
+  const visibleCohorts = cohorts.filter((cohort) => visibleCohortIds.has(cohort.id));
+  const selectedCohortId = visibleCohortIds.has(requestedCohortId) ? requestedCohortId : "";
+  const visibleMembers = profiles.filter((profile) => visibleProfileIds.has(profile.id));
+  const filteredMembers = visibleMembers.filter((profile) => {
+    const roles = rolesByUserId.get(profile.id) ?? [];
+    const cohortIds = cohortIdsByUserId.get(profile.id) ?? [];
+
+    return (
+      (roleFilter === "all" || roles.includes(roleFilter)) &&
+      (!selectedCohortId || cohortIds.includes(selectedCohortId)) &&
+      matchesDataSearch(
+        [
+          formatUserName(profile),
+          profile.status,
+          profile.bio,
+          profile.timezone,
+          ...roles.map(getAppRoleLabel),
+          ...(cohortLabelsByUserId.get(profile.id) ?? [])
+        ],
+        query
+      )
+    );
+  });
+  const canUseMessaging = context.roles.includes("coach") || context.roles.includes("coachee");
+  const canOpenLearnerDetail = context.roles.includes("admin") || context.roles.includes("coach");
+  const memberRoleRank = (roles: AppRole[]) => {
+    if (roles.includes("coach")) return 0;
+    if (roles.includes("professor")) return 1;
+    if (roles.includes("admin")) return 2;
+    return 3;
+  };
+  const members = filteredMembers
+    .map((profile) => {
+      const roles = VALID_ROLES.filter((role) => (rolesByUserId.get(profile.id) ?? []).includes(role));
+      const cohortLabels = cohortLabelsByUserId.get(profile.id) ?? [];
+      const isCoachee = roles.includes("coachee");
+      const actionHref =
+        canOpenLearnerDetail && isCoachee
+          ? `/coach/learners/${profile.id}`
+          : canUseMessaging && profile.id !== context.user.id
+            ? "/messages"
+            : null;
+
+      return {
+        id: profile.id,
+        name: formatUserName(profile),
+        status: profile.status,
+        statusTone:
+          profile.status === "active" ? ("success" as const) : profile.status === "invited" ? ("accent" as const) : ("warning" as const),
+        roleLabels: roles.length ? roles.map(getAppRoleLabel) : ["Membre"],
+        tone: getCommunityRoleTone(roles),
+        cohortLabels,
+        bio: profile.bio ?? "Profil ECCE à compléter.",
+        actionHref,
+        actionLabel: canOpenLearnerDetail && isCoachee ? "Fiche coaché" : "Contacter",
+        rank: memberRoleRank(roles)
+      };
+    })
+    .sort((left, right) => left.rank - right.rank || left.name.localeCompare(right.name, "fr"))
+    .slice(0, 18);
+
+  const cohortCards = visibleCohorts
+    .map((cohort) => {
+      const memberIds = cohortMembers
+        .filter((member) => member.cohort_id === cohort.id && visibleProfileIds.has(member.user_id))
+        .map((member) => member.user_id);
+      const coachIds = new Set(
+        coachAssignments
+          .filter(
+            (assignment) =>
+              assignment.cohort_id === cohort.id ||
+              (assignment.coachee_id ? memberIds.includes(assignment.coachee_id) : false)
+          )
+          .map((assignment) => assignment.coach_id)
+          .filter((coachId) => profileById.has(coachId))
+      );
+      const previewNames = memberIds
+        .map((memberId) => profileById.get(memberId))
+        .filter(Boolean)
+        .map((profile) => formatUserName(profile!))
+        .slice(0, 3);
+
+      return {
+        id: cohort.id,
+        name: cohort.name,
+        memberCount: memberIds.length,
+        coachCount: coachIds.size,
+        memberPreview: previewNames.length ? previewNames.join(", ") : "Aucun membre visible",
+        statusLabel: memberIds.length ? (coachIds.size ? "Cadence coach active" : "Coach à assigner") : "Groupe à peupler",
+        tone: memberIds.length && coachIds.size ? ("success" as const) : ("warning" as const),
+        isActive: selectedCohortId === cohort.id
+      };
+    })
+    .sort((left, right) => Number(right.isActive) - Number(left.isActive) || right.memberCount - left.memberCount)
+    .slice(0, 8);
+
+  const coachDirectory = visibleMembers
+    .filter((profile) => (rolesByUserId.get(profile.id) ?? []).includes("coach"))
+    .map((coach) => {
+      const assignedCohortIds = Array.from(
+        new Set(
+          coachAssignments
+            .filter((assignment) => assignment.coach_id === coach.id && assignment.cohort_id)
+            .map((assignment) => assignment.cohort_id!)
+        )
+      );
+      const directCoacheeIds = coachAssignments
+        .filter((assignment) => assignment.coach_id === coach.id && assignment.coachee_id)
+        .map((assignment) => assignment.coachee_id!);
+      const cohortCoacheeIds = cohortMembers
+        .filter((member) => assignedCohortIds.includes(member.cohort_id))
+        .map((member) => member.user_id);
+      const coveredCoacheeIds = Array.from(new Set([...directCoacheeIds, ...cohortCoacheeIds])).filter((id) =>
+        visibleProfileIds.has(id)
+      );
+
+      return {
+        id: coach.id,
+        name: formatUserName(coach),
+        status: coach.status,
+        assignedCount: coveredCoacheeIds.length,
+        cohortLabels: assignedCohortIds.map((cohortId) => cohortNameById.get(cohortId)).filter(Boolean) as string[],
+        actionHref: canUseMessaging && coach.id !== context.user.id ? "/messages" : null
+      };
+    })
+    .sort((left, right) => right.assignedCount - left.assignedCount || left.name.localeCompare(right.name, "fr"))
+    .slice(0, 8);
+
+  const selectedCohort = selectedCohortId ? cohortCards.find((cohort) => cohort.id === selectedCohortId) : null;
+  const totalCoaches = visibleMembers.filter((profile) => (rolesByUserId.get(profile.id) ?? []).includes("coach")).length;
+  const totalCoachees = visibleMembers.filter((profile) => (rolesByUserId.get(profile.id) ?? []).includes("coachee")).length;
+
+  return {
+    context,
+    filters: {
+      query,
+      cohortId: selectedCohortId,
+      role: roleFilter,
+      summary: [
+        query ? `recherche "${query}"` : "tous les membres",
+        selectedCohort ? selectedCohort.name : "toutes cohortes visibles",
+        roleFilter === "all" ? "tous rôles" : getAppRoleLabel(roleFilter)
+      ].join(" · ")
+    },
+    metrics: [
+      {
+        label: "Membres visibles",
+        value: filteredMembers.length.toString(),
+        delta: `${visibleMembers.length} dans ton périmètre`
+      },
+      {
+        label: "Groupes privés",
+        value: visibleCohorts.length.toString(),
+        delta: `${cohortCards.filter((cohort) => cohort.coachCount > 0).length} avec coach référent`
+      },
+      {
+        label: "Coachs",
+        value: totalCoaches.toString(),
+        delta: `${coachDirectory.reduce((total, coach) => total + coach.assignedCount, 0)} suivi(s)`
+      },
+      {
+        label: "Coachés",
+        value: totalCoachees.toString(),
+        delta: `${filteredMembers.filter((member) => member.status === "active").length} profils actifs filtrés`
+      }
+    ],
+    hero: {
+      eyebrow: "V2 · Communauté & scale",
+      title: "Un annuaire vivant pour relier coachs, coachés, cohortes et groupes privés.",
+      summary: selectedCohort
+        ? `${selectedCohort.name} devient le groupe focus avec ${selectedCohort.memberCount} membre(s) visible(s) et ${selectedCohort.coachCount} coach(s) responsable(s).`
+        : "Cette première brique V2 transforme les cohortes existantes en espace de pilotage communautaire sans ajouter de complexité admin."
+    },
+    cohortOptions: visibleCohorts.map((cohort) => ({
+      id: cohort.id,
+      label: cohort.name,
+      memberCount: cohortMembers.filter((member) => member.cohort_id === cohort.id && visibleProfileIds.has(member.user_id)).length
+    })),
+    cohortCards,
+    members,
+    totalMatchingMembers: filteredMembers.length,
+    coachDirectory,
+    playbook: [
+      {
+        title: "Groupes privés",
+        body: "Les cohortes deviennent les premiers groupes communautaires exploitables par rôle et périmètre.",
+        badge: "V2",
+        tone: "accent" as const
+      },
+      {
+        title: "Annuaire actionnable",
+        body: "Chaque profil visible garde son contexte de rôle, cohorte et prochaine action utile.",
+        badge: "UX",
+        tone: "success" as const
+      },
+      {
+        title: "Scale maîtrisé",
+        body: "La vue respecte les scopes coach/coachee pour préparer la montée en volume sans ouvrir tout le graphe.",
+        badge: "Scope",
+        tone: "neutral" as const
+      }
+    ]
   };
 }
 

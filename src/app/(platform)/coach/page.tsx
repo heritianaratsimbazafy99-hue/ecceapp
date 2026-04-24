@@ -27,6 +27,7 @@ export default async function CoachPage() {
     coachOptions,
     cohortOptions,
     coacheeOptions,
+    internalFollowUps,
     messagingWorkspace
   } = await getCoachPageData();
 
@@ -54,6 +55,53 @@ export default async function CoachPage() {
       </section>
 
       <CoachPortfolioBoard attentionLearners={attentionLearners} roster={roster} />
+
+      <section className="panel coach-follow-up-panel">
+        <div className="panel-header-rich">
+          <div>
+            <span className="eyebrow">Relances internes</span>
+            <h3>File priorisée par urgence</h3>
+            <p>Les rappels créés dans les notes privées de messagerie remontent ici dans l&apos;ordre d&apos;action.</p>
+          </div>
+
+          <div className="messaging-inline-stats">
+            <article>
+              <strong>{internalFollowUps.length}</strong>
+              <span>relance(s)</span>
+            </article>
+            <article>
+              <strong>{internalFollowUps.filter((item) => item.urgency === "overdue").length}</strong>
+              <span>en retard</span>
+            </article>
+          </div>
+        </div>
+
+        {internalFollowUps.length ? (
+          <div className="coach-follow-up-list">
+            {internalFollowUps.map((item) => (
+              <Link className="coach-follow-up-card" href={item.href} key={item.id}>
+                <div className="coach-follow-up-copy">
+                  <div className="coach-follow-up-topline">
+                    <strong>{item.learnerName}</strong>
+                    <Badge tone={item.tone}>{item.dueLabel}</Badge>
+                  </div>
+                  <p>{item.bodyPreview}</p>
+                </div>
+
+                <div className="coach-follow-up-meta">
+                  <span>{item.dueAt}</span>
+                  <small>note mise à jour {item.updatedAt}</small>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Aucune relance interne planifiée.</strong>
+            <p>Depuis une conversation, ajoute une note privée avec une prochaine relance pour alimenter cette file.</p>
+          </div>
+        )}
+      </section>
 
       <section className="panel">
         <div className="panel-header">
