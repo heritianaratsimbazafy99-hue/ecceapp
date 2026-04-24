@@ -24,6 +24,11 @@ type AuthenticatedUserContext = {
   role: AppRole | null;
 };
 
+type RequireAuthenticatedUserOptions = {
+  allowInvited?: boolean;
+  allowSuspended?: boolean;
+};
+
 const ROLE_PRIORITY: AppRole[] = ["admin", "coach", "professor", "coachee"];
 
 export function getPrimaryRole(roles: AppRole[]) {
@@ -114,11 +119,19 @@ export function getAuthenticatedRedirectTarget({
   return getRouteForRole(role);
 }
 
-export async function requireAuthenticatedUser() {
+export async function requireAuthenticatedUser(options: RequireAuthenticatedUserOptions = {}) {
   const context = await getCurrentUserContext();
 
   if (!context.user || !context.profile) {
     redirect("/auth/sign-in");
+  }
+
+  if (!options.allowSuspended && isSuspendedStatus(context.profile.status)) {
+    redirect("/auth/sign-in");
+  }
+
+  if (!options.allowInvited && requiresOnboarding(context.profile.status)) {
+    redirect("/auth/onboarding");
   }
 
   return context as AuthenticatedUserContext;

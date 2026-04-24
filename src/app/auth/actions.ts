@@ -84,7 +84,7 @@ export async function completeOnboardingAction(
   _prevState: AuthActionState,
   formData: FormData
 ): Promise<AuthActionState> {
-  const context = await requireAuthenticatedUser();
+  const context = await requireAuthenticatedUser({ allowInvited: true });
 
   if (isSuspendedStatus(context.profile.status)) {
     return {
