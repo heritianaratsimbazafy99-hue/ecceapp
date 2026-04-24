@@ -5560,12 +5560,14 @@ export async function getAdminContentStudioPageData(filters?: {
     id: theme.id,
     theme: theme.label,
     description: theme.description ?? "",
+    position: theme.position,
     subthemes: taxonomySubthemes
       .filter((subtheme) => subtheme.theme_id === theme.id)
       .map((subtheme) => ({
         id: subtheme.id,
         label: subtheme.label,
-        topics: subtheme.topics ?? []
+        topics: subtheme.topics ?? [],
+        position: subtheme.position
       }))
   }));
   const moduleOptions = buildProgramModuleOptions(programs, modules);
@@ -6128,12 +6130,14 @@ export async function getAdminContentEditPageData(contentId: string) {
     id: theme.id,
     theme: theme.label,
     description: theme.description ?? "",
+    position: theme.position,
     subthemes: taxonomySubthemes
       .filter((subtheme) => subtheme.theme_id === theme.id)
       .map((subtheme) => ({
         id: subtheme.id,
         label: subtheme.label,
-        topics: subtheme.topics ?? []
+        topics: subtheme.topics ?? [],
+        position: subtheme.position
       }))
   }));
   const tags = content.tags ?? [];

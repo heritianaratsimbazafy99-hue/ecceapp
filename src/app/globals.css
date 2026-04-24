@@ -2433,6 +2433,13 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-taxonomy-form,
 .admin-content-taxonomy-report,
 .admin-content-taxonomy-card,
+.admin-content-taxonomy-edit-card,
+.admin-content-taxonomy-edit-form,
+.admin-content-taxonomy-subtheme-editor,
+.admin-content-taxonomy-subtheme-card,
+.admin-content-taxonomy-delete-form,
+.admin-content-taxonomy-inline-grid,
+.admin-content-taxonomy-feedback,
 .admin-content-issue-list,
 .admin-content-card-actions,
 .content-edit-shell,
@@ -2634,6 +2641,75 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
     rgba(255, 255, 255, 0.9);
 }
 
+.admin-content-taxonomy-edit-card,
+.admin-content-taxonomy-subtheme-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.admin-content-taxonomy-subtheme-card {
+  background: rgba(16, 24, 32, 0.03);
+}
+
+.admin-content-taxonomy-edit-form,
+.admin-content-taxonomy-delete-form {
+  gap: 12px;
+}
+
+.admin-content-taxonomy-delete-form {
+  padding-top: 12px;
+  border-top: 1px solid rgba(16, 24, 32, 0.08);
+}
+
+.admin-content-taxonomy-delete-form p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.admin-content-taxonomy-inline-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 0.34fr);
+  gap: 12px;
+}
+
+.admin-content-taxonomy-edit-form label,
+.admin-content-taxonomy-delete-form label {
+  display: grid;
+  gap: 8px;
+  font-weight: 750;
+}
+
+.admin-content-taxonomy-edit-form input,
+.admin-content-taxonomy-edit-form select,
+.admin-content-taxonomy-edit-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid rgba(16, 24, 32, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.admin-content-taxonomy-edit-form textarea {
+  padding-top: 12px;
+  resize: vertical;
+}
+
+.admin-content-taxonomy-feedback {
+  gap: 8px;
+}
+
+.button-ghost {
+  background: rgba(255, 106, 61, 0.1);
+  color: #ad451f;
+}
+
 .admin-content-issue-list {
   gap: 8px;
 }
@@ -2679,6 +2755,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-taxonomy-layout,
   .admin-content-taxonomy-map,
   .admin-content-taxonomy-report,
+  .admin-content-taxonomy-inline-grid,
   .content-edit-hero,
   .content-edit-layout,
   .admin-content-summary,
@@ -2702,6 +2779,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-taxonomy-layout,
   .admin-content-taxonomy-map,
   .admin-content-taxonomy-report,
+  .admin-content-taxonomy-inline-grid,
   .content-edit-hero,
   .content-edit-layout,
   .admin-content-summary,

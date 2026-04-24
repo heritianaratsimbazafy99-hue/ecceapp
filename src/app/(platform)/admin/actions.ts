@@ -1018,6 +1018,129 @@ export async function createContentTaxonomyThemeAction(
   return ok(`Thème "${label}" ajouté à la taxonomie.`);
 }
 
+export async function updateContentTaxonomyThemeAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const themeId = String(formData.get("theme_id") ?? "").trim();
+  const label = String(formData.get("label") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const position = Number(String(formData.get("position") ?? "").trim() || 0);
+
+  if (!themeId || !label) {
+    return fail("Le thème à modifier et son nom sont obligatoires.");
+  }
+
+  const existingResult = await admin
+    .from("content_taxonomy_themes")
+    .select("id, label")
+    .eq("organization_id", organizationId)
+    .eq("id", themeId)
+    .maybeSingle<{ id: string; label: string }>();
+
+  if (existingResult.error || !existingResult.data) {
+    return fail("Le thème à modifier est introuvable.");
+  }
+
+  const { error } = await admin
+    .from("content_taxonomy_themes")
+    .update({
+      label,
+      description: description || null,
+      position: Number.isFinite(position) ? position : 0
+    })
+    .eq("organization_id", organizationId)
+    .eq("id", themeId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  if (existingResult.data.label !== label) {
+    await admin
+      .from("content_items")
+      .update({ category: label })
+      .eq("organization_id", organizationId)
+      .eq("category", existingResult.data.label);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content_taxonomy.theme_updated",
+    summary: `Thème éditorial "${label}" mis à jour.`,
+    targetType: "content_taxonomy_theme",
+    targetId: themeId,
+    targetLabel: label,
+    highlights: [`ancien nom ${existingResult.data.label}`, `position ${Number.isFinite(position) ? position : 0}`]
+  });
+
+  revalidatePath("/admin/content");
+  revalidatePath("/library");
+  revalidateAdminAudit();
+
+  return ok(`Thème "${label}" mis à jour.`);
+}
+
+export async function deleteContentTaxonomyThemeAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const themeId = String(formData.get("theme_id") ?? "").trim();
+
+  if (!themeId) {
+    return fail("Le thème à supprimer est introuvable.");
+  }
+
+  const existingResult = await admin
+    .from("content_taxonomy_themes")
+    .select("id, label")
+    .eq("organization_id", organizationId)
+    .eq("id", themeId)
+    .maybeSingle<{ id: string; label: string }>();
+
+  if (existingResult.error || !existingResult.data) {
+    return fail("Le thème à supprimer est introuvable.");
+  }
+
+  const { error } = await admin
+    .from("content_taxonomy_themes")
+    .delete()
+    .eq("organization_id", organizationId)
+    .eq("id", themeId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content_taxonomy.theme_deleted",
+    summary: `Thème éditorial "${existingResult.data.label}" supprimé.`,
+    targetType: "content_taxonomy_theme",
+    targetId: themeId,
+    targetLabel: existingResult.data.label,
+    highlights: ["les sous-thèmes rattachés sont supprimés avec le thème"]
+  });
+
+  revalidatePath("/admin/content");
+  revalidatePath("/library");
+  revalidateAdminAudit();
+
+  return ok(`Thème "${existingResult.data.label}" supprimé.`);
+}
+
 export async function createContentTaxonomySubthemeAction(
   _prevState: AdminActionState,
   formData: FormData
@@ -1089,6 +1212,159 @@ export async function createContentTaxonomySubthemeAction(
   revalidateAdminAudit();
 
   return ok(`Sous-thème "${label}" ajouté à la taxonomie.`);
+}
+
+export async function updateContentTaxonomySubthemeAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const subthemeId = String(formData.get("subtheme_id") ?? "").trim();
+  const themeId = String(formData.get("theme_id") ?? "").trim();
+  const label = String(formData.get("label") ?? "").trim();
+  const topicsInput = String(formData.get("topics") ?? "").trim();
+  const position = Number(String(formData.get("position") ?? "").trim() || 0);
+
+  if (!subthemeId || !themeId || !label) {
+    return fail("Le sous-thème, son thème parent et son nom sont obligatoires.");
+  }
+
+  const [existingResult, themeResult] = await Promise.all([
+    admin
+      .from("content_taxonomy_subthemes")
+      .select("id, label, theme_id")
+      .eq("organization_id", organizationId)
+      .eq("id", subthemeId)
+      .maybeSingle<{ id: string; label: string; theme_id: string }>(),
+    admin
+      .from("content_taxonomy_themes")
+      .select("id, label")
+      .eq("organization_id", organizationId)
+      .eq("id", themeId)
+      .maybeSingle<{ id: string; label: string }>()
+  ]);
+
+  if (existingResult.error || !existingResult.data) {
+    return fail("Le sous-thème à modifier est introuvable.");
+  }
+
+  if (themeResult.error || !themeResult.data) {
+    return fail("Le thème parent sélectionné est introuvable.");
+  }
+
+  const previousThemeResult = await admin
+    .from("content_taxonomy_themes")
+    .select("id, label")
+    .eq("organization_id", organizationId)
+    .eq("id", existingResult.data.theme_id)
+    .maybeSingle<{ id: string; label: string }>();
+  const previousThemeLabel = previousThemeResult.data?.label ?? null;
+  const topics = parseTagList(topicsInput);
+
+  const { error } = await admin
+    .from("content_taxonomy_subthemes")
+    .update({
+      theme_id: themeId,
+      label,
+      topics,
+      position: Number.isFinite(position) ? position : 0
+    })
+    .eq("organization_id", organizationId)
+    .eq("id", subthemeId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  if (previousThemeLabel) {
+    await admin
+      .from("content_items")
+      .update({
+        category: themeResult.data.label,
+        subcategory: label
+      })
+      .eq("organization_id", organizationId)
+      .eq("category", previousThemeLabel)
+      .eq("subcategory", existingResult.data.label);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content_taxonomy.subtheme_updated",
+    summary: `Sous-thème éditorial "${label}" mis à jour.`,
+    targetType: "content_taxonomy_subtheme",
+    targetId: subthemeId,
+    targetLabel: label,
+    highlights: [
+      `ancien nom ${existingResult.data.label}`,
+      `thème ${themeResult.data.label}`,
+      `${topics.length} sujet(s)`
+    ]
+  });
+
+  revalidatePath("/admin/content");
+  revalidatePath("/library");
+  revalidateAdminAudit();
+
+  return ok(`Sous-thème "${label}" mis à jour.`);
+}
+
+export async function deleteContentTaxonomySubthemeAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const subthemeId = String(formData.get("subtheme_id") ?? "").trim();
+
+  if (!subthemeId) {
+    return fail("Le sous-thème à supprimer est introuvable.");
+  }
+
+  const existingResult = await admin
+    .from("content_taxonomy_subthemes")
+    .select("id, label")
+    .eq("organization_id", organizationId)
+    .eq("id", subthemeId)
+    .maybeSingle<{ id: string; label: string }>();
+
+  if (existingResult.error || !existingResult.data) {
+    return fail("Le sous-thème à supprimer est introuvable.");
+  }
+
+  const { error } = await admin
+    .from("content_taxonomy_subthemes")
+    .delete()
+    .eq("organization_id", organizationId)
+    .eq("id", subthemeId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content_taxonomy.subtheme_deleted",
+    summary: `Sous-thème éditorial "${existingResult.data.label}" supprimé.`,
+    targetType: "content_taxonomy_subtheme",
+    targetId: subthemeId,
+    targetLabel: existingResult.data.label
+  });
+
+  revalidatePath("/admin/content");
+  revalidatePath("/library");
+  revalidateAdminAudit();
+
+  return ok(`Sous-thème "${existingResult.data.label}" supprimé.`);
 }
 
 export async function createQuizAction(

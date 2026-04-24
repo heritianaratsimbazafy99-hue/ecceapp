@@ -5,6 +5,10 @@ import { useActionState } from "react";
 import {
   createContentTaxonomySubthemeAction,
   createContentTaxonomyThemeAction,
+  deleteContentTaxonomySubthemeAction,
+  deleteContentTaxonomyThemeAction,
+  updateContentTaxonomySubthemeAction,
+  updateContentTaxonomyThemeAction,
   type AdminActionState
 } from "@/app/(platform)/admin/actions";
 import type { ContentTaxonomyPreset } from "@/components/content/content-studio-composer";
@@ -25,7 +29,24 @@ export function ContentTaxonomyManager({
     createContentTaxonomySubthemeAction,
     initialState
   );
+  const [themeUpdateState, themeUpdateAction, themeUpdatePending] = useActionState(
+    updateContentTaxonomyThemeAction,
+    initialState
+  );
+  const [themeDeleteState, themeDeleteAction, themeDeletePending] = useActionState(
+    deleteContentTaxonomyThemeAction,
+    initialState
+  );
+  const [subthemeUpdateState, subthemeUpdateAction, subthemeUpdatePending] = useActionState(
+    updateContentTaxonomySubthemeAction,
+    initialState
+  );
+  const [subthemeDeleteState, subthemeDeleteAction, subthemeDeletePending] = useActionState(
+    deleteContentTaxonomySubthemeAction,
+    initialState
+  );
   const hasManagedTaxonomy = taxonomyPresets.length > 0;
+  const subthemeCount = taxonomyPresets.reduce((total, preset) => total + preset.subthemes.length, 0);
 
   return (
     <section className="panel admin-content-taxonomy-manager" id="content-taxonomy">
@@ -45,45 +66,133 @@ export function ContentTaxonomyManager({
             <span>thème(s)</span>
           </article>
           <article>
-            <strong>{taxonomyPresets.reduce((total, preset) => total + preset.subthemes.length, 0)}</strong>
+            <strong>{subthemeCount}</strong>
             <span>sous-thème(s)</span>
           </article>
         </div>
+      </div>
+
+      <div className="admin-content-taxonomy-feedback">
+        {[themeState, subthemeState, themeUpdateState, themeDeleteState, subthemeUpdateState, subthemeDeleteState].map(
+          (actionState, index) =>
+            actionState.error ? (
+              <p className="form-error" key={`error-${index}`}>
+                {actionState.error}
+              </p>
+            ) : actionState.success ? (
+              <p className="form-success" key={`success-${index}`}>
+                {actionState.success}
+              </p>
+            ) : null
+        )}
       </div>
 
       <div className="admin-content-taxonomy-layout">
         <div className="admin-content-taxonomy-map">
           {hasManagedTaxonomy ? (
             taxonomyPresets.map((preset) => (
-              <article className="library-taxonomy-card" key={preset.id}>
-                <div className="tag-row">
-                  <Badge tone="accent">{preset.theme}</Badge>
-                  <Badge tone="neutral">{preset.subthemes.length} sous-thème(s)</Badge>
-                </div>
+              <article className="admin-content-taxonomy-edit-card" key={preset.id}>
+                <form action={themeUpdateAction} className="admin-content-taxonomy-edit-form">
+                  <input name="theme_id" type="hidden" value={preset.id} />
 
-                <p>{preset.description || "Aucune description renseignée pour le moment."}</p>
-
-                <div className="library-subtheme-list">
-                  {preset.subthemes.map((subtheme) => (
-                    <span className="library-subtheme-button" key={subtheme.id ?? subtheme.label}>
-                      <span>{subtheme.label}</span>
-                      <strong>{subtheme.topics.length}</strong>
-                    </span>
-                  ))}
-                </div>
-
-                {preset.subthemes.some((subtheme) => subtheme.topics.length > 0) ? (
-                  <div className="library-topic-row">
-                    {preset.subthemes
-                      .flatMap((subtheme) => subtheme.topics)
-                      .slice(0, 8)
-                      .map((topic) => (
-                        <span className="library-topic-pill" key={`${preset.id}-${topic}`}>
-                          {topic}
-                        </span>
-                      ))}
+                  <div className="tag-row">
+                    <Badge tone="accent">{preset.theme}</Badge>
+                    <Badge tone="neutral">{preset.subthemes.length} sous-thème(s)</Badge>
+                    <Badge tone="neutral">ordre {preset.position ?? 0}</Badge>
                   </div>
-                ) : null}
+
+                  <div className="admin-content-taxonomy-inline-grid">
+                    <label>
+                      Thème
+                      <input defaultValue={preset.theme} name="label" required type="text" />
+                    </label>
+                    <label>
+                      Position
+                      <input defaultValue={preset.position ?? 0} min="0" name="position" type="number" />
+                    </label>
+                  </div>
+
+                  <label>
+                    Description
+                    <textarea defaultValue={preset.description} name="description" rows={3} />
+                  </label>
+
+                  <div className="admin-content-card-actions">
+                    <button className="button button-secondary button-small" disabled={themeUpdatePending} type="submit">
+                      {themeUpdatePending ? "Mise à jour..." : "Mettre à jour"}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="admin-content-taxonomy-subtheme-editor">
+                  {preset.subthemes.length ? (
+                    preset.subthemes.map((subtheme) => (
+                      <article className="admin-content-taxonomy-subtheme-card" key={subtheme.id ?? subtheme.label}>
+                        <form action={subthemeUpdateAction} className="admin-content-taxonomy-edit-form">
+                          <input name="subtheme_id" type="hidden" value={subtheme.id ?? ""} />
+
+                          <div className="admin-content-taxonomy-inline-grid">
+                            <label>
+                              Sous-thème
+                              <input defaultValue={subtheme.label} name="label" required type="text" />
+                            </label>
+                            <label>
+                              Position
+                              <input defaultValue={subtheme.position ?? 0} min="0" name="position" type="number" />
+                            </label>
+                          </div>
+
+                          <label>
+                            Thème parent
+                            <select defaultValue={preset.id} name="theme_id" required>
+                              {taxonomyPresets.map((theme) => (
+                                <option key={theme.id} value={theme.id}>
+                                  {theme.theme}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            Sujets abordés
+                            <input defaultValue={subtheme.topics.join(", ")} name="topics" type="text" />
+                          </label>
+
+                          <div className="admin-content-card-actions">
+                            <button className="button button-secondary button-small" disabled={subthemeUpdatePending} type="submit">
+                              {subthemeUpdatePending ? "Mise à jour..." : "Mettre à jour"}
+                            </button>
+                          </div>
+                        </form>
+
+                        {subtheme.id ? (
+                          <form action={subthemeDeleteAction} className="admin-content-taxonomy-delete-form">
+                            <input name="subtheme_id" type="hidden" value={subtheme.id} />
+                            <button className="button button-ghost button-small" disabled={subthemeDeletePending} type="submit">
+                              Supprimer le sous-thème
+                            </button>
+                          </form>
+                        ) : null}
+                      </article>
+                    ))
+                  ) : (
+                    <div className="empty-state empty-state-compact">
+                      <strong>Aucun sous-thème.</strong>
+                      <p>Ajoute un sous-thème pour rendre ce thème exploitable dans le studio.</p>
+                    </div>
+                  )}
+                </div>
+
+                <form action={themeDeleteAction} className="admin-content-taxonomy-delete-form">
+                  <input name="theme_id" type="hidden" value={preset.id} />
+                  <div>
+                    <strong>Suppression du thème</strong>
+                    <p>Les sous-thèmes rattachés seront retirés de la taxonomie, sans modifier les contenus déjà classés.</p>
+                  </div>
+                  <button className="button button-ghost button-small" disabled={themeDeletePending} type="submit">
+                    Supprimer le thème
+                  </button>
+                </form>
               </article>
             ))
           ) : (
@@ -119,9 +228,6 @@ export function ContentTaxonomyManager({
               Position
               <input defaultValue="50" min="0" name="position" type="number" />
             </label>
-
-            {themeState.error ? <p className="form-error">{themeState.error}</p> : null}
-            {themeState.success ? <p className="form-success">{themeState.success}</p> : null}
 
             <button className="button button-secondary" disabled={themePending} type="submit">
               {themePending ? "Ajout..." : "Ajouter le thème"}
@@ -165,9 +271,6 @@ export function ContentTaxonomyManager({
               Position
               <input defaultValue="50" disabled={!hasManagedTaxonomy} min="0" name="position" type="number" />
             </label>
-
-            {subthemeState.error ? <p className="form-error">{subthemeState.error}</p> : null}
-            {subthemeState.success ? <p className="form-success">{subthemeState.success}</p> : null}
 
             <button className="button button-secondary" disabled={subthemePending || !hasManagedTaxonomy} type="submit">
               {subthemePending ? "Ajout..." : "Ajouter le sous-thème"}

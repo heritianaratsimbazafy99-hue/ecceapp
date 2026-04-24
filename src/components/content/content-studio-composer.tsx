@@ -15,10 +15,12 @@ export type ContentTaxonomyPreset = {
   id: string;
   theme: string;
   description: string;
+  position?: number;
   subthemes: Array<{
     id?: string;
     label: string;
     topics: string[];
+    position?: number;
   }>;
 };
 
