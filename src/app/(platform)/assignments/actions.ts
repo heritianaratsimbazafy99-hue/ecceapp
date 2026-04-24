@@ -13,11 +13,50 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
 const SUBMISSION_BUCKET = "submission-files";
+const MAX_SUBMISSION_FILE_BYTES = 25 * 1024 * 1024;
+const SUBMISSION_MIME_BY_EXTENSION: Record<string, string> = {
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".txt": "text/plain"
+};
+const ALLOWED_SUBMISSION_MIME_TYPES = new Set(Object.values(SUBMISSION_MIME_BY_EXTENSION));
 
 export type AssignmentActionState = {
   error?: string;
   success?: string;
 };
+
+function validateSubmissionAttachment(file: File) {
+  const extension = path.extname(file.name).toLowerCase();
+  const contentType = file.type || SUBMISSION_MIME_BY_EXTENSION[extension];
+
+  if (file.size <= 0) {
+    return { error: "Le fichier joint est vide." };
+  }
+
+  if (file.size > MAX_SUBMISSION_FILE_BYTES) {
+    return { error: "Le fichier joint dépasse la limite de 25 Mo." };
+  }
+
+  if (!extension || !SUBMISSION_MIME_BY_EXTENSION[extension]) {
+    return { error: "Format non autorisé. Utilise PDF, Word, PowerPoint, TXT, PNG ou JPG." };
+  }
+
+  if (!contentType || !ALLOWED_SUBMISSION_MIME_TYPES.has(contentType)) {
+    return { error: "Type de fichier non autorisé pour cette soumission." };
+  }
+
+  return {
+    contentType,
+    extension
+  };
+}
 
 export async function submitAssignmentAction(
   _prevState: AssignmentActionState,
@@ -84,14 +123,20 @@ export async function submitAssignmentAction(
   let storagePath: string | null = null;
 
   if (file instanceof File && file.size > 0) {
-    const extension = path.extname(file.name) || ".bin";
+    const validation = validateSubmissionAttachment(file);
+
+    if (validation.error) {
+      return { error: validation.error };
+    }
+
+    const extension = validation.extension;
     const baseName = slugify(path.basename(file.name, extension)) || "piece-jointe";
     storagePath = `${organizationId}/${context.user.id}/${assignmentId}/${Date.now()}-${baseName}${extension}`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
     const uploadResult = await admin.storage.from(SUBMISSION_BUCKET).upload(storagePath, buffer, {
       cacheControl: "3600",
-      contentType: file.type || "application/octet-stream",
+      contentType: validation.contentType,
       upsert: false
     });
 
