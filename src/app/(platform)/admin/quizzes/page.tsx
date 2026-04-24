@@ -60,6 +60,7 @@ export default async function AdminQuizzesPage({
     calibrationPulse,
     contentBridgeRadar,
     contentOptions,
+    context,
     filters,
     focusQuiz,
     hero,
@@ -76,12 +77,13 @@ export default async function AdminQuizzesPage({
     status: params.status,
     lane: params.lane
   });
+  const canOpenAssignmentStudio = context.roles.includes("admin");
 
   return (
     <div className="page-shell">
       <PlatformTopbar
         title="Studio quiz"
-        description="Cockpit admin premium pour piloter la calibration, la diffusion et la maintenance des quiz ECCE sans repasser par un simple catalogue."
+        description="Cockpit pédagogique premium pour piloter la calibration, la diffusion et la maintenance des quiz ECCE sans repasser par un simple catalogue."
       />
 
       <section className="metric-grid metric-grid-compact">
@@ -111,9 +113,11 @@ export default async function AdminQuizzesPage({
             <Link className="button button-secondary" href="#quiz-watchlist">
               Ouvrir la watchlist
             </Link>
-            <Link className="button button-secondary" href="/admin/assignments">
-              Ouvrir les assignations
-            </Link>
+            {canOpenAssignmentStudio ? (
+              <Link className="button button-secondary" href="/admin/assignments">
+                Ouvrir les assignations
+              </Link>
+            ) : null}
           </div>
         </div>
 

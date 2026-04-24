@@ -143,6 +143,7 @@ export function ContentStudioComposer({
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState("30");
   const [isRequired, setIsRequired] = useState(false);
+  const [pdfFileName, setPdfFileName] = useState("");
   const [selectedThemeId, setSelectedThemeId] = useState<string>(availableTaxonomyPresets[0]?.id ?? "fallback");
 
   const tagList = tags
@@ -155,6 +156,7 @@ export function ContentStudioComposer({
   const selectedSubtheme =
     selectedTheme?.subthemes.find((item) => item.label === subcategory) ??
     selectedTheme?.subthemes[0];
+  const hasPdfFile = Boolean(pdfFileName);
   const hasPrimaryLink = Boolean((contentType === "youtube" ? youtubeUrl : externalUrl).trim());
   const readinessScore = [
     Boolean(title.trim()),
@@ -162,7 +164,7 @@ export function ContentStudioComposer({
     Boolean(category.trim()),
     Boolean(subcategory.trim()),
     tagList.length >= 3,
-    hasPrimaryLink || contentType === "document" || contentType === "template"
+    hasPrimaryLink || hasPdfFile || contentType === "template"
   ].filter(Boolean).length;
   const taxonomyReady = Boolean(category.trim() && subcategory.trim() && tagList.length >= 3);
 
@@ -181,7 +183,7 @@ export function ContentStudioComposer({
   }
 
   return (
-    <form action={formAction} className="content-studio-shell admin-form">
+    <form action={formAction} className="content-studio-shell admin-form" encType="multipart/form-data">
       <CelebrationBurst
         active={Boolean(state.success)}
         body="Le contenu rejoint maintenant le studio ECCE avec un aperçu plus éditorial et plus premium."
@@ -405,9 +407,35 @@ export function ContentStudioComposer({
           </div>
 
           <div className="content-studio-grid">
+            <div className="content-pdf-uploader form-grid-span">
+              <div>
+                <span className="eyebrow">Cours PDF</span>
+                <strong>Déposer le support principal</strong>
+                <p>
+                  Le PDF sera stocké dans Supabase et ouvert directement dans le lecteur ECCE avant le quiz lié.
+                </p>
+              </div>
+              <label>
+                Fichier PDF
+                <input
+                  accept="application/pdf,.pdf"
+                  name="pdf_file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setPdfFileName(file?.name ?? "");
+                    if (file) {
+                      setContentType("document");
+                    }
+                  }}
+                  type="file"
+                />
+              </label>
+              <small>{pdfFileName ? `PDF prêt : ${pdfFileName}` : "Format accepté : PDF jusqu'à 50 Mo."}</small>
+            </div>
             <label className="form-grid-span">
               Lien externe
               <input onChange={(event) => setExternalUrl(event.target.value)} placeholder="https://..." type="url" value={externalUrl} />
+              <small>Optionnel si tu téléverses un PDF ECCE.</small>
             </label>
             <label className="form-grid-span">
               Lien YouTube
@@ -457,6 +485,7 @@ export function ContentStudioComposer({
             <div className="tag-row">
               <Badge tone={status === "published" ? "success" : "neutral"}>{status}</Badge>
               <Badge tone="accent">{contentType}</Badge>
+              {hasPdfFile ? <Badge tone="success">PDF ECCE</Badge> : null}
               {isRequired ? <Badge tone="warning">obligatoire</Badge> : null}
             </div>
 
@@ -485,7 +514,13 @@ export function ContentStudioComposer({
               <button className="button button-secondary" type="button">
                 {ctaLabel(contentType)}
               </button>
-              <small>{hasPrimaryLink ? "Lien prêt" : "Ajoute un lien pour finaliser l’expérience"}</small>
+              <small>
+                {hasPdfFile
+                  ? "PDF prêt pour lecture intégrée"
+                  : hasPrimaryLink
+                    ? "Lien prêt"
+                    : "Ajoute un PDF ou un lien pour finaliser l'expérience"}
+              </small>
             </div>
           </article>
         </section>

@@ -35,6 +35,7 @@ type ContentRow = {
   status: string;
   estimated_minutes: number | null;
   external_url: string | null;
+  storage_path: string | null;
   youtube_url: string | null;
   is_required: boolean;
   created_at: string;
@@ -300,6 +301,7 @@ type EngagementOverview = {
 };
 
 const SUBMISSION_BUCKET = "submission-files";
+const CONTENT_FILE_BUCKET = "course-files";
 
 function formatDate(dateString: string | null) {
   if (!dateString) {
@@ -1187,6 +1189,15 @@ async function getSignedSubmissionUrl(storagePath: string | null, admin = create
   return data?.signedUrl ?? null;
 }
 
+async function getSignedContentFileUrl(storagePath: string | null, admin = createSupabaseAdminClient()) {
+  if (!storagePath) {
+    return null;
+  }
+
+  const { data } = await admin.storage.from(CONTENT_FILE_BUCKET).createSignedUrl(storagePath, 60 * 60);
+  return data?.signedUrl ?? null;
+}
+
 async function getMessagingWorkspace(params: {
   organizationId: string;
   userId: string;
@@ -1992,7 +2003,7 @@ export async function getAdminPageData() {
     admin
       .from("content_items")
       .select(
-        "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+        "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
       )
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
@@ -5486,7 +5497,7 @@ export async function getAdminContentStudioPageData(filters?: {
   status?: string;
   lane?: string;
 }) {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(["admin", "professor", "coach"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
   const programsResult = await admin
@@ -5508,7 +5519,7 @@ export async function getAdminContentStudioPageData(filters?: {
     admin
       .from("content_items")
       .select(
-        "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+        "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
       )
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
@@ -5874,6 +5885,10 @@ export async function getAdminContentStudioPageData(filters?: {
       : null,
     normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
   ].filter(Boolean) as string[];
+  const canManageAssignments = context.roles.includes("admin");
+  const assignmentOpsHref = canManageAssignments ? "/admin/assignments" : "/library";
+  const assignmentOpsLabel = canManageAssignments ? "Ouvrir les assignations" : "Voir la bibliothèque";
+  const executionOpsLabel = canManageAssignments ? "Vérifier l'exécution" : "Explorer la diffusion";
   const priorityActions = [
     laneCounts.draft > 0
       ? {
@@ -5897,16 +5912,16 @@ export async function getAdminContentStudioPageData(filters?: {
           id: "distribution",
           title: `${visibleContents.filter((content) => content.assignmentCount === 0 && content.linkedQuizCount === 0 && content.status === "published").length} ressource(s) publiées restent peu branchées`,
           description: "La vraie dette n'est pas la création, mais la connexion aux assignations, quiz et parcours.",
-          href: "/admin/assignments",
-          ctaLabel: "Ouvrir les assignations",
+          href: assignmentOpsHref,
+          ctaLabel: assignmentOpsLabel,
           tone: "accent" as const
         }
       : {
           id: "distribution",
           title: "Diffusion éditoriale bien branchée",
           description: "Les ressources visibles sont déjà connectées au runtime pédagogique.",
-          href: "/admin/assignments",
-          ctaLabel: "Vérifier l'exécution",
+          href: assignmentOpsHref,
+          ctaLabel: executionOpsLabel,
           tone: "success" as const
         },
     visibleContents.filter((content) => content.taxonomyScore < 3).length > 0
@@ -6054,7 +6069,7 @@ export async function getAdminContentStudioPageData(filters?: {
 }
 
 export async function getAdminContentEditPageData(contentId: string) {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(["admin", "professor", "coach"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
 
@@ -6077,7 +6092,7 @@ export async function getAdminContentEditPageData(contentId: string) {
     admin
       .from("content_items")
       .select(
-        "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+        "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
       )
       .eq("organization_id", organizationId)
       .eq("id", contentId)
@@ -6207,7 +6222,7 @@ export async function getAdminQuizStudioPageData(filters?: {
   status?: string;
   lane?: string;
 }) {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(["admin", "professor", "coach"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
 
@@ -6592,6 +6607,10 @@ export async function getAdminQuizStudioPageData(filters?: {
       : null,
     normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
   ].filter(Boolean) as string[];
+  const canManageAssignments = context.roles.includes("admin");
+  const assignmentOpsHref = canManageAssignments ? "/admin/assignments" : "/library";
+  const assignmentOpsLabel = canManageAssignments ? "Ouvrir les assignations" : "Voir la bibliothèque";
+  const assignmentProgramLabel = canManageAssignments ? "Programmer des assignations" : "Relier à un contenu";
   const priorityActions = [
     laneCounts.fragile > 0
       ? {
@@ -6623,8 +6642,8 @@ export async function getAdminQuizStudioPageData(filters?: {
           id: "draft",
           title: "Le builder visible est déjà publié",
           description: "Le studio peut se concentrer sur la diffusion et la qualité pédagogique.",
-          href: "/admin/assignments",
-          ctaLabel: "Ouvrir les assignations",
+          href: assignmentOpsHref,
+          ctaLabel: assignmentOpsLabel,
           tone: "success" as const
         },
     visibleQuizzes.filter((quiz) => quiz.status === "published" && quiz.assignmentCount === 0 && quiz.attemptCount === 0).length > 0
@@ -6632,8 +6651,8 @@ export async function getAdminQuizStudioPageData(filters?: {
           id: "distribution",
           title: `${visibleQuizzes.filter((quiz) => quiz.status === "published" && quiz.assignmentCount === 0 && quiz.attemptCount === 0).length} quiz publiés restent sous-exploités`,
           description: "Ces quiz sont prêts, mais encore peu branchés dans les parcours ou les missions.",
-          href: "/admin/assignments",
-          ctaLabel: "Programmer des assignations",
+          href: assignmentOpsHref,
+          ctaLabel: assignmentProgramLabel,
           tone: "accent" as const
         }
       : {
@@ -8263,7 +8282,7 @@ export async function getLibraryResourcePageData(slug: string) {
   const contentResult = await admin
     .from("content_items")
     .select(
-      "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+      "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
     )
     .eq("organization_id", organizationId)
     .eq("slug", slug)
@@ -8290,7 +8309,7 @@ export async function getLibraryResourcePageData(slug: string) {
       ? admin
           .from("content_items")
           .select(
-            "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+            "id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
           )
           .eq("organization_id", organizationId)
           .eq("status", "published")
@@ -8325,7 +8344,10 @@ export async function getLibraryResourcePageData(slug: string) {
 
   return {
     context,
-    content,
+    content: {
+      ...content,
+      fileUrl: await getSignedContentFileUrl(content.storage_path, admin)
+    },
     linkedQuizzes,
     relatedResources
   };

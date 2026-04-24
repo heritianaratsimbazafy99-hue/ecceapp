@@ -1,5 +1,8 @@
 "use server";
 
+import { Buffer } from "node:buffer";
+import path from "node:path";
+
 import { revalidatePath } from "next/cache";
 
 import { createAuditEvent } from "@/lib/audit";
@@ -28,6 +31,9 @@ const VALID_CONTENT_TYPES = [
 const VALID_PUBLICATION_STATUS = ["draft", "scheduled", "published", "archived"] as const;
 const VALID_QUIZ_KIND = ["qcm", "quiz", "assessment"] as const;
 const VALID_QUESTION_TYPES = ["single_choice", "text"] as const;
+const STAFF_CONTENT_ROLES: AppRole[] = ["admin", "professor", "coach"];
+const CONTENT_FILE_BUCKET = "course-files";
+const MAX_CONTENT_FILE_BYTES = 50 * 1024 * 1024;
 
 type ProgramModuleDraftPayload = {
   title: string;
@@ -88,6 +94,64 @@ function parseTagList(value: string) {
         .filter(Boolean)
     )
   );
+}
+
+function getFormFile(formData: FormData, name: string) {
+  const value = formData.get(name);
+  return typeof File !== "undefined" && value instanceof File && value.size > 0 ? value : null;
+}
+
+async function uploadContentPdfFile({
+  file,
+  organizationId,
+  actorId,
+  title,
+  admin
+}: {
+  file: File | null;
+  organizationId: string;
+  actorId: string;
+  title: string;
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+}): Promise<{ storagePath: string | null; error?: string }> {
+  if (!file) {
+    return { storagePath: null };
+  }
+
+  const extension = path.extname(file.name).toLowerCase();
+  const isPdf = file.type === "application/pdf" || extension === ".pdf";
+
+  if (!isPdf) {
+    return { storagePath: null, error: "Seuls les fichiers PDF peuvent être déposés comme cours." };
+  }
+
+  if (file.size > MAX_CONTENT_FILE_BYTES) {
+    return { storagePath: null, error: "Le PDF dépasse la limite de 50 Mo." };
+  }
+
+  const baseName =
+    slugify(path.basename(file.name, extension || ".pdf")) ||
+    slugify(title) ||
+    "cours-pdf";
+  const storagePath = `${organizationId}/courses/${actorId}/${Date.now()}-${baseName}.pdf`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  const uploadResult = await admin.storage.from(CONTENT_FILE_BUCKET).upload(storagePath, buffer, {
+    cacheControl: "3600",
+    contentType: "application/pdf",
+    upsert: false
+  });
+
+  if (uploadResult.error) {
+    return {
+      storagePath: null,
+      error:
+        uploadResult.error.message ||
+        "Le PDF n'a pas pu être téléversé. Vérifie que le bucket Supabase course-files existe."
+    };
+  }
+
+  return { storagePath };
 }
 
 async function ensureProgramBelongsToOrganization(
@@ -778,7 +842,7 @@ export async function createContentAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -794,6 +858,7 @@ export async function createContentAction(
   const youtubeUrl = String(formData.get("youtube_url") ?? "").trim();
   const estimatedMinutes = Number(String(formData.get("estimated_minutes") ?? "").trim() || 0);
   const isRequired = String(formData.get("is_required") ?? "") === "on";
+  const pdfFile = getFormFile(formData, "pdf_file");
 
   if (!title || !VALID_CONTENT_TYPES.includes(contentType as (typeof VALID_CONTENT_TYPES)[number])) {
     return fail("Le titre et le type de contenu sont obligatoires.");
@@ -813,6 +878,19 @@ export async function createContentAction(
 
   const slug = slugify(title);
   const tags = tagsInput ? parseTagList(tagsInput) : [];
+  const fileUpload = await uploadContentPdfFile({
+    file: pdfFile,
+    organizationId,
+    actorId: context.user.id,
+    title,
+    admin
+  });
+
+  if (fileUpload.error) {
+    return fail(fileUpload.error);
+  }
+
+  const resolvedContentType = fileUpload.storagePath ? "document" : contentType;
 
   const { error } = await admin.from("content_items").insert({
     organization_id: organizationId,
@@ -823,9 +901,10 @@ export async function createContentAction(
     category: category || null,
     subcategory: subcategory || null,
     tags,
-    content_type: contentType,
+    content_type: resolvedContentType,
     status,
     external_url: externalUrl || null,
+    storage_path: fileUpload.storagePath,
     youtube_url: youtubeUrl || null,
     is_required: isRequired,
     estimated_minutes: estimatedMinutes > 0 ? estimatedMinutes : null,
@@ -844,7 +923,12 @@ export async function createContentAction(
     summary: `Contenu "${title}" créé.`,
     targetType: "content",
     targetLabel: title,
-    highlights: [contentType, status, estimatedMinutes > 0 ? `${estimatedMinutes} min` : "durée libre"]
+    highlights: [
+      resolvedContentType,
+      status,
+      fileUpload.storagePath ? "PDF téléversé" : "source externe",
+      estimatedMinutes > 0 ? `${estimatedMinutes} min` : "durée libre"
+    ]
   });
 
   revalidatePath("/admin");
@@ -860,7 +944,7 @@ export async function updateContentAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -877,6 +961,7 @@ export async function updateContentAction(
   const youtubeUrl = String(formData.get("youtube_url") ?? "").trim();
   const estimatedMinutes = Number(String(formData.get("estimated_minutes") ?? "").trim() || 0);
   const isRequired = String(formData.get("is_required") ?? "") === "on";
+  const pdfFile = getFormFile(formData, "pdf_file");
 
   if (!contentId) {
     return fail("Le contenu à modifier est introuvable.");
@@ -892,7 +977,7 @@ export async function updateContentAction(
 
   const existingResult = await admin
     .from("content_items")
-    .select("id, title, slug, status")
+    .select("id, title, slug, status, storage_path")
     .eq("organization_id", organizationId)
     .eq("id", contentId)
     .maybeSingle<{
@@ -900,6 +985,7 @@ export async function updateContentAction(
       title: string;
       slug: string;
       status: string;
+      storage_path: string | null;
     }>();
 
   if (existingResult.error || !existingResult.data) {
@@ -915,6 +1001,20 @@ export async function updateContentAction(
   }
 
   const tags = tagsInput ? parseTagList(tagsInput) : [];
+  const fileUpload = await uploadContentPdfFile({
+    file: pdfFile,
+    organizationId,
+    actorId: context.user.id,
+    title,
+    admin
+  });
+
+  if (fileUpload.error) {
+    return fail(fileUpload.error);
+  }
+
+  const resolvedStoragePath = fileUpload.storagePath ?? existingResult.data.storage_path;
+  const resolvedContentType = fileUpload.storagePath ? "document" : contentType;
 
   const { error } = await admin
     .from("content_items")
@@ -925,9 +1025,10 @@ export async function updateContentAction(
       category: category || null,
       subcategory: subcategory || null,
       tags,
-      content_type: contentType,
+      content_type: resolvedContentType,
       status,
       external_url: externalUrl || null,
+      storage_path: resolvedStoragePath,
       youtube_url: youtubeUrl || null,
       is_required: isRequired,
       estimated_minutes: estimatedMinutes > 0 ? estimatedMinutes : null
@@ -950,8 +1051,9 @@ export async function updateContentAction(
     targetLabel: title,
     highlights: [
       `ancien titre ${existingResult.data.title}`,
-      contentType,
+      resolvedContentType,
       status,
+      fileUpload.storagePath ? "PDF remplacé" : resolvedStoragePath ? "PDF conservé" : "sans PDF",
       tags.length >= 3 ? `${tags.length} sujets` : "taxonomie à compléter"
     ]
   });
@@ -971,7 +1073,7 @@ export async function createContentTaxonomyThemeAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1022,7 +1124,7 @@ export async function updateContentTaxonomyThemeAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1091,7 +1193,7 @@ export async function deleteContentTaxonomyThemeAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1145,7 +1247,7 @@ export async function createContentTaxonomySubthemeAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1218,7 +1320,7 @@ export async function updateContentTaxonomySubthemeAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1318,7 +1420,7 @@ export async function deleteContentTaxonomySubthemeAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1371,7 +1473,7 @@ export async function createQuizAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1557,7 +1659,7 @@ export async function addQuizQuestionAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -1666,7 +1768,7 @@ export async function deleteQuizQuestionAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 

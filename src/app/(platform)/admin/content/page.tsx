@@ -57,6 +57,7 @@ export default async function AdminContentPage({
     activationPulse,
     categoryOptions,
     categoryRadar,
+    context,
     contentWatchlist,
     editorialFeed,
     filters,
@@ -74,12 +75,13 @@ export default async function AdminContentPage({
     status: params.status,
     lane: params.lane
   });
+  const canOpenAssignmentStudio = context.roles.includes("admin");
 
   return (
     <div className="page-shell">
       <PlatformTopbar
         title="Studio contenus"
-        description="Cockpit admin premium pour piloter la bibliothèque, la qualité éditoriale et la diffusion réelle des ressources ECCE."
+        description="Cockpit pédagogique premium pour piloter la bibliothèque, la qualité éditoriale et la diffusion réelle des ressources ECCE."
       />
 
       <section className="metric-grid metric-grid-compact">
@@ -109,9 +111,11 @@ export default async function AdminContentPage({
             <Link className="button button-secondary" href="/library">
               Ouvrir la bibliothèque
             </Link>
-            <Link className="button button-secondary" href="/admin/assignments">
-              Ouvrir les assignations
-            </Link>
+            {canOpenAssignmentStudio ? (
+              <Link className="button button-secondary" href="/admin/assignments">
+                Ouvrir les assignations
+              </Link>
+            ) : null}
           </div>
         </div>
 

@@ -25,6 +25,7 @@ type EditableContent = {
   module_id?: string | null;
   estimated_minutes: number | null;
   external_url: string | null;
+  storage_path: string | null;
   youtube_url: string | null;
   is_required: boolean;
   publishedHref: string;
@@ -76,6 +77,7 @@ export function ContentEditForm({
   const [youtubeUrl, setYoutubeUrl] = useState(content.youtube_url ?? "");
   const [estimatedMinutes, setEstimatedMinutes] = useState(String(content.estimated_minutes ?? ""));
   const [isRequired, setIsRequired] = useState(content.is_required);
+  const [pdfFileName, setPdfFileName] = useState("");
   const [selectedThemeId, setSelectedThemeId] = useState(initialPreset?.id ?? "");
 
   const tagList = tags
@@ -114,7 +116,7 @@ export function ContentEditForm({
   }
 
   return (
-    <form action={formAction} className="content-edit-shell admin-form">
+    <form action={formAction} className="content-edit-shell admin-form" encType="multipart/form-data">
       <input name="content_id" type="hidden" value={content.id} />
 
       <section className="panel panel-highlight content-edit-hero">
@@ -302,9 +304,42 @@ export function ContentEditForm({
             </div>
 
             <div className="content-studio-grid">
+              <div className="content-pdf-uploader form-grid-span">
+                <div>
+                  <span className="eyebrow">Cours PDF</span>
+                  <strong>{content.storage_path ? "PDF déjà rattaché" : "Ajouter un PDF ECCE"}</strong>
+                  <p>
+                    Dépose un nouveau PDF pour remplacer le support lu par les coachés dans l&apos;application.
+                  </p>
+                </div>
+                <label>
+                  Fichier PDF
+                  <input
+                    accept="application/pdf,.pdf"
+                    name="pdf_file"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      setPdfFileName(file?.name ?? "");
+                      if (file) {
+                        setContentType("document");
+                      }
+                    }}
+                    type="file"
+                  />
+                </label>
+                <small>
+                  {pdfFileName
+                    ? `Nouveau PDF prêt : ${pdfFileName}`
+                    : content.storage_path
+                      ? "Le PDF actuel sera conservé si aucun nouveau fichier n'est déposé."
+                      : "Format accepté : PDF jusqu'à 50 Mo."}
+                </small>
+              </div>
+
               <label className="form-grid-span">
                 Lien externe
                 <input name="external_url" onChange={(event) => setExternalUrl(event.target.value)} type="url" value={externalUrl} />
+                <small>Optionnel si la ressource utilise le PDF ECCE intégré.</small>
               </label>
 
               <label className="form-grid-span">

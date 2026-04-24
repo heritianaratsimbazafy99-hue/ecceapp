@@ -2240,6 +2240,30 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: linear-gradient(180deg, rgba(248, 244, 238, 0.98), rgba(255, 255, 255, 0.94));
 }
 
+.content-pdf-uploader {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(47, 104, 85, 0.16);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(168, 225, 195, 0.2), transparent 32%),
+    linear-gradient(180deg, rgba(248, 253, 249, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.content-pdf-uploader strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.08rem;
+}
+
+.content-pdf-uploader p,
+.content-pdf-uploader small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .content-briefing-card-head strong {
   font-size: 1.15rem;
 }
@@ -3579,6 +3603,11 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .content-reader-pdf-frame {
   min-height: 640px;
   padding-top: 0;
+}
+
+.content-reader-pdf-stack {
+  display: grid;
+  gap: 14px;
 }
 
 .content-reader-source-card {

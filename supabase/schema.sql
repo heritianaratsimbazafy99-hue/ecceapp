@@ -702,10 +702,12 @@ for all
 using (
   public.has_org_role(organization_id, 'admin')
   or public.has_org_role(organization_id, 'professor')
+  or public.has_org_role(organization_id, 'coach')
 )
 with check (
   public.has_org_role(organization_id, 'admin')
   or public.has_org_role(organization_id, 'professor')
+  or public.has_org_role(organization_id, 'coach')
 );
 
 create policy "org members can read quizzes"

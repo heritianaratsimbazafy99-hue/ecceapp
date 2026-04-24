@@ -13,6 +13,8 @@ type ReaderContent = {
   content_type: string;
   estimated_minutes: number | null;
   external_url: string | null;
+  storage_path?: string | null;
+  fileUrl?: string | null;
   youtube_url: string | null;
   is_required: boolean;
 };
@@ -82,9 +84,12 @@ export function ContentReaderExperience({
   relatedResources
 }: ContentReaderExperienceProps) {
   const youtubeEmbedUrl = getYoutubeEmbedUrl(content.youtube_url);
-  const sourceUrl = content.youtube_url || content.external_url;
+  const pdfUrl =
+    content.fileUrl ??
+    (content.external_url?.toLowerCase().includes(".pdf") ? content.external_url : null);
+  const sourceUrl = content.youtube_url || pdfUrl || content.external_url;
   const sourceHost = getSourceHost(sourceUrl);
-  const isPdf = Boolean(content.external_url?.toLowerCase().includes(".pdf"));
+  const isPdf = Boolean(pdfUrl);
 
   return (
     <section className="content-reader-shell">
@@ -138,9 +143,21 @@ export function ContentReaderExperience({
                   title={content.title}
                 />
               </div>
-            ) : isPdf && content.external_url ? (
-              <div className="content-reader-video-frame content-reader-pdf-frame">
-                <iframe src={content.external_url} title={content.title} />
+            ) : isPdf && pdfUrl ? (
+              <div className="content-reader-pdf-stack">
+                <div className="content-reader-video-frame content-reader-pdf-frame">
+                  <iframe src={pdfUrl} title={content.title} />
+                </div>
+                <div className="table-actions">
+                  <Link className="button button-secondary" href={pdfUrl} target="_blank">
+                    Ouvrir le PDF en plein écran
+                  </Link>
+                  {linkedQuizzes[0] ? (
+                    <Link className="button" href={`/quiz/${linkedQuizzes[0].id}`}>
+                      Passer au quiz
+                    </Link>
+                  ) : null}
+                </div>
               </div>
             ) : sourceUrl ? (
               <div className="content-reader-source-card">
@@ -159,7 +176,7 @@ export function ContentReaderExperience({
             ) : (
               <div className="empty-state">
                 <strong>Aucune source n&apos;est encore rattachée.</strong>
-                <p>Le studio contenus peut encore enrichir cette ressource avec une URL ou une vidéo.</p>
+                <p>Le studio contenus peut encore enrichir cette ressource avec un PDF, une URL ou une vidéo.</p>
               </div>
             )}
           </div>
