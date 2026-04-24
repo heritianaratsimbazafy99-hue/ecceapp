@@ -21,6 +21,17 @@ function getRoleLabel(role: string | null) {
   }
 }
 
+function getAgendaEventTypeLabel(type: string) {
+  switch (type) {
+    case "session":
+      return "séance";
+    case "deadline":
+      return "deadline";
+    default:
+      return "relance";
+  }
+}
+
 function buildAgendaHref({
   query,
   lane,
@@ -85,7 +96,7 @@ export default async function AgendaPage({
     <div className="page-shell">
       <PlatformTopbar
         title="Agenda"
-        description={`Command center premium pour le rôle ${roleLabel}, afin d’arbitrer séances, deadlines et prochaines actions sans naviguer entre plusieurs espaces.`}
+        description={`Command center premium pour le rôle ${roleLabel}, afin d’arbitrer séances, deadlines, relances et prochaines actions sans naviguer entre plusieurs espaces.`}
       />
 
       <section className="metric-grid metric-grid-compact">
@@ -185,6 +196,7 @@ export default async function AgendaPage({
                 <option value="all">Tout l&apos;agenda</option>
                 <option value="sessions">Séances</option>
                 <option value="deadlines">Deadlines</option>
+                <option value="followups">Relances coach</option>
               </select>
             </label>
 
@@ -250,7 +262,7 @@ export default async function AgendaPage({
                   </div>
 
                   <div className="agenda-priority-meta">
-                    <span>{event.type === "session" ? "Séance" : "Deadline"}</span>
+                    <span>{getAgendaEventTypeLabel(event.type)}</span>
                     {event.href ? (
                       <Link className="inline-link" href={event.href}>
                         {event.ctaLabel ?? "Ouvrir"}
@@ -283,7 +295,7 @@ export default async function AgendaPage({
                   <Badge tone={focusEvent.tone}>{focusEvent.laneLabel}</Badge>
                   <Badge tone={focusEvent.statusTone}>{focusEvent.statusLabel}</Badge>
                   <Badge tone={focusEvent.type === "session" ? "accent" : "neutral"}>
-                    {focusEvent.type === "session" ? "séance" : "deadline"}
+                    {getAgendaEventTypeLabel(focusEvent.type)}
                   </Badge>
                 </div>
 
@@ -376,8 +388,8 @@ export default async function AgendaPage({
         <div className="library-search-head">
           <div>
             <span className="eyebrow">Timeline détaillée</span>
-            <h3>Vue chronologique des séances et deadlines</h3>
-            <p>La timeline garde la lecture date par date, mais avec la bonne couche d&apos;intention et de priorité.</p>
+            <h3>Vue chronologique des séances, deadlines et relances</h3>
+            <p>La timeline garde la lecture date par date, avec la bonne couche d&apos;intention, de priorité et de reprise coach.</p>
           </div>
 
           <div className="tag-row">

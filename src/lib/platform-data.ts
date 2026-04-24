@@ -672,7 +672,7 @@ function getProgramProgressTone(progress: number): "neutral" | "accent" | "warni
 
 type AdminProgramLane = "priority" | "scaffold" | "draft" | "active";
 type AgendaLane = "urgent" | "today" | "upcoming" | "recent";
-type AgendaScope = "sessions" | "deadlines";
+type AgendaScope = "sessions" | "deadlines" | "followups";
 type LearnerProgramLane = "urgent" | "momentum" | "launch" | "completed";
 type LearnerProgressLane = "badge" | "quiz" | "content" | "program" | "coaching";
 
@@ -788,7 +788,7 @@ function isAgendaLane(value: string | null | undefined): value is AgendaLane {
 }
 
 function isAgendaScope(value: string | null | undefined): value is AgendaScope {
-  return ["sessions", "deadlines"].includes(value ?? "");
+  return ["sessions", "deadlines", "followups"].includes(value ?? "");
 }
 
 function getAgendaLaneLabel(lane: AgendaLane) {
@@ -10735,6 +10735,35 @@ export async function getAgendaPageData(filters?: {
 
   const contentById = new Map(((contentsResult.data ?? []) as Array<{ id: string; title: string; slug: string }>).map((item) => [item.id, item]));
   const quizById = new Map(((quizzesResult.data ?? []) as Array<{ id: string; title: string }>).map((item) => [item.id, item]));
+  const followUpNotesResult = context.roles.includes("coach")
+    ? await admin
+        .from("coach_conversation_notes")
+        .select("conversation_id, body, next_follow_up_at, updated_at")
+        .eq("organization_id", organizationId)
+        .eq("coach_id", userId)
+        .not("next_follow_up_at", "is", null)
+        .lte("next_follow_up_at", rangeEndIso)
+        .order("next_follow_up_at", { ascending: true })
+        .limit(80)
+    : { data: [] as CoachConversationNoteRow[], error: null };
+  const followUpNotes = followUpNotesResult.error
+    ? []
+    : ((followUpNotesResult.data ?? []) as CoachConversationNoteRow[]);
+  const followUpConversationIds = followUpNotes.map((note) => note.conversation_id);
+  const followUpConversationsResult = followUpConversationIds.length
+    ? await admin
+        .from("coach_conversations")
+        .select("id, coachee_id")
+        .eq("organization_id", organizationId)
+        .eq("coach_id", userId)
+        .in("id", followUpConversationIds)
+    : { data: [] as Array<{ id: string; coachee_id: string }> };
+  const followUpConversationById = new Map(
+    ((followUpConversationsResult.data ?? []) as Array<{ id: string; coachee_id: string }>).map((conversation) => [
+      conversation.id,
+      conversation
+    ])
+  );
 
   const showPlanner = context.role === "admin" || (context.role === "coach" && branding.allowCoachSelfSchedule);
   const coachOptions = showPlanner
@@ -10896,10 +10925,78 @@ export async function getAgendaPageData(filters?: {
     };
   });
 
+  const followUpEvents = followUpNotes
+    .map((note) => {
+      const conversation = followUpConversationById.get(note.conversation_id);
+
+      if (!conversation) {
+        return null;
+      }
+
+      const learner = profileById.get(conversation.coachee_id);
+      const learnerName = learner ? formatUserName(learner) : "Coaché inconnu";
+      const timestamp = getDateValue(note.next_follow_up_at) ?? now;
+      const relativeDay = getRelativeDayLabel(note.next_follow_up_at, now);
+      const isToday = relativeDay === "Aujourd'hui";
+      const isOverdue = timestamp < now;
+      const lane: AgendaLane = isOverdue ? "urgent" : isToday ? "today" : timestamp >= now ? "upcoming" : "recent";
+      const nextFollowUpState = lane === "urgent" ? "overdue" : lane === "today" ? "soon" : "planned";
+      const nextFollowUpAt = getCoachFollowUpSuggestionAt(nextFollowUpState, now);
+      const messageHref = buildCoachMessageDraftHref({
+        conversationId: note.conversation_id,
+        recipientId: conversation.coachee_id,
+        draftLines: [
+          `Bonjour ${learnerName},`,
+          "Je reviens vers toi comme prévu sur notre dernier point de suivi.",
+          `Contexte rapide : ${formatMessagePreview(note.body)}`,
+          lane === "urgent"
+            ? "La relance prévue est dépassée : dis-moi ce qui bloque et la prochaine action que tu peux poser aujourd'hui."
+            : lane === "today"
+              ? "Je voulais faire le point aujourd'hui : où en es-tu et quelle action peux-tu confirmer ?"
+              : "Je prépare notre prochain point : dis-moi où tu en es pour que je t'aide à garder le rythme."
+        ],
+        noteLines: [
+          note.body,
+          `Relance agenda préparée le ${formatDate(new Date(now).toISOString())}.`
+        ],
+        followUpAt: nextFollowUpAt
+      });
+
+      return {
+        id: `followup-${note.conversation_id}`,
+        type: "followup" as const,
+        timestamp,
+        dayLabel: relativeDay,
+        dateLabel: formatDateCompact(note.next_follow_up_at),
+        timeLabel: formatTimeOnly(note.next_follow_up_at),
+        title: `Relance · ${learnerName}`,
+        subtitle: formatMessagePreview(note.body),
+        statusLabel: lane === "urgent" ? "relance en retard" : lane === "today" ? "relance du jour" : "relance planifiée",
+        statusTone: getAgendaLaneTone(lane),
+        audienceLabel: learnerName,
+        href: messageHref,
+        ctaLabel: "Préparer la relance",
+        isOverdue,
+        isToday,
+        lane,
+        laneLabel: getAgendaLaneLabel(lane),
+        tone: getAgendaLaneTone(lane),
+        nextAction:
+          lane === "urgent"
+            ? "Cette relance interne est en retard: prépare le message avant de replanifier le prochain point."
+            : lane === "today"
+              ? "Cette relance est prévue aujourd'hui: reprends le fil avec un message court et contextualisé."
+              : "Cette relance est planifiée: garde-la visible dans l'agenda pour préparer le prochain contact.",
+        contextLabel: "Note interne coach",
+        searchText: [`relance ${learnerName}`, note.body, relativeDay].join(" ").toLowerCase()
+      };
+    })
+    .filter((event): event is NonNullable<typeof event> => Boolean(event));
+
   const normalizedQuery = filters?.query?.trim().toLowerCase() ?? "";
   const laneFilter: AgendaLane | "all" = isAgendaLane(filters?.lane) ? filters.lane : "all";
   const scopeFilter: AgendaScope | "all" = isAgendaScope(filters?.scope) ? filters.scope : "all";
-  const allEvents = [...sessionEvents, ...deadlineEvents];
+  const allEvents = [...sessionEvents, ...deadlineEvents, ...followUpEvents];
   const baseEvents = allEvents.filter((event) => {
     if (normalizedQuery && !event.searchText.includes(normalizedQuery)) {
       return false;
@@ -10910,6 +11007,10 @@ export async function getAgendaPageData(filters?: {
     }
 
     if (scopeFilter === "deadlines" && event.type !== "deadline") {
+      return false;
+    }
+
+    if (scopeFilter === "followups" && event.type !== "followup") {
       return false;
     }
 
@@ -10996,11 +11097,18 @@ export async function getAgendaPageData(filters?: {
   const upcomingSessions = visibleEvents.filter((event) => event.type === "session" && event.timestamp >= now && event.statusLabel === "planned").length;
   const weekEnd = now + 7 * 24 * 60 * 60 * 1000;
   const dueThisWeek = visibleEvents.filter((event) => event.type === "deadline" && event.timestamp >= now && event.timestamp <= weekEnd).length;
+  const plannedFollowUps = visibleEvents.filter((event) => event.type === "followup").length;
   const overdueCount = visibleEvents.filter((event) => event.isOverdue).length;
   const todayCount = visibleEvents.filter((event) => event.isToday).length;
   const nextEvent = events.find((event) => event.timestamp >= now) ?? priorityEvents[0] ?? null;
   const activeFilterParts = [
-    scopeFilter === "sessions" ? "séances" : scopeFilter === "deadlines" ? "deadlines" : null,
+    scopeFilter === "sessions"
+      ? "séances"
+      : scopeFilter === "deadlines"
+        ? "deadlines"
+        : scopeFilter === "followups"
+          ? "relances"
+          : null,
     laneFilter !== "all" ? getAgendaLaneLabel(laneFilter) : null,
     normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
   ].filter(Boolean) as string[];
@@ -11063,6 +11171,11 @@ export async function getAgendaPageData(filters?: {
         label: "Deadlines 7 jours",
         value: dueThisWeek.toString(),
         delta: overdueCount ? `${overdueCount} en retard` : "Aucun retard détecté"
+      },
+      {
+        label: "Relances coach",
+        value: plannedFollowUps.toString(),
+        delta: plannedFollowUps ? "Notes internes planifiées" : "Aucune relance filtrée"
       },
       {
         label: "Aujourd'hui",

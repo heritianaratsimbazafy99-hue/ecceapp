@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 
 type AgendaEvent = {
   id: string;
-  type: "session" | "deadline";
+  type: "session" | "deadline" | "followup";
   timestamp: number;
   dayLabel: string;
   dateLabel: string;
@@ -24,6 +24,17 @@ type AgendaEvent = {
   nextAction: string;
   contextLabel: string;
 };
+
+function getAgendaEventTypeLabel(type: AgendaEvent["type"]) {
+  switch (type) {
+    case "session":
+      return "séance";
+    case "deadline":
+      return "deadline";
+    default:
+      return "relance";
+  }
+}
 
 export function AgendaCommandCenter({ events }: { events: AgendaEvent[] }) {
   const groupedEvents = events.reduce(
@@ -71,7 +82,7 @@ export function AgendaCommandCenter({ events }: { events: AgendaEvent[] }) {
                     <div className="tag-row">
                       <Badge tone={event.statusTone}>{event.statusLabel}</Badge>
                       <Badge tone={event.type === "session" ? "accent" : "neutral"}>
-                        {event.type === "session" ? "séance" : "deadline"}
+                        {getAgendaEventTypeLabel(event.type)}
                       </Badge>
                       <Badge tone={event.tone}>{event.laneLabel}</Badge>
                       {event.isOverdue ? <Badge tone="warning">retard</Badge> : null}

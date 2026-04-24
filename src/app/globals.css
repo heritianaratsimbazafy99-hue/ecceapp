@@ -8638,6 +8638,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: rgba(16, 24, 32, 0.7);
 }
 
+.agenda-event-dot.is-followup {
+  background: rgba(79, 70, 229, 0.9);
+}
+
 .agenda-event-main,
 .agenda-event-meta,
 .agenda-event-copy {
