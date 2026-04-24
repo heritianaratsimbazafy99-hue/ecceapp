@@ -448,11 +448,13 @@ function getCoachFollowUpSuggestionAt(state: ReturnType<typeof getDeadlineState>
 }
 
 function buildCoachMessageDraftHref({
+  conversationId,
   recipientId,
   draftLines,
   noteLines,
   followUpAt
 }: {
+  conversationId?: string | null;
   recipientId: string;
   draftLines: string[];
   noteLines?: string[];
@@ -462,6 +464,10 @@ function buildCoachMessageDraftHref({
     recipient: recipientId,
     draft: draftLines.join("\n\n")
   });
+
+  if (conversationId) {
+    searchParams.set("conversation", conversationId);
+  }
 
   if (noteLines?.length) {
     searchParams.set("note", noteLines.join("\n"));
@@ -10044,12 +10050,36 @@ export async function getCoachPageData() {
             ? "today"
             : "upcoming";
       const tone: BadgeTone = urgency === "overdue" ? "warning" : urgency === "today" ? "accent" : "neutral";
+      const learnerName = learner ? formatUserName(learner) : "Coaché inconnu";
+      const followUpState = urgency === "overdue" ? "overdue" : urgency === "today" ? "soon" : "planned";
+      const nextFollowUpAt = getCoachFollowUpSuggestionAt(followUpState, now);
+      const messageHref = conversation
+        ? buildCoachMessageDraftHref({
+            conversationId: note.conversation_id,
+            recipientId: conversation.coachee_id,
+            draftLines: [
+              `Bonjour ${learnerName},`,
+              "Je reviens vers toi comme prévu sur notre dernier point de suivi.",
+              `Contexte rapide : ${formatMessagePreview(note.body)}`,
+              urgency === "overdue"
+                ? "La relance prévue est dépassée : dis-moi ce qui bloque et la prochaine action que tu peux poser aujourd'hui."
+                : urgency === "today"
+                  ? "Je voulais faire le point aujourd'hui : où en es-tu et quelle action peux-tu confirmer ?"
+                  : "Je prépare notre prochain point : dis-moi où tu en es pour que je t'aide à garder le rythme."
+            ],
+            noteLines: [
+              note.body,
+              `Relance traitée depuis le cockpit coach le ${formatDate(new Date(now).toISOString())}.`
+            ],
+            followUpAt: nextFollowUpAt
+          })
+        : `/messages?conversation=${note.conversation_id}#messages-hub`;
 
       return {
         id: note.conversation_id,
         conversationId: note.conversation_id,
         learnerId: conversation?.coachee_id ?? null,
-        learnerName: learner ? formatUserName(learner) : "Coaché inconnu",
+        learnerName,
         dueAt: formatDate(note.next_follow_up_at),
         dueLabel: urgency === "overdue" ? "En retard" : getRelativeDayLabel(note.next_follow_up_at),
         bodyPreview: formatMessagePreview(note.body),
@@ -10057,6 +10087,9 @@ export async function getCoachPageData() {
         urgency,
         tone,
         href: `/messages?conversation=${note.conversation_id}#messages-hub`,
+        learnerHref: conversation ? `/coach/learners/${conversation.coachee_id}` : null,
+        messageHref,
+        nextFollowUpAt: formatDate(nextFollowUpAt),
         sortValue: dueValue ?? Number.MAX_SAFE_INTEGER
       };
     })

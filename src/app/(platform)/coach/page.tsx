@@ -79,7 +79,7 @@ export default async function CoachPage() {
         {internalFollowUps.length ? (
           <div className="coach-follow-up-list">
             {internalFollowUps.map((item) => (
-              <Link className="coach-follow-up-card" href={item.href} key={item.id}>
+              <article className="coach-follow-up-card" key={item.id}>
                 <div className="coach-follow-up-copy">
                   <div className="coach-follow-up-topline">
                     <strong>{item.learnerName}</strong>
@@ -91,8 +91,23 @@ export default async function CoachPage() {
                 <div className="coach-follow-up-meta">
                   <span>{item.dueAt}</span>
                   <small>note mise à jour {item.updatedAt}</small>
+                  <small>prochaine relance proposée {item.nextFollowUpAt}</small>
                 </div>
-              </Link>
+
+                <div className="coach-follow-up-actions">
+                  <Link className="button button-small" href={item.messageHref}>
+                    Préparer la relance
+                  </Link>
+                  <Link className="button button-secondary button-small" href={item.href}>
+                    Ouvrir le fil
+                  </Link>
+                  {item.learnerHref ? (
+                    <Link className="button button-ghost button-small" href={item.learnerHref}>
+                      Fiche coaché
+                    </Link>
+                  ) : null}
+                </div>
+              </article>
             ))}
           </div>
         ) : (
