@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ContentMediaAuditPanel } from "@/components/content/content-media-audit-panel";
 import { ContentStudioComposer } from "@/components/content/content-studio-composer";
 import { ContentTaxonomyManager } from "@/components/content/content-taxonomy-manager";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
@@ -64,6 +65,7 @@ export default async function AdminContentPage({
     focusContent,
     hero,
     laneBreakdown,
+    mediaAudit,
     metrics,
     moduleOptions,
     priorityActions,
@@ -314,6 +316,8 @@ export default async function AdminContentPage({
           </section>
         </aside>
       </section>
+
+      <ContentMediaAuditPanel audit={mediaAudit} />
 
       <section className="panel">
         <div className="panel-header-rich">

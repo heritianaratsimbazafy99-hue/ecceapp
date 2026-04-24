@@ -2466,6 +2466,13 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-taxonomy-feedback,
 .admin-content-issue-list,
 .admin-content-card-actions,
+.content-media-audit,
+.content-media-stat-grid,
+.content-media-audit-grid,
+.content-media-audit-card,
+.content-media-file-list,
+.content-media-file-row,
+.content-media-cleanup-form,
 .content-edit-shell,
 .content-edit-hero,
 .content-edit-copy,
@@ -2595,6 +2602,67 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-card-progress strong,
 .admin-content-focus-metrics strong {
   font-size: 1.3rem;
+}
+
+.content-media-audit {
+  gap: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(47, 104, 85, 0.12), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 248, 0.94));
+}
+
+.content-media-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.content-media-stat-grid article,
+.content-media-audit-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 16px 36px rgba(16, 24, 32, 0.04);
+}
+
+.content-media-stat-grid strong {
+  font-size: 1.35rem;
+}
+
+.content-media-stat-grid span,
+.content-media-file-row span {
+  color: var(--muted);
+}
+
+.content-media-audit-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  align-items: start;
+}
+
+.content-media-file-list {
+  gap: 12px;
+}
+
+.content-media-file-row {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(16, 24, 32, 0.04);
+}
+
+.content-media-file-row code {
+  display: block;
+  max-width: 100%;
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(16, 24, 32, 0.62);
+}
+
+.content-media-cleanup-form {
+  gap: 8px;
 }
 
 .admin-content-layout {
@@ -2780,6 +2848,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-taxonomy-map,
   .admin-content-taxonomy-report,
   .admin-content-taxonomy-inline-grid,
+  .content-media-stat-grid,
+  .content-media-audit-grid,
   .content-edit-hero,
   .content-edit-layout,
   .admin-content-summary,
@@ -2804,6 +2874,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-taxonomy-map,
   .admin-content-taxonomy-report,
   .admin-content-taxonomy-inline-grid,
+  .content-media-stat-grid,
+  .content-media-audit-grid,
   .content-edit-hero,
   .content-edit-layout,
   .admin-content-summary,

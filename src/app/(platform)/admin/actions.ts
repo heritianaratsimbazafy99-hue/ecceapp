@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 
 import { createAuditEvent } from "@/lib/audit";
 import { requireRole, type AppRole } from "@/lib/auth";
+import { CONTENT_FILE_BUCKET, listOrganizationContentPdfFiles, type ContentPdfStorageFile } from "@/lib/content-files";
 import { getOrganizationBrandingById } from "@/lib/organization";
 import { createNotifications, getAssignmentRecipientIds } from "@/lib/platform-events";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -31,7 +32,6 @@ const VALID_PUBLICATION_STATUS = ["draft", "scheduled", "published", "archived"]
 const VALID_QUIZ_KIND = ["qcm", "quiz", "assessment"] as const;
 const VALID_QUESTION_TYPES = ["single_choice", "text"] as const;
 const STAFF_CONTENT_ROLES: AppRole[] = ["admin", "professor", "coach"];
-const CONTENT_FILE_BUCKET = "course-files";
 const MAX_CONTENT_FILE_BYTES = 100 * 1024 * 1024;
 
 type ProgramModuleDraftPayload = {
@@ -91,6 +91,15 @@ function formatDateForAudit(value: string) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function getDateValue(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 function parseTagList(value: string) {
@@ -225,6 +234,76 @@ export async function createContentPdfUploadTicketAction(
     storagePath: signedUpload.data.path,
     token: signedUpload.data.token
   };
+}
+
+export async function cleanupOrphanContentPdfFilesAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+  const cleanupWindowHours = Math.min(
+    Math.max(Number(String(formData.get("cleanup_window_hours") ?? "").trim() || 24), 1),
+    168
+  );
+  const cutoff = Date.now() - cleanupWindowHours * 60 * 60 * 1000;
+  const referencedResult = await admin
+    .from("content_items")
+    .select("storage_path")
+    .eq("organization_id", organizationId)
+    .not("storage_path", "is", null);
+
+  if (referencedResult.error) {
+    return fail(referencedResult.error.message);
+  }
+
+  let storageFiles: ContentPdfStorageFile[];
+
+  try {
+    storageFiles = await listOrganizationContentPdfFiles(admin, organizationId);
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Impossible d'auditer les fichiers PDF.");
+  }
+
+  const referencedPaths = new Set(
+    ((referencedResult.data ?? []) as Array<{ storage_path: string | null }>)
+      .map((item) => item.storage_path)
+      .filter(Boolean) as string[]
+  );
+  const staleOrphans = storageFiles.filter((file) => {
+    if (referencedPaths.has(file.path)) {
+      return false;
+    }
+
+    const timestamp = getDateValue(file.createdAt) ?? getDateValue(file.updatedAt);
+    return timestamp !== null && timestamp < cutoff;
+  });
+
+  if (!staleOrphans.length) {
+    return ok(`Aucun PDF orphelin vieux de plus de ${cleanupWindowHours}h.`);
+  }
+
+  const removal = await admin.storage.from(CONTENT_FILE_BUCKET).remove(staleOrphans.map((file) => file.path));
+
+  if (removal.error) {
+    return fail(removal.error.message);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content.media_cleanup",
+    summary: `${staleOrphans.length} PDF orphelin(s) supprimé(s).`,
+    targetType: "content_media",
+    highlights: [`fenêtre ${cleanupWindowHours}h`, `${staleOrphans.length} fichier(s)`]
+  });
+
+  revalidatePath("/admin/content");
+  revalidateAdminAudit();
+
+  return ok(`${staleOrphans.length} PDF orphelin(s) supprimé(s).`);
 }
 
 async function ensureProgramBelongsToOrganization(

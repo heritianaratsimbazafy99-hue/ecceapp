@@ -8,6 +8,7 @@ import {
   type NotificationOpsLane
 } from "@/lib/notification-ops";
 import { requireRole, type AppRole } from "@/lib/auth";
+import { CONTENT_FILE_BUCKET, listOrganizationContentPdfFiles, type ContentPdfStorageFile } from "@/lib/content-files";
 import { getOrganizationBrandingById } from "@/lib/organization";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -301,8 +302,6 @@ type EngagementOverview = {
 };
 
 const SUBMISSION_BUCKET = "submission-files";
-const CONTENT_FILE_BUCKET = "course-files";
-
 function formatDate(dateString: string | null) {
   if (!dateString) {
     return "Aucune échéance";
@@ -312,6 +311,22 @@ function formatDate(dateString: string | null) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(dateString));
+}
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 Mo";
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
+  }
+
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} Mo`;
+  }
+
+  return `${Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10} Go`;
 }
 
 function formatDateCompact(dateString: string | null) {
@@ -5871,6 +5886,112 @@ export async function getAdminContentStudioPageData(filters?: {
       tone: content.tone,
       moduleLabel: content.moduleLabel
     }));
+  const canRunMediaCleanup = context.roles.includes("admin");
+  const referencedStoragePaths = new Set(contents.map((content) => content.storage_path).filter(Boolean) as string[]);
+  const contentTypesNeedingSupport = new Set(["document", "template", "replay"]);
+  const contentWithoutSupport = visibleContents.filter((content) => {
+    return (
+      content.status === "published" &&
+      contentTypesNeedingSupport.has(content.content_type) &&
+      !content.storage_path &&
+      !content.external_url &&
+      !content.youtube_url
+    );
+  });
+  let storageFiles: ContentPdfStorageFile[] = [];
+  let storageAuditError: string | null = null;
+
+  if (canRunMediaCleanup) {
+    try {
+      storageFiles = await listOrganizationContentPdfFiles(admin, organizationId);
+    } catch (error) {
+      storageAuditError = error instanceof Error ? error.message : "Audit du bucket PDF indisponible";
+    }
+  }
+
+  const now = Date.now();
+  const cleanupWindowHours = 24;
+  const cleanupCutoff = now - cleanupWindowHours * 60 * 60 * 1000;
+  const orphanFiles = storageFiles.filter((file) => !referencedStoragePaths.has(file.path));
+  const historicalOrphanFiles = orphanFiles.filter((file) => {
+    const timestamp = getDateValue(file.createdAt) ?? getDateValue(file.updatedAt);
+    return timestamp !== null && timestamp < cleanupCutoff;
+  });
+  const totalStorageSize = storageFiles.reduce((total, file) => total + file.sizeBytes, 0);
+  const orphanStorageSize = orphanFiles.reduce((total, file) => total + file.sizeBytes, 0);
+  const attachedPdfCount = contents.filter((content) => Boolean(content.storage_path)).length;
+  const visibleAttachedPdfCount = visibleContents.filter((content) => Boolean(content.storage_path)).length;
+  const mediaAudit = {
+    canRunCleanup: canRunMediaCleanup,
+    cleanupWindowHours,
+    attachedPdfCount,
+    storedPdfCount: storageFiles.length,
+    orphanCount: orphanFiles.length,
+    historicalOrphanCount: historicalOrphanFiles.length,
+    orphanSizeLabel: formatFileSize(orphanStorageSize),
+    contentWithoutSupportCount: contentWithoutSupport.length,
+    storageStatusLabel: storageAuditError
+      ? "Bucket à vérifier"
+      : canRunMediaCleanup
+        ? "Bucket audité"
+        : "Maintenance réservée admin",
+    storageAuditError,
+    contentWithoutSupport: contentWithoutSupport.slice(0, 6).map((content) => ({
+      id: content.id,
+      title: content.title,
+      status: content.status,
+      statusTone: content.statusTone,
+      contentType: content.content_type,
+      moduleLabel: content.moduleLabel,
+      editHref: content.editHref,
+      reason: content.external_url || content.youtube_url ? "Lien externe à vérifier" : "Aucun PDF ou lien ouvrable"
+    })),
+    orphanPreview: orphanFiles
+      .slice()
+      .sort((left, right) => {
+        return (
+          (getDateValue(left.createdAt) ?? getDateValue(left.updatedAt) ?? 0) -
+          (getDateValue(right.createdAt) ?? getDateValue(right.updatedAt) ?? 0)
+        );
+      })
+      .slice(0, 5)
+      .map((file) => ({
+        path: file.path,
+        name: file.name,
+        sizeLabel: formatFileSize(file.sizeBytes),
+        createdAt: formatDateCompact(file.createdAt ?? file.updatedAt)
+      })),
+    metrics: [
+      {
+        label: "PDF attachés",
+        value: attachedPdfCount.toString(),
+        delta: `${visibleAttachedPdfCount} visibles`,
+        tone: attachedPdfCount > 0 ? ("success" as const) : ("neutral" as const)
+      },
+      {
+        label: "Sans support",
+        value: contentWithoutSupport.length.toString(),
+        delta: "publiés à compléter",
+        tone: contentWithoutSupport.length > 0 ? ("warning" as const) : ("success" as const)
+      },
+      {
+        label: "Fichiers orphelins",
+        value: canRunMediaCleanup ? orphanFiles.length.toString() : "Admin",
+        delta: storageAuditError
+          ? "bucket à vérifier"
+          : canRunMediaCleanup
+            ? `${historicalOrphanFiles.length} nettoyable(s)`
+            : "bucket masqué",
+        tone: storageAuditError || historicalOrphanFiles.length > 0 ? ("warning" as const) : ("neutral" as const)
+      },
+      {
+        label: "Stockage PDF",
+        value: canRunMediaCleanup ? formatFileSize(totalStorageSize) : "Privé",
+        delta: canRunMediaCleanup ? `${storageFiles.length} fichier(s)` : "service role requis",
+        tone: "accent" as const
+      }
+    ]
+  };
   const activeFilterParts = [
     selectedCategory ? `catégorie ${selectedCategory}` : null,
     resolvedStatus !== "all" ? `statut ${resolvedStatus}` : null,
@@ -6057,6 +6178,7 @@ export async function getAdminContentStudioPageData(filters?: {
     ],
     focusContent,
     priorityActions,
+    mediaAudit,
     taxonomyGapReport,
     contentWatchlist: sortedVisibleContents.slice(0, 6),
     categoryOptions: categories,
