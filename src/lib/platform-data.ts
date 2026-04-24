@@ -11692,7 +11692,8 @@ export async function getDashboardPageData() {
       title: badgeInfo?.title ?? "Badge ECCE",
       description: badgeInfo?.description ?? "Nouveau jalon débloqué.",
       icon: badgeInfo?.icon ?? "spark",
-      awardedAt: formatDate(badge.awarded_at)
+      awardedAt: formatDate(badge.awarded_at),
+      awardedAtIso: badge.awarded_at
     };
   });
   const upcomingSessions = ((sessionsResult.data ?? []) as Array<{

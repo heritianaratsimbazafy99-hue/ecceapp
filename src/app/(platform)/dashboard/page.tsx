@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AssignmentCommandBoard } from "@/components/assignments/assignment-command-board";
+import { LearnerProgressNudge } from "@/components/dashboard/learner-progress-nudge";
 import { LearnerDashboardSpotlight } from "@/components/dashboard/learner-dashboard-spotlight";
 import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { MessagingPreviewPanel } from "@/components/messages/messaging-preview-panel";
@@ -30,6 +31,19 @@ export default async function DashboardPage() {
 
   return (
     <div className="page-shell">
+      <LearnerProgressNudge
+        engagement={engagement}
+        latestBadge={
+          badges[0]
+            ? {
+                id: badges[0].id,
+                title: badges[0].title,
+                awardedAtIso: badges[0].awardedAtIso
+              }
+            : null
+        }
+      />
+
       <PlatformTopbar
         title="Dashboard coaché"
         description="Un dashboard plus premium pour suivre tes missions, tes séances, tes ressources et ta progression sans friction."
