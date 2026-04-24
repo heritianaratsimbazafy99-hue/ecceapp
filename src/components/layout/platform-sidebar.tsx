@@ -29,7 +29,7 @@ const navigation = [
   { href: "/admin/programs", label: "Studio parcours", shortLabel: "SP", match: "prefix", roles: ["admin"] },
   { href: "/admin/content", label: "Studio contenus", shortLabel: "SC", match: "prefix", roles: ["admin", "professor", "coach"] },
   { href: "/admin/quizzes", label: "Studio quiz", shortLabel: "SQ", match: "prefix", roles: ["admin", "professor", "coach"] },
-  { href: "/admin/assignments", label: "Assignations", shortLabel: "AS", match: "prefix", roles: ["admin"] }
+  { href: "/admin/assignments", label: "Assignations", shortLabel: "AS", match: "prefix", roles: ["admin", "professor", "coach"] }
 ] as Array<{ href: string; label: string; shortLabel: string; match: "exact" | "prefix"; roles: AppRole[] }>;
 
 type PlatformSidebarProps = {

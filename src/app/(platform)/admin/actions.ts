@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 
 import { createAuditEvent } from "@/lib/audit";
 import { requireRole, type AppRole } from "@/lib/auth";
+import { getCoachAssignmentScope } from "@/lib/coach-assignments";
 import { CONTENT_FILE_BUCKET, listOrganizationContentPdfFiles, type ContentPdfStorageFile } from "@/lib/content-files";
 import { getOrganizationBrandingById } from "@/lib/organization";
 import { createNotifications, getAssignmentRecipientIds } from "@/lib/platform-events";
@@ -185,6 +186,10 @@ async function failAndCleanupContentPdf(
 ) {
   await removeContentPdfFile(storagePath, admin);
   return fail(error);
+}
+
+function canManageAssignmentsOrganizationWide(roles: AppRole[]) {
+  return roles.includes("admin") || roles.includes("professor");
 }
 
 export async function createContentPdfUploadTicketAction(
@@ -1673,6 +1678,19 @@ export async function createQuizAction(
     }
   }
 
+  if (contentItemId) {
+    const contentResult = await admin
+      .from("content_items")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("id", contentItemId)
+      .maybeSingle<{ id: string }>();
+
+    if (contentResult.error || !contentResult.data) {
+      return fail("Le contenu lié sélectionné est introuvable.");
+    }
+  }
+
   let normalizedQuestions: NormalizedQuizDraftQuestion[] = [];
 
   if (questionsPayload) {
@@ -2294,7 +2312,7 @@ export async function createAssignmentAction(
   _prevState: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(STAFF_CONTENT_ROLES);
   const organizationId = context.profile.organization_id;
   const admin = createSupabaseAdminClient();
 
@@ -2323,6 +2341,71 @@ export async function createAssignmentAction(
   }
 
   const dueAt = parsedDueAt ? parsedDueAt.toISOString() : null;
+
+  const [targetRoleResult, cohortResult, contentResult, quizResult] = await Promise.all([
+    assignedUserId
+      ? admin
+          .from("user_roles")
+          .select("user_id")
+          .eq("organization_id", organizationId)
+          .eq("user_id", assignedUserId)
+          .eq("role", "coachee")
+          .maybeSingle<{ user_id: string }>()
+      : Promise.resolve({ data: null, error: null }),
+    cohortId
+      ? admin
+          .from("cohorts")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .eq("id", cohortId)
+          .maybeSingle<{ id: string }>()
+      : Promise.resolve({ data: null, error: null }),
+    contentItemId
+      ? admin
+          .from("content_items")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .eq("id", contentItemId)
+          .maybeSingle<{ id: string }>()
+      : Promise.resolve({ data: null, error: null }),
+    quizId
+      ? admin
+          .from("quizzes")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .eq("id", quizId)
+          .maybeSingle<{ id: string }>()
+      : Promise.resolve({ data: null, error: null })
+  ]);
+
+  if (assignedUserId && (targetRoleResult.error || !targetRoleResult.data)) {
+    return fail("Le coaché sélectionné est introuvable dans cette organisation.");
+  }
+
+  if (cohortId && (cohortResult.error || !cohortResult.data)) {
+    return fail("La cohorte sélectionnée est introuvable dans cette organisation.");
+  }
+
+  if (contentItemId && (contentResult.error || !contentResult.data)) {
+    return fail("Le contenu sélectionné est introuvable dans cette organisation.");
+  }
+
+  if (quizId && (quizResult.error || !quizResult.data)) {
+    return fail("Le quiz sélectionné est introuvable dans cette organisation.");
+  }
+
+  if (!canManageAssignmentsOrganizationWide(context.roles)) {
+    const scope = await getCoachAssignmentScope({
+      organizationId,
+      coachId: context.user.id
+    });
+    const canAssignUser = assignedUserId ? scope.coacheeIds.includes(assignedUserId) : true;
+    const canAssignCohort = cohortId ? scope.cohortIds.includes(cohortId) : true;
+
+    if (!canAssignUser || !canAssignCohort) {
+      return fail("Tu peux assigner uniquement les coachés ou cohortes rattachés à ton espace coach.");
+    }
+  }
 
   const assignmentInsert = await admin
     .from("learning_assignments")

@@ -58,6 +58,10 @@ export async function submitAssignmentAction(
 
   const assignment = assignmentResult.data;
 
+  if (!assignment.content_item_id) {
+    return { error: "Cette assignation est un quiz. Ouvre-la depuis la page quiz pour l'envoyer." };
+  }
+
   if (context.role !== "admin") {
     let isAllowed = assignment.assigned_user_id === context.user.id;
 

@@ -86,6 +86,47 @@ export async function submitQuizAttemptAction(
     return { error: "Ce quiz n'est pas encore publié." };
   }
 
+  if (assignmentId) {
+    const assignmentResult = await admin
+      .from("learning_assignments")
+      .select("id, quiz_id, assigned_user_id, cohort_id")
+      .eq("organization_id", organizationId)
+      .eq("id", assignmentId)
+      .maybeSingle<{
+        id: string;
+        quiz_id: string | null;
+        assigned_user_id: string | null;
+        cohort_id: string | null;
+      }>();
+
+    if (assignmentResult.error || !assignmentResult.data) {
+      return { error: "Assignation introuvable pour ce quiz." };
+    }
+
+    if (assignmentResult.data.quiz_id !== quizId) {
+      return { error: "Cette assignation ne correspond pas au quiz demandé." };
+    }
+
+    if (!context.roles.includes("admin")) {
+      let canUseAssignment = assignmentResult.data.assigned_user_id === context.user.id;
+
+      if (!canUseAssignment && assignmentResult.data.cohort_id) {
+        const { data: cohortMembership } = await admin
+          .from("cohort_members")
+          .select("cohort_id")
+          .eq("user_id", context.user.id)
+          .eq("cohort_id", assignmentResult.data.cohort_id)
+          .maybeSingle<{ cohort_id: string }>();
+
+        canUseAssignment = Boolean(cohortMembership);
+      }
+
+      if (!canUseAssignment) {
+        return { error: "Tu n'as pas accès à cette assignation." };
+      }
+    }
+  }
+
   const { data: existingAttempts } = await admin
     .from("quiz_attempts")
     .select("id")

@@ -77,7 +77,9 @@ export default async function AdminContentPage({
     status: params.status,
     lane: params.lane
   });
-  const canOpenAssignmentStudio = context.roles.includes("admin");
+  const canOpenAssignmentStudio = context.roles.some(
+    (role) => role === "admin" || role === "professor" || role === "coach"
+  );
 
   return (
     <div className="page-shell">

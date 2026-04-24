@@ -85,12 +85,17 @@ export default async function AssignmentPage({
               ) : null}
 
               <div className="assignment-resource-actions">
+                {assignment.contentHref ? (
+                  <Link className="button" href={assignment.contentHref}>
+                    Lire dans ECCE
+                  </Link>
+                ) : null}
                 {assignment.resourceUrl ? (
                   <Link className="button button-secondary" href={assignment.resourceUrl} target="_blank">
                     Ouvrir la ressource
                   </Link>
                 ) : (
-                  <span className="form-hint">Cette assignation n’a pas de lien externe, mais le rendu peut déjà être déposé.</span>
+                  <span className="form-hint">Cette assignation n’a pas encore de source ouvrable, mais le rendu peut déjà être déposé.</span>
                 )}
               </div>
             </article>

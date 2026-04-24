@@ -7602,9 +7602,16 @@ export async function getAdminAssignmentStudioPageData(filters?: {
   kind?: string;
   lane?: string;
 }) {
-  const context = await requireRole(["admin"]);
+  const context = await requireRole(["admin", "professor", "coach"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
+  const canViewAllAssignments = context.roles.includes("admin") || context.roles.includes("professor");
+  const coachScope = canViewAllAssignments
+    ? null
+    : await getCoachAssignmentScope({
+        organizationId,
+        coachId: context.user.id
+      });
 
   const [
     profilesResult,
@@ -7643,10 +7650,10 @@ export async function getAdminAssignmentStudioPageData(filters?: {
       .order("created_at", { ascending: false })
   ]);
 
-  const profiles = (profilesResult.data ?? []) as ProfileRow[];
+  const rawProfiles = (profilesResult.data ?? []) as ProfileRow[];
   const authUsers = authUsersResult.data?.users ?? [];
-  const cohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
-  const cohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
+  const rawCohorts = (cohortsResult.data ?? []) as Array<{ id: string; name: string }>;
+  const rawCohortMembers = (cohortMembersResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
   const contents = (contentsResult.data ?? []) as Array<{
     id: string;
     title: string;
@@ -7663,7 +7670,27 @@ export async function getAdminAssignmentStudioPageData(filters?: {
     status: string;
     time_limit_minutes: number | null;
   }>;
-  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const rawAssignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const coachScopedCoacheeIds = new Set(coachScope?.coacheeIds ?? []);
+  const coachScopedCohortIds = new Set(coachScope?.cohortIds ?? []);
+  const profiles = canViewAllAssignments
+    ? rawProfiles
+    : rawProfiles.filter((profile) => coachScopedCoacheeIds.has(profile.id));
+  const cohorts = canViewAllAssignments
+    ? rawCohorts
+    : rawCohorts.filter((cohort) => coachScopedCohortIds.has(cohort.id));
+  const cohortMembers = canViewAllAssignments
+    ? rawCohortMembers
+    : rawCohortMembers.filter(
+        (member) => coachScopedCohortIds.has(member.cohort_id) || coachScopedCoacheeIds.has(member.user_id)
+      );
+  const assignments = canViewAllAssignments
+    ? rawAssignments
+    : rawAssignments.filter(
+        (assignment) =>
+          (assignment.assigned_user_id ? coachScopedCoacheeIds.has(assignment.assigned_user_id) : false) ||
+          (assignment.cohort_id ? coachScopedCohortIds.has(assignment.cohort_id) : false)
+      );
   const coacheeProfiles = profiles.filter((profile) =>
     (profile.user_roles ?? []).some((role) => role.role === "coachee")
   );
@@ -12680,11 +12707,12 @@ export async function getAssignmentPageData(assignmentId: string) {
     assignment.content_item_id
       ? admin
           .from("content_items")
-          .select("id, title, summary, category, subcategory, tags, content_type, estimated_minutes, is_required, external_url, youtube_url")
+          .select("id, title, slug, summary, category, subcategory, tags, content_type, estimated_minutes, is_required, external_url, storage_path, youtube_url")
           .eq("id", assignment.content_item_id)
           .maybeSingle<{
             id: string;
             title: string;
+            slug: string;
             summary: string | null;
             category: string | null;
             subcategory: string | null;
@@ -12693,6 +12721,7 @@ export async function getAssignmentPageData(assignmentId: string) {
             estimated_minutes: number | null;
             is_required: boolean;
             external_url: string | null;
+            storage_path: string | null;
             youtube_url: string | null;
           }>()
       : Promise.resolve({ data: null }),
@@ -12726,6 +12755,7 @@ export async function getAssignmentPageData(assignmentId: string) {
     assignment.due_at,
     latestSubmission?.status === "reviewed"
   );
+  const contentFileUrl = await getSignedContentFileUrl(contentResult.data?.storage_path ?? null, admin);
 
   return {
     context,
@@ -12750,7 +12780,8 @@ export async function getAssignmentPageData(assignmentId: string) {
         ]
           .filter(Boolean)
           .join(" · ") || "ressource",
-      resourceUrl: contentResult.data?.youtube_url ?? contentResult.data?.external_url ?? null,
+      contentHref: contentResult.data?.slug ? `/library/${contentResult.data.slug}` : null,
+      resourceUrl: contentFileUrl ?? contentResult.data?.youtube_url ?? contentResult.data?.external_url ?? null,
       tags: contentResult.data?.tags ?? [],
       isRequired: contentResult.data?.is_required ?? false,
       submissionCount: submissions.length,

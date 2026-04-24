@@ -80,7 +80,7 @@ export default async function AdminAssignmentsPage({
     <div className="page-shell">
       <PlatformTopbar
         title="Assignations et deadlines"
-        description="Cockpit admin premium pour piloter l’exécution pédagogique, lire la tension des missions et programmer les prochaines actions sans naviguer à l’aveugle."
+        description="Cockpit pédagogique premium pour piloter l’exécution, lire la tension des missions et programmer les prochaines actions sans naviguer à l’aveugle."
       />
 
       <section className="metric-grid metric-grid-compact">
