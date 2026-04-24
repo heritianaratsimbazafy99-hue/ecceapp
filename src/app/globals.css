@@ -10117,4 +10117,47 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .onboarding-page .auth-card-premium {
     order: -1;
   }
+
+  .site-header {
+    gap: 16px;
+    width: 100%;
+    border-radius: 26px;
+  }
+
+  .site-header .brand {
+    width: 100%;
+  }
+
+  .site-header > .button {
+    width: 100%;
+  }
+
+  .site-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 10px;
+  }
+
+  .site-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 0 12px;
+    border-radius: 14px;
+    background: rgba(16, 24, 32, 0.05);
+    color: rgba(16, 24, 32, 0.72);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .hero {
+    margin-top: 18px;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(2.05rem, 11vw, 2.75rem);
+    line-height: 1.03;
+  }
 }
