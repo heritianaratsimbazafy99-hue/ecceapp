@@ -3733,7 +3733,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .content-reader-main,
 .content-reader-sidebar,
 .content-reader-checklist,
-.content-reader-side-list {
+.content-reader-side-list,
+.content-reader-progress-card {
   display: grid;
   gap: 20px;
 }
@@ -3834,6 +3835,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 }
 
 .content-reader-source-card p,
+.content-reader-progress-card p,
 .content-reader-side-item p,
 .content-reader-checklist p {
   margin: 0;

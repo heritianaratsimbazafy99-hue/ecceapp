@@ -183,6 +183,17 @@ type SubmissionReviewRow = {
   created_at: string;
 };
 
+type ContentProgressRow = {
+  id: string;
+  organization_id?: string;
+  user_id: string;
+  content_item_id: string;
+  assignment_id: string | null;
+  status: string;
+  completed_at: string;
+  created_at?: string;
+};
+
 type UserBadgeRow = {
   id: string;
   user_id?: string;
@@ -986,6 +997,62 @@ function buildAssignmentTargets(
   });
 }
 
+function buildLatestContentProgressMaps(progressRows: ContentProgressRow[]) {
+  const latestProgressByAssignmentKey = new Map<string, ContentProgressRow>();
+  const latestProgressByContentKey = new Map<string, ContentProgressRow>();
+
+  for (const progress of progressRows) {
+    if (progress.assignment_id) {
+      const assignmentKey = `${progress.user_id}:${progress.assignment_id}`;
+
+      if (!latestProgressByAssignmentKey.has(assignmentKey)) {
+        latestProgressByAssignmentKey.set(assignmentKey, progress);
+      }
+    }
+
+    const contentKey = `${progress.user_id}:${progress.content_item_id}`;
+
+    if (!latestProgressByContentKey.has(contentKey)) {
+      latestProgressByContentKey.set(contentKey, progress);
+    }
+  }
+
+  return {
+    latestProgressByAssignmentKey,
+    latestProgressByContentKey
+  };
+}
+
+function getContentProgressForAssignment(
+  maps: ReturnType<typeof buildLatestContentProgressMaps>,
+  userId: string,
+  assignment: Pick<AssignmentRow, "id" | "content_item_id">
+) {
+  return (
+    maps.latestProgressByAssignmentKey.get(`${userId}:${assignment.id}`) ??
+    (assignment.content_item_id
+      ? maps.latestProgressByContentKey.get(`${userId}:${assignment.content_item_id}`)
+      : undefined)
+  );
+}
+
+function isContentCompleted(submission?: SubmissionRow | null, progress?: ContentProgressRow | null) {
+  return Boolean(
+    progress?.completed_at ||
+      (submission && ["submitted", "reviewed", "late"].includes(submission.status))
+  );
+}
+
+function getContentCompletedAt(submission?: SubmissionRow | null, progress?: ContentProgressRow | null) {
+  return (
+    progress?.completed_at ??
+    submission?.reviewed_at ??
+    submission?.submitted_at ??
+    submission?.created_at ??
+    null
+  );
+}
+
 function buildEngagementSignals(params: {
   learnerIds: string[];
   profiles: ProfileRow[];
@@ -994,11 +1061,14 @@ function buildEngagementSignals(params: {
   cohortMembers: Array<{ user_id: string; cohort_id: string }>;
   attempts: QuizAttemptResultRow[];
   submissions: SubmissionRow[];
+  contentProgress?: ContentProgressRow[];
   sessions: SessionAnalyticsRow[];
   notifications: NotificationAnalyticsRow[];
   badges: BadgeAwardAnalyticsRow[];
 }) {
   const now = Date.now();
+  const contentProgress = params.contentProgress ?? [];
+  const contentProgressMaps = buildLatestContentProgressMaps(contentProgress);
   const expandedAssignments = buildAssignmentTargets(params.assignments, params.cohortMembers);
   const assignmentsByLearnerId = expandedAssignments.reduce((map, assignment) => {
     for (const targetId of assignment.targetIds) {
@@ -1023,6 +1093,13 @@ function buildEngagementSignals(params: {
     map.set(submission.user_id, current);
     return map;
   }, new Map<string, SubmissionRow[]>());
+
+  const progressByLearnerId = contentProgress.reduce((map, progress) => {
+    const current = map.get(progress.user_id) ?? [];
+    current.push(progress);
+    map.set(progress.user_id, current);
+    return map;
+  }, new Map<string, ContentProgressRow[]>());
 
   const sessionsByLearnerId = params.sessions.reduce((map, session) => {
     const current = map.get(session.coachee_id) ?? [];
@@ -1084,6 +1161,7 @@ function buildEngagementSignals(params: {
       const learnerAssignments = assignmentsByLearnerId.get(learnerId) ?? [];
       const learnerAttempts = attemptsByLearnerId.get(learnerId) ?? [];
       const learnerSubmissions = submissionsByLearnerId.get(learnerId) ?? [];
+      const learnerContentProgress = progressByLearnerId.get(learnerId) ?? [];
       const learnerSessions = sessionsByLearnerId.get(learnerId) ?? [];
       const learnerNotifications = notificationsByLearnerId.get(learnerId) ?? [];
       const learnerBadges = badgesByLearnerId.get(learnerId) ?? [];
@@ -1100,12 +1178,13 @@ function buildEngagementSignals(params: {
           latestAttemptByAssignmentKey.get(`${learnerId}:${assignment.id}`) ??
           (assignment.quiz_id ? latestAttemptByQuizKey.get(`${learnerId}:${assignment.quiz_id}`) : undefined);
         const submission = latestSubmissionByAssignmentKey.get(`${learnerId}:${assignment.id}`);
+        const contentProgressItem = getContentProgressForAssignment(contentProgressMaps, learnerId, assignment);
 
         const completedItem = assignment.content_item_id
-          ? Boolean(submission && submission.status !== "not_started")
+          ? isContentCompleted(submission, contentProgressItem)
           : Boolean(attempt && attempt.status !== "in_progress" && attempt.status !== "expired");
         const completedAt = assignment.content_item_id
-          ? submission?.submitted_at ?? submission?.reviewed_at ?? submission?.created_at ?? null
+          ? getContentCompletedAt(submission, contentProgressItem)
           : attempt?.submitted_at ?? null;
         const completedAtValue = getDateValue(completedAt);
 
@@ -1146,6 +1225,7 @@ function buildEngagementSignals(params: {
       const recentActivityCount =
         learnerAttempts.filter((attempt) => isWithinDays(attempt.submitted_at, 14, now)).length +
         learnerSubmissions.filter((submission) => isWithinDays(submission.submitted_at ?? submission.created_at, 14, now)).length +
+        learnerContentProgress.filter((progress) => isWithinDays(progress.completed_at, 14, now)).length +
         learnerSessions.filter(
           (session) => session.status !== "cancelled" && isWithinDays(session.starts_at, 21, now)
         ).length +
@@ -1154,6 +1234,10 @@ function buildEngagementSignals(params: {
       const previousActivityCount =
         learnerAttempts.filter((attempt) => {
           const value = getDateValue(attempt.submitted_at);
+          return value !== null && value < now - 7 * 24 * 60 * 60 * 1000 && value >= now - 14 * 24 * 60 * 60 * 1000;
+        }).length +
+        learnerContentProgress.filter((progress) => {
+          const value = getDateValue(progress.completed_at);
           return value !== null && value < now - 7 * 24 * 60 * 60 * 1000 && value >= now - 14 * 24 * 60 * 60 * 1000;
         }).length +
         learnerSubmissions.filter((submission) => {
@@ -1188,7 +1272,13 @@ function buildEngagementSignals(params: {
         });
       }
 
-      if (learnerAssignments.length || recentActivityCount > 0 || learnerAttempts.length || learnerSubmissions.length) {
+      if (
+        learnerAssignments.length ||
+        recentActivityCount > 0 ||
+        learnerAttempts.length ||
+        learnerSubmissions.length ||
+        learnerContentProgress.length
+      ) {
         scoreComponents.push({
           weight: 20,
           value: clamp(recentActivityCount / 4, 0, 1)
@@ -1214,6 +1304,7 @@ function buildEngagementSignals(params: {
       const lastActivityAt = [
         ...learnerAttempts.map((attempt) => attempt.submitted_at),
         ...learnerSubmissions.map((submission) => submission.submitted_at ?? submission.created_at ?? null),
+        ...learnerContentProgress.map((progress) => progress.completed_at),
         ...learnerSessions.map((session) => session.starts_at),
         ...learnerBadges.map((badge) => badge.awarded_at)
       ]
@@ -7766,7 +7857,7 @@ export async function getAdminAssignmentStudioPageData(filters?: {
   );
   const coacheeIds = new Set(coacheeProfiles.map((profile) => profile.id));
 
-  const [attemptsResult, submissionsResult] = coacheeProfiles.length
+  const [attemptsResult, submissionsResult, contentProgressResult] = coacheeProfiles.length
     ? await Promise.all([
         admin
           .from("quiz_attempts")
@@ -7783,7 +7874,16 @@ export async function getAdminAssignmentStudioPageData(filters?: {
             "user_id",
             coacheeProfiles.map((profile) => profile.id)
           )
-          .order("submitted_at", { ascending: false })
+          .order("submitted_at", { ascending: false }),
+        admin
+          .from("content_progress")
+          .select("id, user_id, content_item_id, assignment_id, status, completed_at, created_at")
+          .eq("organization_id", organizationId)
+          .in(
+            "user_id",
+            coacheeProfiles.map((profile) => profile.id)
+          )
+          .order("completed_at", { ascending: false })
       ])
     : [
         {
@@ -7791,11 +7891,16 @@ export async function getAdminAssignmentStudioPageData(filters?: {
         },
         {
           data: [] as SubmissionRow[]
+        },
+        {
+          data: [] as ContentProgressRow[]
         }
       ];
 
   const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
   const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const contentProgress = (contentProgressResult.data ?? []) as ContentProgressRow[];
+  const contentProgressMaps = buildLatestContentProgressMaps(contentProgress);
   const emailByUserId = new Map(authUsers.map((item) => [item.id, item.email ?? "email indisponible"]));
   const userNameById = new Map(profiles.map((profile) => [profile.id, formatUserName(profile)]));
   const contentById = new Map(contents.map((content) => [content.id, content]));
@@ -7864,12 +7969,13 @@ export async function getAdminAssignmentStudioPageData(filters?: {
         latestAttemptByAssignmentKey.get(`${targetId}:${assignment.id}`) ??
         (assignment.quiz_id ? latestAttemptByQuizKey.get(`${targetId}:${assignment.quiz_id}`) : undefined);
       const submission = latestSubmissionByAssignmentKey.get(`${targetId}:${assignment.id}`);
+      const contentProgressItem = getContentProgressForAssignment(contentProgressMaps, targetId, assignment);
 
       const completedItem = assignment.content_item_id
-        ? Boolean(submission && submission.status !== "not_started")
+        ? isContentCompleted(submission, contentProgressItem)
         : Boolean(attempt && attempt.status !== "in_progress" && attempt.status !== "expired");
       const completedAt = assignment.content_item_id
-        ? submission?.submitted_at ?? submission?.reviewed_at ?? submission?.created_at ?? null
+        ? getContentCompletedAt(submission, contentProgressItem)
         : attempt?.submitted_at ?? null;
       const completedAtValue = getDateValue(completedAt);
 
@@ -8613,10 +8719,17 @@ export async function getLibraryPageData(filters?: {
   };
 }
 
-export async function getLibraryResourcePageData(slug: string) {
+export async function getLibraryResourcePageData(
+  slug: string,
+  options?: {
+    assignmentId?: string | null;
+    readState?: string | null;
+  }
+) {
   const context = await requireRole(["admin", "professor", "coach", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
+  const assignmentId = options?.assignmentId?.trim() || null;
 
   const contentResult = await admin
     .from("content_items")
@@ -8633,7 +8746,40 @@ export async function getLibraryResourcePageData(slug: string) {
   }
 
   const content = contentResult.data;
-  const [linkedQuizzesResult, relatedResourcesResult] = await Promise.all([
+  let activeAssignment: AssignmentRow | null = null;
+
+  if (assignmentId) {
+    const assignmentResult = await admin
+      .from("learning_assignments")
+      .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id")
+      .eq("organization_id", organizationId)
+      .eq("id", assignmentId)
+      .eq("content_item_id", content.id)
+      .maybeSingle<AssignmentRow>();
+
+    if (assignmentResult.data) {
+      const assignment = assignmentResult.data;
+      let canUseAssignment =
+        context.roles.includes("admin") ||
+        context.roles.includes("professor") ||
+        (assignment.assigned_user_id !== null && assignment.assigned_user_id === context.user.id);
+
+      if (!canUseAssignment && assignment.cohort_id) {
+        const { data: cohortMembership } = await admin
+          .from("cohort_members")
+          .select("cohort_id")
+          .eq("user_id", context.user.id)
+          .eq("cohort_id", assignment.cohort_id)
+          .maybeSingle<{ cohort_id: string }>();
+
+        canUseAssignment = Boolean(cohortMembership);
+      }
+
+      activeAssignment = canUseAssignment ? assignment : null;
+    }
+  }
+
+  const [linkedQuizzesResult, relatedResourcesResult, readingProgressResult] = await Promise.all([
     admin
       .from("quizzes")
       .select(
@@ -8656,8 +8802,25 @@ export async function getLibraryResourcePageData(slug: string) {
           .neq("id", content.id)
           .order("created_at", { ascending: false })
           .limit(3)
-      : Promise.resolve({ data: [] as ContentRow[] })
+      : Promise.resolve({ data: [] as ContentRow[] }),
+    context.roles.includes("coachee")
+      ? (() => {
+          const query = admin
+            .from("content_progress")
+            .select("id, user_id, content_item_id, assignment_id, status, completed_at, created_at")
+            .eq("organization_id", organizationId)
+            .eq("user_id", context.user.id)
+            .eq("content_item_id", content.id)
+            .order("completed_at", { ascending: false })
+            .limit(1);
+
+          return activeAssignment
+            ? query.or(`assignment_id.eq.${activeAssignment.id},assignment_id.is.null`)
+            : query.is("assignment_id", null);
+        })()
+      : Promise.resolve({ data: [] as ContentProgressRow[] })
   ]);
+  const readingProgress = ((readingProgressResult.data ?? []) as ContentProgressRow[])[0] ?? null;
 
   const linkedQuizzes = ((linkedQuizzesResult.data ?? []) as Array<
     QuizRow & {
@@ -8688,6 +8851,14 @@ export async function getLibraryResourcePageData(slug: string) {
       fileUrl: await getSignedContentFileUrl(content.storage_path, admin)
     },
     linkedQuizzes,
+    readingProgress: {
+      activeAssignmentId: activeAssignment?.id ?? null,
+      canMarkAsRead: context.roles.includes("coachee"),
+      completedAt: readingProgress?.completed_at ?? null,
+      completedAtLabel: readingProgress?.completed_at ? formatDate(readingProgress.completed_at) : null,
+      justCompleted: options?.readState === "done",
+      saveError: options?.readState === "error"
+    },
     relatedResources
   };
 }
@@ -11406,7 +11577,7 @@ export async function getLearnerProgramsPageData(filters?: {
             .order("published_at", { ascending: false });
         })();
 
-  const [assignmentsResult, submissionsResult, attemptsResult] = await Promise.all([
+  const [assignmentsResult, submissionsResult, attemptsResult, contentProgressResult] = await Promise.all([
     assignmentQuery,
     contentIds.length
       ? admin
@@ -11423,7 +11594,16 @@ export async function getLearnerProgramsPageData(filters?: {
           .eq("user_id", userId)
           .in("quiz_id", quizIds)
           .order("submitted_at", { ascending: false })
-      : Promise.resolve({ data: [] as QuizAttemptResultRow[] })
+      : Promise.resolve({ data: [] as QuizAttemptResultRow[] }),
+    contentIds.length
+      ? admin
+          .from("content_progress")
+          .select("id, user_id, content_item_id, assignment_id, status, completed_at, created_at")
+          .eq("organization_id", organizationId)
+          .eq("user_id", userId)
+          .in("content_item_id", contentIds)
+          .order("completed_at", { ascending: false })
+      : Promise.resolve({ data: [] as ContentProgressRow[] })
   ]);
 
   const assignments = ((assignmentsResult.data ?? []) as AssignmentRow[]).filter(
@@ -11433,6 +11613,8 @@ export async function getLearnerProgramsPageData(filters?: {
   );
   const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
   const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
+  const contentProgress = (contentProgressResult.data ?? []) as ContentProgressRow[];
+  const contentProgressMaps = buildLatestContentProgressMaps(contentProgress);
 
   const latestSubmissionByContentId = new Map<string, SubmissionRow>();
   for (const submission of submissions) {
@@ -11481,9 +11663,12 @@ export async function getLearnerProgramsPageData(filters?: {
         ...moduleContents.map((content) => {
           const assignment = assignmentByContentId.get(content.id) ?? null;
           const submission = latestSubmissionByContentId.get(content.id) ?? null;
-          const completed = Boolean(submission && ["submitted", "reviewed", "late"].includes(submission.status));
+          const progress = assignment
+            ? getContentProgressForAssignment(contentProgressMaps, userId, assignment)
+            : contentProgressMaps.latestProgressByContentKey.get(`${userId}:${content.id}`) ?? null;
+          const completed = isContentCompleted(submission, progress);
           const dueState = getDeadlineState(assignment?.due_at, completed);
-          const activityAt = submission?.submitted_at ?? submission?.reviewed_at ?? assignment?.published_at ?? content.created_at;
+          const activityAt = getContentCompletedAt(submission, progress) ?? assignment?.published_at ?? content.created_at;
           const stateLabel = completed
             ? submission?.status === "reviewed"
               ? "Corrigé"
@@ -11928,6 +12113,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     enrollmentsResult,
     attemptsResult,
     submissionsResult,
+    contentProgressResult,
     sessionsResult,
     badgesResult
   ] = await Promise.all([
@@ -11955,6 +12141,13 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       .order("submitted_at", { ascending: false })
       .limit(80),
     admin
+      .from("content_progress")
+      .select("id, user_id, content_item_id, assignment_id, status, completed_at, created_at")
+      .eq("organization_id", organizationId)
+      .eq("user_id", userId)
+      .order("completed_at", { ascending: false })
+      .limit(80),
+    admin
       .from("coaching_sessions")
       .select("id, coach_id, starts_at, ends_at, status, video_link")
       .eq("organization_id", organizationId)
@@ -11974,6 +12167,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
   const enrollments = (enrollmentsResult.data ?? []) as ProgramEnrollmentRow[];
   const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
   const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const contentProgress = (contentProgressResult.data ?? []) as ContentProgressRow[];
   const sessions = (sessionsResult.data ?? []) as Array<{
     id: string;
     coach_id: string;
@@ -12007,6 +12201,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
   const moduleIds = modules.map((module) => module.id);
   const directContentIds = uniqueIds([
     ...submissions.map((submission) => submission.content_item_id),
+    ...contentProgress.map((progress) => progress.content_item_id),
     ...assignments.map((assignment) => assignment.content_item_id)
   ]);
   const directQuizIds = uniqueIds([
@@ -12079,6 +12274,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       )
     ).values()
   );
+  const contentProgressMaps = buildLatestContentProgressMaps(contentProgress);
 
   const programById = new Map(programs.map((program) => [program.id, program]));
   const moduleById = new Map(modules.map((module) => [module.id, module]));
@@ -12247,6 +12443,39 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     });
   }
 
+  for (const progress of contentProgress) {
+    const content = contentById.get(progress.content_item_id);
+
+    if (!content) {
+      continue;
+    }
+
+    const programModule = content.module_id ? moduleById.get(content.module_id) : null;
+    const program = programModule ? programById.get(programModule.program_id) : null;
+    const assignment = progress.assignment_id
+      ? assignmentById.get(progress.assignment_id)
+      : assignmentByContentId.get(progress.content_item_id);
+    const description = `Lecture terminée · ${content.summary ?? content.content_type}`;
+
+    progressEvents.push({
+      id: `content-read-${progress.id}`,
+      lane: "content",
+      laneLabel: getLearnerProgressLaneLabel("content"),
+      title: content.title,
+      description,
+      occurredAt: formatDate(progress.completed_at),
+      occurredAtIso: progress.completed_at,
+      tone: "success",
+      href: assignment ? `/library/${content.slug}?assignment=${assignment.id}` : `/library/${content.slug}`,
+      ctaLabel: "Revoir la ressource",
+      meta: [program?.title, programModule?.title, content.category, content.subcategory, content.content_type].filter(Boolean) as string[],
+      searchText: [content.title, description, program?.title, programModule?.title, content.category, content.subcategory, content.content_type]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+    });
+  }
+
   for (const session of sessions) {
     const coachName = coachNameById.get(session.coach_id) ?? "Coach ECCE";
     const description = session.ends_at
@@ -12302,9 +12531,12 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       const moduleContents = contentsByModuleId.get(programModule.id) ?? [];
       const moduleQuizzes = quizzesByModuleId.get(programModule.id) ?? [];
       const completedContentActivities = moduleContents
-        .map((content) => latestSubmissionByContentId.get(content.id))
-        .filter((submission): submission is SubmissionRow => Boolean(submission && ["submitted", "reviewed", "late"].includes(submission.status)))
-        .map((submission) => submission.reviewed_at ?? submission.submitted_at ?? submission.created_at ?? null)
+        .map((content) => ({
+          progress: contentProgressMaps.latestProgressByContentKey.get(`${userId}:${content.id}`) ?? null,
+          submission: latestSubmissionByContentId.get(content.id) ?? null
+        }))
+        .filter(({ progress, submission }) => isContentCompleted(submission, progress))
+        .map(({ progress, submission }) => getContentCompletedAt(submission, progress))
         .filter(Boolean) as string[];
       const completedQuizActivities = moduleQuizzes
         .map((quiz) => latestAttemptByQuizId.get(quiz.id))
@@ -12641,7 +12873,18 @@ export async function getDashboardPageData() {
         )
         .order("submitted_at", { ascending: false })
     : { data: [] as SubmissionRow[] };
+  const contentProgressResult = contentIds.length
+    ? await admin
+        .from("content_progress")
+        .select("id, user_id, content_item_id, assignment_id, status, completed_at, created_at")
+        .eq("organization_id", organizationId)
+        .eq("user_id", userId)
+        .in("content_item_id", contentIds)
+        .order("completed_at", { ascending: false })
+    : { data: [] as ContentProgressRow[] };
   const assignmentSubmissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const contentProgress = (contentProgressResult.data ?? []) as ContentProgressRow[];
+  const contentProgressMaps = buildLatestContentProgressMaps(contentProgress);
   const submissionByAssignmentId = new Map<string, SubmissionRow>();
   for (const submission of assignmentSubmissions) {
     if (submission.assignment_id && !submissionByAssignmentId.has(submission.assignment_id)) {
@@ -12697,6 +12940,7 @@ export async function getDashboardPageData() {
     })),
     attempts: attempts as QuizAttemptResultRow[],
     submissions: assignmentSubmissions,
+    contentProgress,
     sessions: ((sessionsResult.data ?? []) as Array<{ id: string; starts_at: string; video_link: string | null }>).map(
       (session) => ({
         coachee_id: userId,
@@ -12846,6 +13090,26 @@ export async function getDashboardPageData() {
     });
   }
 
+  for (const progress of contentProgress) {
+    const linkedContent = contentById.get(progress.content_item_id);
+    const assignment = progress.assignment_id ? assignmentById.get(progress.assignment_id) : null;
+
+    if (!linkedContent) {
+      continue;
+    }
+
+    progressPreviewEvents.push({
+      id: `content-read-${progress.id}`,
+      title: linkedContent.title,
+      description: `Lecture terminée · ${linkedContent.content_type}`,
+      occurredAt: formatDate(progress.completed_at),
+      occurredAtIso: progress.completed_at,
+      tone: "success",
+      href: assignment ? `/library/${linkedContent.slug}?assignment=${assignment.id}` : `/library/${linkedContent.slug}`,
+      label: "Lecture"
+    });
+  }
+
   for (const session of completedSessions) {
     progressPreviewEvents.push({
       id: `session-${session.id}`,
@@ -12897,6 +13161,7 @@ export async function getDashboardPageData() {
       const linkedContent = contentById.get(item.content_item_id ?? "");
       const linkedQuiz = quizById.get(item.quiz_id ?? "");
       const contentSubmission = submissionByAssignmentId.get(item.id);
+      const contentProgressItem = getContentProgressForAssignment(contentProgressMaps, userId, item);
       const hasQuizAttempt = attemptByQuizId.has(item.quiz_id ?? "");
       const kind: "quiz" | "contenu" = item.content_item_id ? "contenu" : "quiz";
       const completionStatus = item.content_item_id
@@ -12904,6 +13169,8 @@ export async function getDashboardPageData() {
           ? "reviewed"
           : contentSubmission?.status === "submitted"
             ? "submitted"
+            : contentProgressItem
+              ? "done"
             : "pending"
         : hasQuizAttempt
           ? "done"
@@ -12939,6 +13206,8 @@ export async function getDashboardPageData() {
           item.content_item_id
             ? contentSubmission
               ? "Voir le rendu"
+              : contentProgressItem
+                ? "Revoir"
               : "Rendre"
             : hasQuizAttempt
               ? "Revoir"
@@ -13064,6 +13333,18 @@ export async function getAssignmentPageData(assignmentId: string) {
   ]);
 
   const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const contentProgressResult = assignment.content_item_id
+    ? await admin
+        .from("content_progress")
+        .select("id, user_id, content_item_id, assignment_id, status, completed_at, created_at")
+        .eq("organization_id", organizationId)
+        .eq("user_id", userId)
+        .eq("content_item_id", assignment.content_item_id)
+        .or(`assignment_id.eq.${assignment.id},assignment_id.is.null`)
+        .order("completed_at", { ascending: false })
+        .limit(1)
+    : { data: [] as ContentProgressRow[] };
+  const latestContentProgress = ((contentProgressResult.data ?? []) as ContentProgressRow[])[0] ?? null;
   const reviewIds = submissions.map((item) => item.id);
   const reviewsResult = reviewIds.length
     ? await admin
@@ -13083,7 +13364,7 @@ export async function getAssignmentPageData(assignmentId: string) {
   const latestSubmission = submissions[0] ?? null;
   const dueState = getDeadlineState(
     assignment.due_at,
-    latestSubmission?.status === "reviewed"
+    isContentCompleted(latestSubmission, latestContentProgress)
   );
   const contentFileUrl = await getSignedContentFileUrl(contentResult.data?.storage_path ?? null, admin);
 
@@ -13110,7 +13391,7 @@ export async function getAssignmentPageData(assignmentId: string) {
         ]
           .filter(Boolean)
           .join(" · ") || "ressource",
-      contentHref: contentResult.data?.slug ? `/library/${contentResult.data.slug}` : null,
+      contentHref: contentResult.data?.slug ? `/library/${contentResult.data.slug}?assignment=${assignment.id}` : null,
       resourceUrl: contentFileUrl ?? contentResult.data?.youtube_url ?? contentResult.data?.external_url ?? null,
       tags: contentResult.data?.tags ?? [],
       isRequired: contentResult.data?.is_required ?? false,

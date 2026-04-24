@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { markContentAsReadAction } from "@/app/(platform)/library/actions";
 import { Badge } from "@/components/ui/badge";
 
 type ReaderContent = {
@@ -40,6 +41,14 @@ type RelatedResource = {
 type ContentReaderExperienceProps = {
   content: ReaderContent;
   linkedQuizzes: LinkedQuiz[];
+  readingProgress: {
+    activeAssignmentId: string | null;
+    canMarkAsRead: boolean;
+    completedAt: string | null;
+    completedAtLabel: string | null;
+    justCompleted: boolean;
+    saveError: boolean;
+  };
   relatedResources: RelatedResource[];
 };
 
@@ -81,6 +90,7 @@ function getSourceHost(url: string | null) {
 export function ContentReaderExperience({
   content,
   linkedQuizzes,
+  readingProgress,
   relatedResources
 }: ContentReaderExperienceProps) {
   const youtubeEmbedUrl = getYoutubeEmbedUrl(content.youtube_url);
@@ -237,6 +247,55 @@ export function ContentReaderExperience({
         </div>
 
         <aside className="content-reader-sidebar">
+          {readingProgress.canMarkAsRead ? (
+            <div className="panel panel-highlight">
+              <div className="panel-header">
+                <h3>Progression de lecture</h3>
+                <p>
+                  {readingProgress.completedAt
+                    ? "Cette ressource est comptabilisée dans ton parcours."
+                    : "Valide la lecture quand le PDF ou la ressource a été consulté."}
+                </p>
+              </div>
+
+              <div className="content-reader-progress-card">
+                <div className="tag-row">
+                  <Badge tone={readingProgress.completedAt ? "success" : "accent"}>
+                    {readingProgress.completedAt ? "terminé" : "à valider"}
+                  </Badge>
+                  {readingProgress.justCompleted ? <Badge tone="success">enregistré</Badge> : null}
+                </div>
+
+                <strong>
+                  {readingProgress.completedAt
+                    ? "Lecture terminée"
+                    : "Marquer cette lecture comme terminée"}
+                </strong>
+                <p>
+                  {readingProgress.completedAtLabel
+                    ? `Validée le ${readingProgress.completedAtLabel}.`
+                    : "ECCE mettra à jour ton dashboard, ta timeline de progression et le suivi coach."}
+                </p>
+                {readingProgress.saveError ? (
+                  <p className="form-error">La progression n&apos;a pas pu être enregistrée. Vérifie que la migration SQL est appliquée.</p>
+                ) : null}
+
+                {readingProgress.completedAt ? null : (
+                  <form action={markContentAsReadAction}>
+                    <input name="content_id" type="hidden" value={content.id} />
+                    <input name="content_slug" type="hidden" value={content.slug} />
+                    {readingProgress.activeAssignmentId ? (
+                      <input name="assignment_id" type="hidden" value={readingProgress.activeAssignmentId} />
+                    ) : null}
+                    <button className="button button-small" type="submit">
+                      Lecture terminée
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+          ) : null}
+
           <div className="panel">
             <div className="panel-header">
               <h3>Quiz liés</h3>

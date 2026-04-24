@@ -5,12 +5,18 @@ import { PlatformTopbar } from "@/components/layout/platform-topbar";
 import { getLibraryResourcePageData } from "@/lib/platform-data";
 
 export default async function LibraryResourcePage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ assignment?: string; read?: string }>;
 }) {
   const { slug } = await params;
-  const data = await getLibraryResourcePageData(slug);
+  const resolvedSearchParams = await searchParams;
+  const data = await getLibraryResourcePageData(slug, {
+    assignmentId: resolvedSearchParams?.assignment,
+    readState: resolvedSearchParams?.read
+  });
 
   if (!data) {
     notFound();
@@ -28,6 +34,7 @@ export default async function LibraryResourcePage({
       <ContentReaderExperience
         content={content}
         linkedQuizzes={linkedQuizzes}
+        readingProgress={data.readingProgress}
         relatedResources={relatedResources}
       />
     </div>
