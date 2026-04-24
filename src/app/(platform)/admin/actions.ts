@@ -1,6 +1,5 @@
 "use server";
 
-import { Buffer } from "node:buffer";
 import path from "node:path";
 
 import { revalidatePath } from "next/cache";
@@ -33,7 +32,7 @@ const VALID_QUIZ_KIND = ["qcm", "quiz", "assessment"] as const;
 const VALID_QUESTION_TYPES = ["single_choice", "text"] as const;
 const STAFF_CONTENT_ROLES: AppRole[] = ["admin", "professor", "coach"];
 const CONTENT_FILE_BUCKET = "course-files";
-const MAX_CONTENT_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_CONTENT_FILE_BYTES = 100 * 1024 * 1024;
 
 type ProgramModuleDraftPayload = {
   title: string;
@@ -66,6 +65,15 @@ type NormalizedQuizDraftQuestion = {
   }>;
 };
 
+export type ContentPdfUploadTicketState = {
+  bucket?: string;
+  error?: string;
+  maxSizeBytes: number;
+  signedUrl?: string;
+  storagePath?: string;
+  token?: string;
+};
+
 function ok(success: string): AdminActionState {
   return { success };
 }
@@ -96,62 +104,103 @@ function parseTagList(value: string) {
   );
 }
 
-function getFormFile(formData: FormData, name: string) {
-  const value = formData.get(name);
-  return typeof File !== "undefined" && value instanceof File && value.size > 0 ? value : null;
+function validateContentPdfDescriptor({
+  fileName,
+  fileSize,
+  fileType
+}: {
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+}) {
+  const extension = path.extname(fileName).toLowerCase();
+  const isPdf = fileType === "application/pdf" || extension === ".pdf";
+
+  if (!isPdf) {
+    return "Seuls les fichiers PDF peuvent être déposés comme cours.";
+  }
+
+  if (fileSize <= 0) {
+    return "Le PDF sélectionné est vide.";
+  }
+
+  if (fileSize > MAX_CONTENT_FILE_BYTES) {
+    return "Le PDF dépasse la limite de 100 Mo.";
+  }
+
+  return null;
 }
 
-async function uploadContentPdfFile({
-  file,
-  organizationId,
-  actorId,
-  title,
-  admin
-}: {
-  file: File | null;
-  organizationId: string;
-  actorId: string;
-  title: string;
-  admin: ReturnType<typeof createSupabaseAdminClient>;
-}): Promise<{ storagePath: string | null; error?: string }> {
-  if (!file) {
+function getUploadedContentPdfPath(formData: FormData, organizationId: string, actorId: string) {
+  const storagePath = String(formData.get("uploaded_storage_path") ?? "").trim();
+
+  if (!storagePath) {
     return { storagePath: null };
   }
 
-  const extension = path.extname(file.name).toLowerCase();
-  const isPdf = file.type === "application/pdf" || extension === ".pdf";
+  const expectedPrefix = `${organizationId}/courses/${actorId}/`;
 
-  if (!isPdf) {
-    return { storagePath: null, error: "Seuls les fichiers PDF peuvent être déposés comme cours." };
-  }
-
-  if (file.size > MAX_CONTENT_FILE_BYTES) {
-    return { storagePath: null, error: "Le PDF dépasse la limite de 50 Mo." };
-  }
-
-  const baseName =
-    slugify(path.basename(file.name, extension || ".pdf")) ||
-    slugify(title) ||
-    "cours-pdf";
-  const storagePath = `${organizationId}/courses/${actorId}/${Date.now()}-${baseName}.pdf`;
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  const uploadResult = await admin.storage.from(CONTENT_FILE_BUCKET).upload(storagePath, buffer, {
-    cacheControl: "3600",
-    contentType: "application/pdf",
-    upsert: false
-  });
-
-  if (uploadResult.error) {
+  if (
+    !storagePath.startsWith(expectedPrefix) ||
+    !storagePath.toLowerCase().endsWith(".pdf") ||
+    storagePath.includes("..")
+  ) {
     return {
       storagePath: null,
-      error:
-        uploadResult.error.message ||
-        "Le PDF n'a pas pu être téléversé. Vérifie que le bucket Supabase course-files existe."
+      error: "Le PDF téléversé ne correspond pas à l'espace de création autorisé."
     };
   }
 
   return { storagePath };
+}
+
+export async function createContentPdfUploadTicketAction(
+  formData: FormData
+): Promise<ContentPdfUploadTicketState> {
+  const context = await requireRole(STAFF_CONTENT_ROLES);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const title = String(formData.get("title") ?? "").trim();
+  const fileName = String(formData.get("file_name") ?? "").trim();
+  const fileType = String(formData.get("file_type") ?? "").trim();
+  const fileSize = Number(String(formData.get("file_size") ?? "").trim() || 0);
+
+  if (!fileName) {
+    return { error: "Le nom du PDF est obligatoire.", maxSizeBytes: MAX_CONTENT_FILE_BYTES };
+  }
+
+  const validationError = validateContentPdfDescriptor({ fileName, fileSize, fileType });
+
+  if (validationError) {
+    return { error: validationError, maxSizeBytes: MAX_CONTENT_FILE_BYTES };
+  }
+
+  const extension = path.extname(fileName).toLowerCase() || ".pdf";
+  const baseName =
+    slugify(path.basename(fileName, extension)) ||
+    slugify(title) ||
+    "cours-pdf";
+  const storagePath = `${organizationId}/courses/${context.user.id}/${Date.now()}-${baseName}.pdf`;
+
+  const signedUpload = await admin.storage.from(CONTENT_FILE_BUCKET).createSignedUploadUrl(storagePath);
+
+  if (signedUpload.error || !signedUpload.data) {
+    return {
+      maxSizeBytes: MAX_CONTENT_FILE_BYTES,
+      error:
+        signedUpload.error?.message ||
+        "Impossible de préparer l'upload signé. Vérifie que le bucket Supabase course-files existe."
+    };
+  }
+
+  return {
+    bucket: CONTENT_FILE_BUCKET,
+    maxSizeBytes: MAX_CONTENT_FILE_BYTES,
+    signedUrl: signedUpload.data.signedUrl,
+    storagePath: signedUpload.data.path,
+    token: signedUpload.data.token
+  };
 }
 
 async function ensureProgramBelongsToOrganization(
@@ -858,7 +907,6 @@ export async function createContentAction(
   const youtubeUrl = String(formData.get("youtube_url") ?? "").trim();
   const estimatedMinutes = Number(String(formData.get("estimated_minutes") ?? "").trim() || 0);
   const isRequired = String(formData.get("is_required") ?? "") === "on";
-  const pdfFile = getFormFile(formData, "pdf_file");
 
   if (!title || !VALID_CONTENT_TYPES.includes(contentType as (typeof VALID_CONTENT_TYPES)[number])) {
     return fail("Le titre et le type de contenu sont obligatoires.");
@@ -878,13 +926,7 @@ export async function createContentAction(
 
   const slug = slugify(title);
   const tags = tagsInput ? parseTagList(tagsInput) : [];
-  const fileUpload = await uploadContentPdfFile({
-    file: pdfFile,
-    organizationId,
-    actorId: context.user.id,
-    title,
-    admin
-  });
+  const fileUpload = getUploadedContentPdfPath(formData, organizationId, context.user.id);
 
   if (fileUpload.error) {
     return fail(fileUpload.error);
@@ -961,7 +1003,6 @@ export async function updateContentAction(
   const youtubeUrl = String(formData.get("youtube_url") ?? "").trim();
   const estimatedMinutes = Number(String(formData.get("estimated_minutes") ?? "").trim() || 0);
   const isRequired = String(formData.get("is_required") ?? "") === "on";
-  const pdfFile = getFormFile(formData, "pdf_file");
 
   if (!contentId) {
     return fail("Le contenu à modifier est introuvable.");
@@ -1001,13 +1042,7 @@ export async function updateContentAction(
   }
 
   const tags = tagsInput ? parseTagList(tagsInput) : [];
-  const fileUpload = await uploadContentPdfFile({
-    file: pdfFile,
-    organizationId,
-    actorId: context.user.id,
-    title,
-    admin
-  });
+  const fileUpload = getUploadedContentPdfPath(formData, organizationId, context.user.id);
 
   if (fileUpload.error) {
     return fail(fileUpload.error);

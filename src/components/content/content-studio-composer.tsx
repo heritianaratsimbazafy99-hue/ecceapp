@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState, type FormEvent } from "react";
 
 import { createContentAction, type AdminActionState } from "@/app/(platform)/admin/actions";
 import { CelebrationBurst } from "@/components/feedback/celebration-burst";
 import { Badge } from "@/components/ui/badge";
+import { uploadContentPdfDirectly, validateContentPdfFile } from "@/lib/content-pdf-upload";
 
 type ModuleOption = {
   id: string;
@@ -143,7 +144,11 @@ export function ContentStudioComposer({
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState("30");
   const [isRequired, setIsRequired] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfFileName, setPdfFileName] = useState("");
+  const [pdfUploadError, setPdfUploadError] = useState("");
+  const [pdfUploadState, setPdfUploadState] = useState<"idle" | "uploading" | "uploaded">("idle");
+  const [uploadedPdfPath, setUploadedPdfPath] = useState("");
   const [selectedThemeId, setSelectedThemeId] = useState<string>(availableTaxonomyPresets[0]?.id ?? "fallback");
 
   const tagList = tags
@@ -158,6 +163,9 @@ export function ContentStudioComposer({
     selectedTheme?.subthemes[0];
   const hasPdfFile = Boolean(pdfFileName);
   const hasPrimaryLink = Boolean((contentType === "youtube" ? youtubeUrl : externalUrl).trim());
+  const isUploadingPdf = pdfUploadState === "uploading";
+  const isBusy = pending || isUploadingPdf;
+  const hasBlockingPdfError = Boolean(pdfUploadError && pdfFileName && !pdfFile);
   const readinessScore = [
     Boolean(title.trim()),
     Boolean(summary.trim()),
@@ -182,8 +190,38 @@ export function ContentStudioComposer({
     setTags((currentTags) => mergeTags(currentTags, subtheme.topics));
   }
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (hasBlockingPdfError) {
+      event.preventDefault();
+      return;
+    }
+
+    if (!pdfFile || uploadedPdfPath) {
+      return;
+    }
+
+    event.preventDefault();
+    setPdfUploadError("");
+    setPdfUploadState("uploading");
+
+    const uploadResult = await uploadContentPdfDirectly({ file: pdfFile, title });
+
+    if (uploadResult.error || !uploadResult.storagePath) {
+      setPdfUploadError(uploadResult.error ?? "Le PDF n'a pas pu être téléversé.");
+      setPdfUploadState("idle");
+      return;
+    }
+
+    setUploadedPdfPath(uploadResult.storagePath);
+    setPdfUploadState("uploaded");
+
+    const nextFormData = new FormData(event.currentTarget);
+    nextFormData.set("uploaded_storage_path", uploadResult.storagePath);
+    startTransition(() => formAction(nextFormData));
+  }
+
   return (
-    <form action={formAction} className="content-studio-shell admin-form" encType="multipart/form-data">
+    <form action={formAction} className="content-studio-shell admin-form" onSubmit={handleSubmit}>
       <CelebrationBurst
         active={Boolean(state.success)}
         body="Le contenu rejoint maintenant le studio ECCE avec un aperçu plus éditorial et plus premium."
@@ -203,6 +241,7 @@ export function ContentStudioComposer({
       <input name="youtube_url" type="hidden" value={youtubeUrl} />
       <input name="estimated_minutes" type="hidden" value={estimatedMinutes} />
       <input name="is_required" type="hidden" value={isRequired ? "on" : ""} />
+      <input name="uploaded_storage_path" type="hidden" value={uploadedPdfPath} />
 
       <div className="content-studio-main">
         <section className="panel panel-highlight content-studio-hero">
@@ -419,10 +458,16 @@ export function ContentStudioComposer({
                 Fichier PDF
                 <input
                   accept="application/pdf,.pdf"
-                  name="pdf_file"
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
+                    const validationError = validateContentPdfFile(file);
+
                     setPdfFileName(file?.name ?? "");
+                    setPdfFile(validationError ? null : file);
+                    setPdfUploadError(validationError ?? "");
+                    setPdfUploadState("idle");
+                    setUploadedPdfPath("");
+
                     if (file) {
                       setContentType("document");
                     }
@@ -430,7 +475,17 @@ export function ContentStudioComposer({
                   type="file"
                 />
               </label>
-              <small>{pdfFileName ? `PDF prêt : ${pdfFileName}` : "Format accepté : PDF jusqu'à 50 Mo."}</small>
+              <small>
+                {pdfUploadError
+                  ? pdfUploadError
+                  : uploadedPdfPath
+                    ? "PDF téléversé, prêt à être enregistré."
+                    : isUploadingPdf
+                      ? "Téléversement direct vers Supabase..."
+                      : pdfFileName
+                        ? `PDF prêt : ${pdfFileName}`
+                        : "Format accepté : PDF jusqu'à 100 Mo."}
+              </small>
             </div>
             <label className="form-grid-span">
               Lien externe
@@ -465,11 +520,11 @@ export function ContentStudioComposer({
             </div>
           </div>
 
-          {state.error ? <p className="form-error">{state.error}</p> : null}
+          {state.error || pdfUploadError ? <p className="form-error">{state.error ?? pdfUploadError}</p> : null}
           {state.success ? <p className="form-success">{state.success}</p> : null}
 
-          <button className="button" disabled={pending || !title.trim()} type="submit">
-            {pending ? "Création..." : "Créer le contenu"}
+          <button className="button" disabled={isBusy || !title.trim() || hasBlockingPdfError} type="submit">
+            {isUploadingPdf ? "Upload PDF..." : pending ? "Création..." : "Créer le contenu"}
           </button>
         </section>
       </div>

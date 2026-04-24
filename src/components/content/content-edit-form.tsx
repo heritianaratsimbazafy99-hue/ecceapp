@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useMemo, useState } from "react";
+import { startTransition, useActionState, useMemo, useState, type FormEvent } from "react";
 
 import { updateContentAction, type AdminActionState } from "@/app/(platform)/admin/actions";
 import type { ContentTaxonomyPreset } from "@/components/content/content-studio-composer";
 import { Badge } from "@/components/ui/badge";
+import { uploadContentPdfDirectly, validateContentPdfFile } from "@/lib/content-pdf-upload";
 
 type ModuleOption = {
   id: string;
@@ -77,7 +78,11 @@ export function ContentEditForm({
   const [youtubeUrl, setYoutubeUrl] = useState(content.youtube_url ?? "");
   const [estimatedMinutes, setEstimatedMinutes] = useState(String(content.estimated_minutes ?? ""));
   const [isRequired, setIsRequired] = useState(content.is_required);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfFileName, setPdfFileName] = useState("");
+  const [pdfUploadError, setPdfUploadError] = useState("");
+  const [pdfUploadState, setPdfUploadState] = useState<"idle" | "uploading" | "uploaded">("idle");
+  const [uploadedPdfPath, setUploadedPdfPath] = useState("");
   const [selectedThemeId, setSelectedThemeId] = useState(initialPreset?.id ?? "");
 
   const tagList = tags
@@ -100,6 +105,9 @@ export function ContentEditForm({
     tagList.length >= 3 ? null : "Moins de 3 sujets abordés"
   ].filter(Boolean) as string[];
   const taxonomyScore = 4 - taxonomyIssues.length;
+  const isUploadingPdf = pdfUploadState === "uploading";
+  const isBusy = pending || isUploadingPdf;
+  const hasBlockingPdfError = Boolean(pdfUploadError && pdfFileName && !pdfFile);
 
   function applyTheme(preset: ContentTaxonomyPreset) {
     const firstSubtheme = preset.subthemes[0];
@@ -115,9 +123,40 @@ export function ContentEditForm({
     setTags((currentTags) => mergeTags(currentTags, subtheme.topics));
   }
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (hasBlockingPdfError) {
+      event.preventDefault();
+      return;
+    }
+
+    if (!pdfFile || uploadedPdfPath) {
+      return;
+    }
+
+    event.preventDefault();
+    setPdfUploadError("");
+    setPdfUploadState("uploading");
+
+    const uploadResult = await uploadContentPdfDirectly({ file: pdfFile, title });
+
+    if (uploadResult.error || !uploadResult.storagePath) {
+      setPdfUploadError(uploadResult.error ?? "Le PDF n'a pas pu être téléversé.");
+      setPdfUploadState("idle");
+      return;
+    }
+
+    setUploadedPdfPath(uploadResult.storagePath);
+    setPdfUploadState("uploaded");
+
+    const nextFormData = new FormData(event.currentTarget);
+    nextFormData.set("uploaded_storage_path", uploadResult.storagePath);
+    startTransition(() => formAction(nextFormData));
+  }
+
   return (
-    <form action={formAction} className="content-edit-shell admin-form" encType="multipart/form-data">
+    <form action={formAction} className="content-edit-shell admin-form" onSubmit={handleSubmit}>
       <input name="content_id" type="hidden" value={content.id} />
+      <input name="uploaded_storage_path" type="hidden" value={uploadedPdfPath} />
 
       <section className="panel panel-highlight content-edit-hero">
         <div className="content-edit-copy">
@@ -144,8 +183,8 @@ export function ContentEditForm({
               Voir la ressource
             </Link>
           ) : null}
-          <button className="button" disabled={pending || !title.trim()} type="submit">
-            {pending ? "Mise à jour..." : "Enregistrer"}
+          <button className="button" disabled={isBusy || !title.trim() || hasBlockingPdfError} type="submit">
+            {isUploadingPdf ? "Upload PDF..." : pending ? "Mise à jour..." : "Enregistrer"}
           </button>
         </div>
       </section>
@@ -316,10 +355,16 @@ export function ContentEditForm({
                   Fichier PDF
                   <input
                     accept="application/pdf,.pdf"
-                    name="pdf_file"
                     onChange={(event) => {
                       const file = event.target.files?.[0] ?? null;
+                      const validationError = validateContentPdfFile(file);
+
                       setPdfFileName(file?.name ?? "");
+                      setPdfFile(validationError ? null : file);
+                      setPdfUploadError(validationError ?? "");
+                      setPdfUploadState("idle");
+                      setUploadedPdfPath("");
+
                       if (file) {
                         setContentType("document");
                       }
@@ -329,10 +374,16 @@ export function ContentEditForm({
                 </label>
                 <small>
                   {pdfFileName
-                    ? `Nouveau PDF prêt : ${pdfFileName}`
+                    ? pdfUploadError
+                      ? pdfUploadError
+                      : uploadedPdfPath
+                        ? "Nouveau PDF téléversé, prêt à être enregistré."
+                        : isUploadingPdf
+                          ? "Téléversement direct vers Supabase..."
+                          : `Nouveau PDF prêt : ${pdfFileName}`
                     : content.storage_path
                       ? "Le PDF actuel sera conservé si aucun nouveau fichier n'est déposé."
-                      : "Format accepté : PDF jusqu'à 50 Mo."}
+                      : "Format accepté : PDF jusqu'à 100 Mo."}
                 </small>
               </div>
 
@@ -370,7 +421,7 @@ export function ContentEditForm({
               </div>
             )}
 
-            {state.error ? <p className="form-error">{state.error}</p> : null}
+            {state.error || pdfUploadError ? <p className="form-error">{state.error ?? pdfUploadError}</p> : null}
             {state.success ? <p className="form-success">{state.success}</p> : null}
           </section>
         </aside>
