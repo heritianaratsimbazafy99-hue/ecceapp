@@ -1,15 +1,18 @@
 export default function PlatformLoading() {
   return (
     <div className="page-shell">
-      <section className="route-state route-state-platform" aria-live="polite" aria-busy="true">
-        <div className="route-state-card">
-          <span className="eyebrow">Chargement ECCE</span>
-          <h1>On prépare ton workspace.</h1>
-          <p>Les données de rôle, notifications, messages et progression arrivent dans quelques instants.</p>
+      <section className="route-state route-state-platform route-state-inline" aria-live="polite" aria-busy="true">
+        <div className="route-state-card route-state-card-compact">
+          <div className="route-state-inline-head">
+            <div>
+              <span className="eyebrow">Chargement ECCE</span>
+              <h1>La vue arrive.</h1>
+            </div>
+            <span className="route-state-spinner" aria-hidden="true" />
+          </div>
 
-          <div className="route-state-skeleton-grid" aria-hidden="true">
-            <span />
-            <span />
+          <p>On synchronise les dernières données utiles sans masquer ton workspace.</p>
+          <div className="route-state-progress" aria-hidden="true">
             <span />
           </div>
         </div>

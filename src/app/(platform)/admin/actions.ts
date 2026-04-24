@@ -2,10 +2,11 @@
 
 import path from "node:path";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { createAuditEvent } from "@/lib/audit";
 import { requireRole, type AppRole } from "@/lib/auth";
+import { CONTENT_STORAGE_AUDIT_CACHE_TAG, CONTENT_TAXONOMY_CACHE_TAG } from "@/lib/cache-tags";
 import { getCoachAssignmentScope } from "@/lib/coach-assignments";
 import { CONTENT_FILE_BUCKET, listOrganizationContentPdfFiles, type ContentPdfStorageFile } from "@/lib/content-files";
 import { getOrganizationBrandingById } from "@/lib/organization";
@@ -85,6 +86,16 @@ function fail(error: string): AdminActionState {
 
 function revalidateAdminAudit() {
   revalidatePath("/admin/audit");
+}
+
+function revalidateContentStudioCaches(options: { storage?: boolean; taxonomy?: boolean } = {}) {
+  if (options.storage) {
+    revalidateTag(CONTENT_STORAGE_AUDIT_CACHE_TAG);
+  }
+
+  if (options.taxonomy) {
+    revalidateTag(CONTENT_TAXONOMY_CACHE_TAG);
+  }
 }
 
 function formatDateForAudit(value: string) {
@@ -377,6 +388,7 @@ export async function cleanupOrphanContentPdfFilesAction(
 
   revalidatePath("/admin/content");
   revalidateAdminAudit();
+  revalidateContentStudioCaches({ storage: true });
 
   return ok(`${staleOrphans.length} PDF orphelin(s) supprimé(s).`);
 }
@@ -1180,6 +1192,7 @@ export async function createContentAction(
   revalidateAdminAudit();
   revalidatePath("/library");
   revalidatePath("/dashboard");
+  revalidateContentStudioCaches({ storage: Boolean(fileUpload.storagePath) });
 
   return ok(`Contenu "${title}" créé.`);
 }
@@ -1335,6 +1348,9 @@ export async function updateContentAction(
   revalidatePath("/library");
   revalidatePath(`/library/${existingResult.data.slug}`);
   revalidatePath("/dashboard");
+  revalidateContentStudioCaches({
+    storage: Boolean(fileUpload.storagePath) || removePdf
+  });
 
   return ok(`Contenu "${title}" mis à jour.`);
 }
@@ -1386,6 +1402,7 @@ export async function createContentTaxonomyThemeAction(
   revalidatePath("/admin/content");
   revalidatePath("/library");
   revalidateAdminAudit();
+  revalidateContentStudioCaches({ taxonomy: true });
 
   return ok(`Thème "${label}" ajouté à la taxonomie.`);
 }
@@ -1455,6 +1472,7 @@ export async function updateContentTaxonomyThemeAction(
   revalidatePath("/admin/content");
   revalidatePath("/library");
   revalidateAdminAudit();
+  revalidateContentStudioCaches({ taxonomy: true });
 
   return ok(`Thème "${label}" mis à jour.`);
 }
@@ -1509,6 +1527,7 @@ export async function deleteContentTaxonomyThemeAction(
   revalidatePath("/admin/content");
   revalidatePath("/library");
   revalidateAdminAudit();
+  revalidateContentStudioCaches({ taxonomy: true });
 
   return ok(`Thème "${existingResult.data.label}" supprimé.`);
 }
@@ -1582,6 +1601,7 @@ export async function createContentTaxonomySubthemeAction(
   revalidatePath("/admin/content");
   revalidatePath("/library");
   revalidateAdminAudit();
+  revalidateContentStudioCaches({ taxonomy: true });
 
   return ok(`Sous-thème "${label}" ajouté à la taxonomie.`);
 }
@@ -1682,6 +1702,7 @@ export async function updateContentTaxonomySubthemeAction(
   revalidatePath("/admin/content");
   revalidatePath("/library");
   revalidateAdminAudit();
+  revalidateContentStudioCaches({ taxonomy: true });
 
   return ok(`Sous-thème "${label}" mis à jour.`);
 }
@@ -1735,6 +1756,7 @@ export async function deleteContentTaxonomySubthemeAction(
   revalidatePath("/admin/content");
   revalidatePath("/library");
   revalidateAdminAudit();
+  revalidateContentStudioCaches({ taxonomy: true });
 
   return ok(`Sous-thème "${existingResult.data.label}" supprimé.`);
 }

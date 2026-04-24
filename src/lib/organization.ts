@@ -1,6 +1,8 @@
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 
 import { requireRole } from "@/lib/auth";
+import { ORGANIZATION_BRANDING_CACHE_TAG } from "@/lib/cache-tags";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type OrganizationRow = {
@@ -135,7 +137,7 @@ function isMissingSettingsTableError(error: { code?: string; message?: string })
   );
 }
 
-const getOrganizationSettingsRow = cache(async (organizationId: string) => {
+async function fetchOrganizationSettingsRow(organizationId: string) {
   try {
     const admin = createSupabaseAdminClient();
     const settingsResult = await admin
@@ -158,9 +160,16 @@ const getOrganizationSettingsRow = cache(async (organizationId: string) => {
   } catch {
     return null;
   }
-});
+}
 
-export const getOrganizationBrandingById = cache(async (organizationId: string) => {
+const getOrganizationSettingsRow = cache(
+  unstable_cache(fetchOrganizationSettingsRow, ["organization-settings-row"], {
+    revalidate: 300,
+    tags: [ORGANIZATION_BRANDING_CACHE_TAG]
+  })
+);
+
+async function fetchOrganizationBrandingById(organizationId: string) {
   try {
     const admin = createSupabaseAdminClient();
     const organizationResult = await admin
@@ -178,9 +187,16 @@ export const getOrganizationBrandingById = cache(async (organizationId: string) 
   } catch {
     return DEFAULT_ORGANIZATION_BRANDING;
   }
-});
+}
 
-export const getDefaultOrganizationBranding = cache(async () => {
+export const getOrganizationBrandingById = cache(
+  unstable_cache(fetchOrganizationBrandingById, ["organization-branding-by-id"], {
+    revalidate: 300,
+    tags: [ORGANIZATION_BRANDING_CACHE_TAG]
+  })
+);
+
+async function fetchDefaultOrganizationBranding() {
   try {
     const admin = createSupabaseAdminClient();
     const preferredOrganizationResult = await admin
@@ -212,7 +228,14 @@ export const getDefaultOrganizationBranding = cache(async () => {
   } catch {
     return DEFAULT_ORGANIZATION_BRANDING;
   }
-});
+}
+
+export const getDefaultOrganizationBranding = cache(
+  unstable_cache(fetchDefaultOrganizationBranding, ["default-organization-branding"], {
+    revalidate: 300,
+    tags: [ORGANIZATION_BRANDING_CACHE_TAG]
+  })
+);
 
 export const getAdminOrganizationSettingsPageData = cache(async () => {
   const context = await requireRole(["admin"]);

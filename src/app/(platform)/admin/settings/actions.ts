@@ -1,9 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { createAuditEvent } from "@/lib/audit";
 import { requireRole } from "@/lib/auth";
+import { ORGANIZATION_BRANDING_CACHE_TAG } from "@/lib/cache-tags";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
@@ -59,6 +60,7 @@ function isValidUrl(value: string | null) {
 }
 
 function revalidateOrganizationSurfaces() {
+  revalidateTag(ORGANIZATION_BRANDING_CACHE_TAG);
   revalidatePath("/", "layout");
   revalidatePath("/");
   revalidatePath("/auth/sign-in");

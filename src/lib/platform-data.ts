@@ -1,4 +1,7 @@
+import { unstable_cache } from "next/cache";
+
 import { AUDIT_CATEGORY_LABELS, AUDIT_EVENT_CATEGORIES, type AuditEventCategory } from "@/lib/audit";
+import { CONTENT_STORAGE_AUDIT_CACHE_TAG, CONTENT_TAXONOMY_CACHE_TAG } from "@/lib/cache-tags";
 import { getAssignedCoachIdsForCoachee, getCoachAssignmentScope } from "@/lib/coach-assignments";
 import {
   getNotificationOpsLaneLabel,
@@ -56,6 +59,48 @@ type ContentTaxonomySubthemeRow = {
   topics: string[] | null;
   position: number;
 };
+
+const getCachedContentTaxonomyRows = unstable_cache(
+  async (organizationId: string) => {
+    const admin = createSupabaseAdminClient();
+    const [themesResult, subthemesResult] = await Promise.all([
+      admin
+        .from("content_taxonomy_themes")
+        .select("id, label, description, position")
+        .eq("organization_id", organizationId)
+        .order("position", { ascending: true })
+        .order("label", { ascending: true }),
+      admin
+        .from("content_taxonomy_subthemes")
+        .select("id, theme_id, label, topics, position")
+        .eq("organization_id", organizationId)
+        .order("position", { ascending: true })
+        .order("label", { ascending: true })
+    ]);
+
+    return {
+      themes: (themesResult.data ?? []) as ContentTaxonomyThemeRow[],
+      subthemes: (subthemesResult.data ?? []) as ContentTaxonomySubthemeRow[]
+    };
+  },
+  ["content-taxonomy-rows"],
+  {
+    revalidate: 300,
+    tags: [CONTENT_TAXONOMY_CACHE_TAG]
+  }
+);
+
+const getCachedContentStorageAudit = unstable_cache(
+  async (organizationId: string) => {
+    const admin = createSupabaseAdminClient();
+    return listOrganizationContentPdfFiles(admin, organizationId);
+  },
+  ["content-storage-audit"],
+  {
+    revalidate: 300,
+    tags: [CONTENT_STORAGE_AUDIT_CACHE_TAG]
+  }
+);
 
 type ProgramRow = {
   id: string;
@@ -5831,23 +5876,16 @@ export async function getAdminContentStudioPageData(filters?: {
   const context = await requireRole(["admin", "professor", "coach"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
-  const programsResult = await admin
-    .from("programs")
-    .select("id, title, slug, description, status, created_at")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(100);
-  const programs = (programsResult.data ?? []) as ProgramRow[];
-  const programIds = programs.map((program) => program.id);
-
-  const [
-    contentsResult,
-    modulesResult,
-    quizzesResult,
-    assignmentsResult,
-    taxonomyThemesResult,
-    taxonomySubthemesResult
-  ] = await Promise.all([
+  const programsPromise = Promise.resolve(
+    admin
+      .from("programs")
+      .select("id, title, slug, description, status, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(100)
+  );
+  const taxonomyPromise = getCachedContentTaxonomyRows(organizationId);
+  const contentsPromise = Promise.resolve(
     admin
       .from("content_items")
       .select(
@@ -5855,38 +5893,42 @@ export async function getAdminContentStudioPageData(filters?: {
       )
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
-      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT),
-    programIds.length
-      ? admin
-          .from("program_modules")
-          .select("id, program_id, title, description, position, status, available_at")
-          .in("program_id", programIds)
-          .limit(400)
-      : Promise.resolve({ data: [] as ProgramModuleRow[] }),
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT)
+  );
+  const quizzesPromise = Promise.resolve(
     admin
       .from("quizzes")
       .select("id, title, content_item_id, status")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
-      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT * 3),
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT * 3)
+  );
+  const assignmentsPromise = Promise.resolve(
     admin
       .from("learning_assignments")
       .select("id, content_item_id, due_at, published_at")
       .eq("organization_id", organizationId)
       .order("published_at", { ascending: false })
-      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT * 3),
-    admin
-      .from("content_taxonomy_themes")
-      .select("id, label, description, position")
-      .eq("organization_id", organizationId)
-      .order("position", { ascending: true })
-      .order("label", { ascending: true }),
-    admin
-      .from("content_taxonomy_subthemes")
-      .select("id, theme_id, label, topics, position")
-      .eq("organization_id", organizationId)
-      .order("position", { ascending: true })
-      .order("label", { ascending: true })
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT * 3)
+  );
+
+  const programsResult = await programsPromise;
+  const programs = (programsResult.data ?? []) as ProgramRow[];
+  const programIds = programs.map((program) => program.id);
+  const modulesPromise = programIds.length
+    ? admin
+        .from("program_modules")
+        .select("id, program_id, title, description, position, status, available_at")
+        .in("program_id", programIds)
+        .limit(400)
+    : Promise.resolve({ data: [] as ProgramModuleRow[] });
+
+  const [contentsResult, quizzesResult, assignmentsResult, taxonomyRows, modulesResult] = await Promise.all([
+    contentsPromise,
+    quizzesPromise,
+    assignmentsPromise,
+    taxonomyPromise,
+    modulesPromise
   ]);
 
   const contents = (contentsResult.data ?? []) as ContentRow[];
@@ -5903,8 +5945,8 @@ export async function getAdminContentStudioPageData(filters?: {
     due_at: string | null;
     published_at: string | null;
   }>;
-  const taxonomyThemes = (taxonomyThemesResult.data ?? []) as ContentTaxonomyThemeRow[];
-  const taxonomySubthemes = (taxonomySubthemesResult.data ?? []) as ContentTaxonomySubthemeRow[];
+  const taxonomyThemes = taxonomyRows.themes;
+  const taxonomySubthemes = taxonomyRows.subthemes;
   const taxonomyPresets = taxonomyThemes.map((theme) => ({
     id: theme.id,
     theme: theme.label,
@@ -6226,7 +6268,7 @@ export async function getAdminContentStudioPageData(filters?: {
 
   if (canRunMediaCleanup) {
     try {
-      storageFiles = await listOrganizationContentPdfFiles(admin, organizationId);
+      storageFiles = await getCachedContentStorageAudit(organizationId);
     } catch (error) {
       storageAuditError = error instanceof Error ? error.message : "Audit du bucket PDF indisponible";
     }
@@ -10737,16 +10779,20 @@ export async function getAgendaPageData(filters?: {
   const rangeStartIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
   const rangeEndIso = new Date(now + 45 * 24 * 60 * 60 * 1000).toISOString();
 
-  const coachScope =
+  const coachScopePromise =
     context.role === "coach"
-      ? await getCoachAssignmentScope({
+      ? getCoachAssignmentScope({
           organizationId,
           coachId: userId
         })
-      : null;
-  const branding = await getOrganizationBrandingById(organizationId);
-
-  const directCohortRowsResult = await admin.from("cohort_members").select("user_id, cohort_id");
+      : Promise.resolve(null);
+  const brandingPromise = getOrganizationBrandingById(organizationId);
+  const directCohortRowsPromise = admin.from("cohort_members").select("user_id, cohort_id");
+  const [coachScope, branding, directCohortRowsResult] = await Promise.all([
+    coachScopePromise,
+    brandingPromise,
+    directCohortRowsPromise
+  ]);
   const allCohortRows = (directCohortRowsResult.data ?? []) as Array<{ user_id: string; cohort_id: string }>;
   const ownCohortIds =
     context.role === "coachee"

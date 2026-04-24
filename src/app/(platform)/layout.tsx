@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { AccountChip } from "@/components/layout/account-chip";
+import { PlatformRoutePrefetcher } from "@/components/layout/platform-route-prefetcher";
 import { PlatformSidebar } from "@/components/layout/platform-sidebar";
 import { getCurrentUserContext, isSuspendedStatus, requiresOnboarding } from "@/lib/auth";
 import { getOrganizationBrandingById } from "@/lib/organization";
@@ -52,6 +53,7 @@ export default async function PlatformLayout({
           role={role ?? "sans rôle"}
           userId={user.id}
         />
+        <PlatformRoutePrefetcher roles={roles} />
         {children}
       </section>
     </main>

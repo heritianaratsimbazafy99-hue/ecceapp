@@ -439,6 +439,12 @@ main {
   min-height: min(620px, calc(100vh - 160px));
 }
 
+.route-state-inline {
+  min-height: auto;
+  padding: 4px 0 10px;
+  place-items: stretch;
+}
+
 .route-state-card {
   display: grid;
   gap: 18px;
@@ -457,6 +463,56 @@ main {
   font-family: var(--font-serif);
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1.02;
+}
+
+.route-state-card-compact {
+  gap: 12px;
+  width: min(100%, 920px);
+  padding: 18px 20px;
+  border-radius: 24px;
+  box-shadow: 0 16px 42px rgba(16, 24, 32, 0.08);
+}
+
+.route-state-card-compact h1 {
+  font-family: var(--font-sans);
+  font-size: 1.08rem;
+  line-height: 1.25;
+}
+
+.route-state-card-compact p {
+  font-size: 0.95rem;
+}
+
+.route-state-inline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.route-state-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(255, 106, 61, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: route-state-spin 780ms linear infinite;
+}
+
+.route-state-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.06);
+}
+
+.route-state-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 106, 61, 0.18), rgba(255, 106, 61, 0.74), rgba(104, 197, 168, 0.5));
+  animation: route-state-progress 1.05s ease-in-out infinite;
 }
 
 .route-state-card p,
@@ -494,6 +550,22 @@ main {
 
   100% {
     background-position: -120% 0;
+  }
+}
+
+@keyframes route-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes route-state-progress {
+  0% {
+    transform: translateX(-105%);
+  }
+
+  100% {
+    transform: translateX(245%);
   }
 }
 
@@ -9885,6 +9957,14 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .route-state,
   .route-state-platform {
     min-height: min(520px, calc(100vh - 96px));
+  }
+
+  .route-state-inline {
+    min-height: auto;
+  }
+
+  .route-state-inline-head {
+    align-items: flex-start;
   }
 
   .route-state-skeleton-grid {
