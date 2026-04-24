@@ -17,6 +17,15 @@ type ProfileWithRoles = {
 
 export type MessageActionState = {
   error?: string;
+  message?: {
+    id: string;
+    conversationId: string;
+    senderId: string;
+    recipientId: string;
+    body: string;
+    createdAt: string;
+    readAt: string | null;
+  };
   success?: string;
   conversationId?: string;
   recipientId?: string;
@@ -288,16 +297,28 @@ export async function sendConversationMessageAction(
 
   const conversationId = conversationResult.data.id;
 
-  const messageResult = await admin.from("coach_messages").insert({
-    conversation_id: conversationId,
-    organization_id: organizationId,
-    sender_id: context.user.id,
-    recipient_id: recipientId,
-    body
-  });
+  const messageResult = await admin
+    .from("coach_messages")
+    .insert({
+      conversation_id: conversationId,
+      organization_id: organizationId,
+      sender_id: context.user.id,
+      recipient_id: recipientId,
+      body
+    })
+    .select("id, conversation_id, sender_id, recipient_id, body, created_at, read_at")
+    .single<{
+      id: string;
+      conversation_id: string;
+      sender_id: string;
+      recipient_id: string;
+      body: string;
+      created_at: string;
+      read_at: string | null;
+    }>();
 
-  if (messageResult.error) {
-    return fail(messageResult.error.message);
+  if (messageResult.error || !messageResult.data) {
+    return fail(messageResult.error?.message ?? "Impossible d'envoyer le message.");
   }
 
   await createNotifications([
@@ -319,6 +340,15 @@ export async function sendConversationMessageAction(
   return ok({
     success: "Message envoyé.",
     conversationId,
+    message: {
+      id: messageResult.data.id,
+      conversationId: messageResult.data.conversation_id,
+      senderId: messageResult.data.sender_id,
+      recipientId: messageResult.data.recipient_id,
+      body: messageResult.data.body,
+      createdAt: messageResult.data.created_at,
+      readAt: messageResult.data.read_at
+    },
     recipientId
   });
 }

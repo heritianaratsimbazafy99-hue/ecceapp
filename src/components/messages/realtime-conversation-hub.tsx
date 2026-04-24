@@ -93,6 +93,16 @@ function sortMessages(items: ConversationMessage[]) {
   );
 }
 
+function upsertMessage(current: ConversationMessage[], next: ConversationMessage) {
+  const map = new Map(current.map((item) => [item.id, item]));
+  map.set(next.id, {
+    ...map.get(next.id),
+    ...next
+  });
+
+  return sortMessages(Array.from(map.values()));
+}
+
 function formatThreadDate(dateString: string | null) {
   if (!dateString) {
     return "Nouveau fil";
@@ -431,7 +441,41 @@ export function RealtimeConversationHub({
     if (state.recipientId) {
       setSelectedRecipientId(state.recipientId);
     }
-  }, [state]);
+
+    if (state.message) {
+      const nextMessage: ConversationMessage = {
+        id: state.message.id,
+        conversationId: state.message.conversationId,
+        senderId: state.message.senderId,
+        recipientId: state.message.recipientId,
+        body: state.message.body,
+        createdAt: state.message.createdAt,
+        readAt: state.message.readAt,
+        mine: true
+      };
+
+      setMessagesByConversation((current) => ({
+        ...current,
+        [nextMessage.conversationId]: upsertMessage(
+          current[nextMessage.conversationId] ?? [],
+          nextMessage
+        )
+      }));
+
+      setConversations((current) => {
+        const existing = current.find((item) => item.id === nextMessage.conversationId);
+
+        return upsertConversationSummary(current, {
+          id: nextMessage.conversationId,
+          counterpartId: nextMessage.recipientId,
+          counterpartName: contactMap.get(nextMessage.recipientId) ?? "Participant ECCE",
+          lastMessagePreview: nextMessage.body,
+          lastMessageAt: nextMessage.createdAt,
+          unreadCount: existing?.unreadCount ?? 0
+        });
+      });
+    }
+  }, [contactMap, state]);
 
   useEffect(() => {
     if (!noteState.success || !noteState.conversationId) {
@@ -475,7 +519,7 @@ export function RealtimeConversationHub({
 
           setMessagesByConversation((current) => ({
             ...current,
-            [nextMessage.conversationId]: sortMessages([...(current[nextMessage.conversationId] ?? []), nextMessage])
+            [nextMessage.conversationId]: upsertMessage(current[nextMessage.conversationId] ?? [], nextMessage)
           }));
 
           const conversation = await fetchConversationRecord(supabase, nextMessage.conversationId);
@@ -549,7 +593,7 @@ export function RealtimeConversationHub({
 
           setMessagesByConversation((current) => ({
             ...current,
-            [nextMessage.conversationId]: sortMessages([...(current[nextMessage.conversationId] ?? []), nextMessage])
+            [nextMessage.conversationId]: upsertMessage(current[nextMessage.conversationId] ?? [], nextMessage)
           }));
 
           const conversation = await fetchConversationRecord(supabase, nextMessage.conversationId);
@@ -613,6 +657,38 @@ export function RealtimeConversationHub({
                 : item
             )
           );
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "coach_messages",
+          filter: `sender_id=eq.${userId}`
+        },
+        (payload) => {
+          const nextMessage = normalizeMessage(
+            payload.new as {
+              id: string;
+              conversation_id: string;
+              sender_id: string;
+              recipient_id: string;
+              body: string;
+              created_at: string;
+              read_at: string | null;
+            },
+            userId
+          );
+
+          if (!nextMessage) {
+            return;
+          }
+
+          setMessagesByConversation((current) => ({
+            ...current,
+            [nextMessage.conversationId]: upsertMessage(current[nextMessage.conversationId] ?? [], nextMessage)
+          }));
         }
       )
       .subscribe();
