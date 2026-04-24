@@ -398,7 +398,15 @@ export function DeleteQuizQuestionButton({
   const [state, formAction] = useActionState(deleteQuizQuestionAction, initialState);
 
   return (
-    <form action={formAction} className="inline-form">
+    <form
+      action={formAction}
+      className="inline-form"
+      onSubmit={(event) => {
+        if (!window.confirm("Supprimer cette question du quiz ? Cette action retire aussi ses choix de réponse.")) {
+          event.preventDefault();
+        }
+      }}
+    >
       <input name="quiz_id" type="hidden" value={quizId} />
       <input name="question_id" type="hidden" value={questionId} />
       <button className="inline-link button-reset" type="submit">

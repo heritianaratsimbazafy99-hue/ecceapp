@@ -166,7 +166,15 @@ export function ContentTaxonomyManager({
                         </form>
 
                         {subtheme.id ? (
-                          <form action={subthemeDeleteAction} className="admin-content-taxonomy-delete-form">
+                          <form
+                            action={subthemeDeleteAction}
+                            className="admin-content-taxonomy-delete-form"
+                            onSubmit={(event) => {
+                              if (!window.confirm(`Supprimer le sous-thème "${subtheme.label}" ?`)) {
+                                event.preventDefault();
+                              }
+                            }}
+                          >
                             <input name="subtheme_id" type="hidden" value={subtheme.id} />
                             <button className="button button-ghost button-small" disabled={subthemeDeletePending} type="submit">
                               Supprimer le sous-thème
@@ -183,7 +191,15 @@ export function ContentTaxonomyManager({
                   )}
                 </div>
 
-                <form action={themeDeleteAction} className="admin-content-taxonomy-delete-form">
+                <form
+                  action={themeDeleteAction}
+                  className="admin-content-taxonomy-delete-form"
+                  onSubmit={(event) => {
+                    if (!window.confirm(`Supprimer le thème "${preset.theme}" et ses sous-thèmes ?`)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
                   <input name="theme_id" type="hidden" value={preset.id} />
                   <div>
                     <strong>Suppression du thème</strong>

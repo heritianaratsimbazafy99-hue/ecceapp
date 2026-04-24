@@ -162,7 +162,19 @@ export function ContentMediaAuditPanel({ audit }: { audit: ContentMediaAudit }) 
                 </div>
               )}
 
-              <form action={formAction} className="content-media-cleanup-form">
+              <form
+                action={formAction}
+                className="content-media-cleanup-form"
+                onSubmit={(event) => {
+                  if (
+                    !window.confirm(
+                      `Nettoyer ${audit.historicalOrphanCount} PDF orphelin(s) de plus de ${audit.cleanupWindowHours}h ?`
+                    )
+                  ) {
+                    event.preventDefault();
+                  }
+                }}
+              >
                 <input name="cleanup_window_hours" type="hidden" value={audit.cleanupWindowHours} />
                 <button className="button button-ghost button-small" disabled={cleanupDisabled} type="submit">
                   {pending ? "Nettoyage..." : `Nettoyer les fichiers de plus de ${audit.cleanupWindowHours}h`}

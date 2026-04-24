@@ -25,6 +25,12 @@
   box-sizing: border-box;
 }
 
+*,
+*::before,
+*::after {
+  min-width: 0;
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -43,6 +49,7 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
 
 button,
@@ -138,6 +145,7 @@ main {
   align-items: center;
   justify-content: center;
   gap: 10px;
+  max-width: 100%;
   min-height: 48px;
   padding: 0 18px;
   border: 0;
@@ -145,6 +153,10 @@ main {
   background: var(--accent);
   color: white;
   font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+  white-space: normal;
   cursor: pointer;
 }
 
@@ -383,6 +395,9 @@ main {
   border-radius: 999px;
   font-size: 0.85rem;
   font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .badge-neutral {
@@ -412,6 +427,74 @@ main {
     radial-gradient(circle at top right, rgba(255, 175, 123, 0.18), transparent 20%),
     linear-gradient(180deg, #f8f4ee 0%, #f0ebe3 100%);
   overflow: clip;
+}
+
+.route-state {
+  display: grid;
+  min-height: min(560px, calc(100vh - 120px));
+  place-items: center;
+}
+
+.route-state-platform {
+  min-height: min(620px, calc(100vh - 160px));
+}
+
+.route-state-card {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 640px);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(circle at top right, rgba(255, 211, 166, 0.34), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(255, 248, 240, 0.92));
+  box-shadow: var(--shadow);
+}
+
+.route-state-card h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.02;
+}
+
+.route-state-card p,
+.route-state-card small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.route-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.route-state-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.route-state-skeleton-grid span {
+  min-height: 72px;
+  border-radius: 20px;
+  background:
+    linear-gradient(90deg, rgba(16, 24, 32, 0.04), rgba(255, 255, 255, 0.78), rgba(16, 24, 32, 0.04));
+  background-size: 220% 100%;
+  animation: route-state-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes route-state-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .platform-sidebar-rail {
@@ -5979,14 +6062,26 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .form-error {
   margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(193, 80, 22, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 106, 61, 0.1);
+  color: #9d3f18;
   font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .form-success {
   margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(47, 104, 85, 0.18);
+  border-radius: 16px;
+  background: rgba(47, 104, 85, 0.1);
   color: var(--sage);
   font-size: 0.95rem;
   font-weight: 700;
+  line-height: 1.45;
 }
 
 .form-hint {
@@ -6766,8 +6861,20 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .empty-state {
   padding: 20px;
+  border: 1px dashed rgba(16, 24, 32, 0.12);
   border-radius: 20px;
-  background: rgba(16, 24, 32, 0.04);
+  background:
+    radial-gradient(circle at top right, rgba(255, 106, 61, 0.08), transparent 34%),
+    rgba(16, 24, 32, 0.035);
+}
+
+.empty-state strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.empty-state p {
+  margin: 0;
 }
 
 .auth-footnote {
@@ -9639,11 +9746,11 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 @media (max-width: 760px) {
   .marketing-page,
   .platform-content {
-    padding: 16px;
+    padding: 14px;
   }
 
   html[data-platform-sidebar-state="pinned"] .platform-content {
-    padding-left: 16px;
+    padding-left: 14px;
   }
 
   .site-header,
@@ -9770,8 +9877,18 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .panel,
   .collection-card,
   .auth-card,
-  .auth-showcase {
+  .auth-showcase,
+  .route-state-card {
     padding: 20px;
+  }
+
+  .route-state,
+  .route-state-platform {
+    min-height: min(520px, calc(100vh - 96px));
+  }
+
+  .route-state-skeleton-grid {
+    grid-template-columns: 1fr;
   }
 
   .platform-sidebar {
@@ -9847,6 +9964,40 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
   .table-actions {
     justify-content: flex-start;
+  }
+
+  .topbar-actions,
+  .hero-actions,
+  .admin-content-actions,
+  .admin-content-card-actions,
+  .content-edit-actions,
+  .admin-quizzes-actions,
+  .admin-assignments-actions,
+  .learner-programs-actions,
+  .agenda-actions,
+  .coach-follow-up-actions,
+  .route-state-actions,
+  .library-resource-actions,
+  .assignment-card-footer {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbar-actions .button,
+  .hero-actions .button,
+  .admin-content-actions .button,
+  .admin-content-card-actions .button,
+  .content-edit-actions .button,
+  .admin-quizzes-actions .button,
+  .admin-assignments-actions .button,
+  .learner-programs-actions .button,
+  .agenda-actions .button,
+  .coach-follow-up-actions .button,
+  .route-state-actions .button,
+  .library-resource-actions .button,
+  .assignment-card-footer .button {
+    width: 100%;
   }
 
   .conversation-list-item {
@@ -9960,5 +10111,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
   .agenda-event-actions {
     justify-items: start;
+  }
+
+  .auth-page-split .auth-card-premium,
+  .onboarding-page .auth-card-premium {
+    order: -1;
   }
 }

@@ -963,6 +963,11 @@ export function RealtimeConversationHub({
                       className="button button-ghost button-small"
                       disabled={notePending || !selectedNote}
                       name="delete_note"
+                      onClick={(event) => {
+                        if (!window.confirm("Retirer cette note interne coach ?")) {
+                          event.preventDefault();
+                        }
+                      }}
                       type="submit"
                       value="true"
                     >

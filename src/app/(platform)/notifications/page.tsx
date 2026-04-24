@@ -72,7 +72,7 @@ export default async function NotificationsPage({
     <div className="page-shell">
       <PlatformTopbar
         title="Notifications"
-        description="Command center premium pour trier les alertes ECCE entre action immediate, lecture utile et archive exploitable sans casser le live."
+        description="Command center premium pour trier les alertes ECCE entre action immédiate, lecture utile et archive exploitable sans casser le live."
       />
 
       <section className="metric-grid metric-grid-compact">
@@ -101,7 +101,7 @@ export default async function NotificationsPage({
               {hero.crosslink.label}
             </Link>
             <Link className="button button-secondary" href="/account">
-              Preferences
+              Préférences
             </Link>
           </div>
         </div>
@@ -125,10 +125,10 @@ export default async function NotificationsPage({
 
           <article className="notifications-focus-note">
             <span>Signal focus</span>
-            <strong>{focusNotification?.title ?? "Flux live pret"}</strong>
+            <strong>{focusNotification?.title ?? "Flux live prêt"}</strong>
             <p>
               {focusNotification?.nextAction ??
-                "Les prochains evenements ECCE remonteront ici en temps reel des qu'une activite relevante arrive."}
+                "Les prochains événements ECCE remonteront ici en temps réel dès qu'une activité pertinente arrive."}
             </p>
           </article>
         </div>
@@ -139,15 +139,15 @@ export default async function NotificationsPage({
           <div className="library-search-head">
             <div>
               <span className="eyebrow">Watchlist live</span>
-              <h3>Les signaux a traiter en premier</h3>
+              <h3>Les signaux à traiter en premier</h3>
               <p>
-                Le flux temps reel reste la source de verite. Cette vue ajoute la priorisation
-                necessaire pour ouvrir la bonne alerte, au bon moment.
+                Le flux temps réel reste la source de vérité. Cette vue ajoute la priorisation
+                nécessaire pour ouvrir la bonne alerte, au bon moment.
               </p>
             </div>
 
             <Link className="button button-secondary" href="/notifications">
-              Reinitialiser
+              Réinitialiser
             </Link>
           </div>
 
@@ -221,7 +221,7 @@ export default async function NotificationsPage({
           ) : (
             <div className="empty-state empty-state-compact">
               <strong>Aucun signal dans cette vue.</strong>
-              <p>Reviens sur la vue globale ou attends les prochains evenements pour remplir la watchlist.</p>
+              <p>Reviens sur la vue globale ou attends les prochains événements pour remplir la watchlist.</p>
             </div>
           )}
 
@@ -262,7 +262,7 @@ export default async function NotificationsPage({
           <section className="panel">
             <div className="panel-header">
               <h3>Signal focus</h3>
-              <p>Le meilleur point d&apos;entree pour relancer le bon contexte maintenant.</p>
+              <p>Le meilleur point d&apos;entrée pour relancer le bon contexte maintenant.</p>
             </div>
 
             {focusNotification ? (
@@ -302,7 +302,7 @@ export default async function NotificationsPage({
             ) : (
               <div className="empty-state empty-state-compact">
                 <strong>Aucun focus pour le moment.</strong>
-                <p>Le centre live est pret a remonter le prochain evenement utile des qu&apos;il arrive.</p>
+                <p>Le centre live est prêt à remonter le prochain événement utile dès qu&apos;il arrive.</p>
               </div>
             )}
           </section>
@@ -310,7 +310,7 @@ export default async function NotificationsPage({
           <section className="panel">
             <div className="panel-header">
               <h3>Zones chaudes</h3>
-              <p>Les categories qui concentrent le plus de contexte dans la vue courante.</p>
+              <p>Les catégories qui concentrent le plus de contexte dans la vue courante.</p>
             </div>
 
             {categorySpotlights.length ? (
@@ -336,8 +336,8 @@ export default async function NotificationsPage({
               </div>
             ) : (
               <div className="empty-state empty-state-compact">
-                <strong>Aucune categorie chaude.</strong>
-                <p>Le centre live affichera ici les familles d&apos;alertes les plus actives des qu&apos;elles emergent.</p>
+                <strong>Aucune catégorie chaude.</strong>
+                <p>Le centre live affichera ici les familles d&apos;alertes les plus actives dès qu&apos;elles émergent.</p>
               </div>
             )}
           </section>

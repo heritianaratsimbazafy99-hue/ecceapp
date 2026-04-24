@@ -277,7 +277,7 @@ function NotificationStreamList({
                 <small>{formatRelativeTime(item.created_at)}</small>
               </div>
               <strong>{item.title}</strong>
-              <p>{item.body || "Notification systeme ECCE"}</p>
+              <p>{item.body || "Notification système ECCE"}</p>
               <small>
                 {summary.nextAction} · {formatDate(item.created_at)}
               </small>
@@ -391,21 +391,21 @@ export function NotificationCommandCenter({
       <div className="notification-command-head">
         <div>
           <span className="eyebrow">Flux live ECCE</span>
-          <h3>Filtre les signaux sans casser la synchro temps reel.</h3>
+          <h3>Filtre les signaux sans casser la synchro temps réel.</h3>
           <p>
             Les notifications continuent d&apos;arriver en direct. Cette zone garde le tri
-            operatoire, le marquage lu/non lu et l&apos;ouverture rapide vers la bonne surface ECCE.
+            opératoire, le marquage lu/non lu et l&apos;ouverture rapide vers la bonne surface ECCE.
           </p>
         </div>
 
         <div className="notification-command-inline-stats">
           <article>
             <strong>{notifications.length}</strong>
-            <small>signaux recents</small>
+            <small>signaux récents</small>
           </article>
           <article>
             <strong>{unreadCount}</strong>
-            <small>encore a lire</small>
+            <small>encore à lire</small>
           </article>
           <article>
             <strong>{actionableCount}</strong>
@@ -416,7 +416,7 @@ export function NotificationCommandCenter({
 
       {liveToast ? (
         <div className="notification-live-banner notification-live-banner-page">
-          <strong>Nouveau signal detecte</strong>
+          <strong>Nouveau signal détecté</strong>
           <p>{liveToast.title}</p>
         </div>
       ) : null}
@@ -425,8 +425,8 @@ export function NotificationCommandCenter({
         <div className="notification-filter-tabs">
           {[
             { id: "all", label: "Tout", count: notifications.length },
-            { id: "action", label: "Action immediate", count: laneCounts.action },
-            { id: "review", label: "A suivre", count: laneCounts.review },
+            { id: "action", label: "Action immédiate", count: laneCounts.action },
+            { id: "review", label: "À suivre", count: laneCounts.review },
             { id: "cleared", label: "Archive utile", count: laneCounts.cleared }
           ].map((item) => (
             <button

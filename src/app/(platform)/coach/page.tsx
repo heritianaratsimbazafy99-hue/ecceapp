@@ -159,7 +159,7 @@ export default async function CoachPage() {
           ) : (
             <div className="empty-state">
               <strong>Aucune session planifiée.</strong>
-              <p>La table de séances est prête, il restera à ajouter l&apos;interface de planification.</p>
+              <p>Planifie une séance depuis le formulaire ci-dessus : elle remontera ici avec son contexte coaché.</p>
             </div>
           )}
         </div>
