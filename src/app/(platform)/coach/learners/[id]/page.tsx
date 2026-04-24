@@ -30,14 +30,30 @@ export default async function CoachLearnerDetailPage({
     notFound();
   }
 
-  const { activityFeed, assignmentCards, badges, engagement, learner, metrics, notifications, recentAttempts, sessions, submissionCards } =
-    data;
+  const {
+    activityFeed,
+    assignmentCards,
+    badges,
+    coachFollowUp,
+    engagement,
+    learner,
+    metrics,
+    notifications,
+    recentAttempts,
+    sessions,
+    submissionCards
+  } = data;
 
   return (
     <div className="page-shell">
       <PlatformTopbar
         actions={
           <>
+            {coachFollowUp ? (
+              <Link className="button" href={coachFollowUp.href}>
+                Relancer le coaché
+              </Link>
+            ) : null}
             <Link className="button button-secondary" href="/coach">
               Cockpit coach
             </Link>
@@ -109,6 +125,19 @@ export default async function CoachLearnerDetailPage({
               <span>entrée plateforme</span>
             </article>
           </div>
+
+          {coachFollowUp ? (
+            <article className="coach-learner-follow-up">
+              <div className="tag-row">
+                <Badge tone={coachFollowUp.tone}>relance prête</Badge>
+              </div>
+              <strong>{coachFollowUp.title}</strong>
+              <p>{coachFollowUp.body}</p>
+              <Link className="button button-small" href={coachFollowUp.href}>
+                Ouvrir le message
+              </Link>
+            </article>
+          ) : null}
         </div>
       </section>
 
@@ -143,9 +172,16 @@ export default async function CoachLearnerDetailPage({
                       <span>{assignment.latestResult}</span>
                     </div>
 
-                    <Link className="button button-secondary button-small" href={assignment.href}>
-                      Ouvrir
-                    </Link>
+                    <div className="coach-learner-action-row">
+                      <Link className="button button-secondary button-small" href={assignment.href}>
+                        Ouvrir
+                      </Link>
+                      {assignment.messageHref ? (
+                        <Link className="button button-small" href={assignment.messageHref}>
+                          Relancer
+                        </Link>
+                      ) : null}
+                    </div>
                   </article>
                 ))}
               </div>

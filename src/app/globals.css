@@ -5446,6 +5446,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .coach-learner-side,
 .coach-learner-assignment-grid,
 .coach-learner-card-meta,
+.coach-learner-follow-up,
 .coach-learner-mini-grid,
 .coach-learner-activity-feed {
   display: grid;
@@ -5469,6 +5470,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .coach-learner-hero-copy h3,
 .coach-learner-hero-copy p,
 .coach-learner-assignment-card p,
+.coach-learner-follow-up p,
 .coach-learner-submission-card p,
 .coach-learner-session-card p,
 .coach-learner-activity-item p {
@@ -5487,6 +5489,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .coach-learner-reference-grid article,
 .coach-learner-mini-grid article,
+.coach-learner-follow-up,
 .coach-learner-submission-card,
 .coach-learner-session-card,
 .coach-learner-activity-item {
@@ -5527,6 +5530,21 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .coach-learner-card-meta {
   gap: 8px;
+}
+
+.coach-learner-follow-up {
+  background: linear-gradient(135deg, rgba(16, 24, 32, 0.94), rgba(51, 65, 85, 0.9));
+  color: #fff;
+}
+
+.coach-learner-follow-up p {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.coach-learner-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .session-workspace-hero,

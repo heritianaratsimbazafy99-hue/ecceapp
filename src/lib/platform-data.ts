@@ -9056,6 +9056,15 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
     .filter((session) => getDateValue(session.starts_at) !== null && (getDateValue(session.starts_at) ?? 0) >= Date.now())
     .sort((left, right) => (getDateValue(left.starts_at) ?? 0) - (getDateValue(right.starts_at) ?? 0));
   const coachProfiles = (coachProfilesResult.data ?? []) as ProfileRow[];
+  const canMessageLearner = context.roles.includes("coach") && assignedCoachIds.includes(context.user.id);
+  const learnerName = formatUserName(learner);
+  const buildLearnerMessageHref = (draftLines: string[]) =>
+    canMessageLearner
+      ? `/messages?${new URLSearchParams({
+          recipient: learnerId,
+          draft: draftLines.join("\n\n")
+        }).toString()}#messages-hub`
+      : null;
   const submissionCards = await Promise.all(
     submissions.slice(0, 8).map(async (submission) => ({
       id: submission.id,
@@ -9079,16 +9088,19 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
       ? Boolean(latestAttempt && latestAttempt.status !== "in_progress" && latestAttempt.status !== "expired")
       : Boolean(latestSubmission && latestSubmission.status !== "not_started");
     const dueState = getDeadlineState(assignment.due_at, completed);
+    const dueLabel = getDeadlineStateLabel(dueState);
     const content = contentById.get(assignment.content_item_id ?? "");
     const quiz = quizById.get(assignment.quiz_id ?? "");
+    const assetTitle = quiz?.title ?? content?.title ?? "Asset pédagogique";
 
     return {
       id: assignment.id,
       title: assignment.title,
-      assetTitle: quiz?.title ?? content?.title ?? "Asset pédagogique",
+      assetTitle,
       kind: assignment.quiz_id ? "quiz" : "contenu",
       due: formatDate(assignment.due_at),
-      statusLabel: getDeadlineStateLabel(dueState),
+      deadlineState: dueState,
+      statusLabel: dueLabel,
       statusTone: getDeadlineStateTone(dueState),
       audienceLabel: assignment.cohort_id
         ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
@@ -9098,9 +9110,55 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
         ? `${latestAttempt.score}%`
         : latestSubmission
           ? getSubmissionStatusLabel(latestSubmission.status)
-          : "Non démarré"
+          : "Non démarré",
+      messageHref: buildLearnerMessageHref([
+        `Bonjour ${learnerName},`,
+        `Je reviens sur "${assignment.title}" (${assetTitle}).`,
+        dueState === "overdue"
+          ? "La deadline est dépassée : dis-moi ce qui bloque et le prochain pas que tu peux poser aujourd'hui."
+          : dueState === "soon"
+            ? "La deadline approche : je veux vérifier que tout est clair et que tu peux avancer sans friction."
+            : `Statut actuel : ${dueLabel}. Dis-moi où tu en es et ce dont tu as besoin pour continuer.`
+      ])
     };
   });
+  const priorityAssignment =
+    assignmentCards.find((assignment) => assignment.deadlineState === "overdue") ??
+    assignmentCards.find((assignment) => assignment.deadlineState === "soon") ??
+    assignmentCards.find((assignment) => assignment.latestResult === "Non démarré") ??
+    assignmentCards[0] ??
+    null;
+  const coachFollowUpHref = buildLearnerMessageHref([
+    `Bonjour ${learnerName},`,
+    `Je fais un point rapide sur ton suivi ECCE.`,
+    engagement?.nextFocus
+      ? `Signal principal : ${engagement.nextFocus}.`
+      : "Signal principal : je veux comprendre où tu en es et ce qui t'aiderait le plus maintenant.",
+    priorityAssignment
+      ? `Point de départ proposé : "${priorityAssignment.title}" (${priorityAssignment.assetTitle}).`
+      : "Point de départ proposé : dis-moi ta prochaine action concrète."
+  ]);
+  const coachFollowUp = canMessageLearner
+    ? {
+        href: coachFollowUpHref ?? "/messages#messages-hub",
+        title:
+          engagement?.band === "risk"
+            ? "Relance prioritaire recommandée"
+            : engagement?.band === "watch"
+              ? "Point de cadence recommandé"
+              : "Message d'encouragement prêt",
+        body:
+          engagement?.nextFocus ??
+          priorityAssignment?.title ??
+          "Le fil de suivi peut être relancé avec un message court et contextualisé.",
+        tone:
+          engagement?.band === "risk"
+            ? ("warning" as const)
+            : engagement?.band === "watch"
+              ? ("accent" as const)
+              : ("success" as const)
+      }
+    : null;
   const activityFeed = [
     ...attempts.slice(0, 8).map((attempt) => ({
       id: `attempt-${attempt.id}`,
@@ -9175,6 +9233,7 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
       }
     ],
     engagement,
+    coachFollowUp,
     assignmentCards,
     submissionCards,
     recentAttempts: attempts.slice(0, 8).map((attempt) => ({
