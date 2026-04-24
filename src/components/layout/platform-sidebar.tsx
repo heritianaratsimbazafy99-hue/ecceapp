@@ -11,6 +11,7 @@ const navigation = [
   { href: "/dashboard", label: "Dashboard", shortLabel: "DB", match: "exact", roles: ["admin", "coachee"] },
   { href: "/agenda", label: "Agenda", shortLabel: "AG", match: "exact", roles: ["admin", "coach", "coachee"] },
   { href: "/programs", label: "Parcours", shortLabel: "PA", match: "exact", roles: ["coachee"] },
+  { href: "/progress", label: "Progression", shortLabel: "PG", match: "exact", roles: ["coachee"] },
   { href: "/library", label: "Bibliothèque", shortLabel: "BI", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/community", label: "Communauté", shortLabel: "CM", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/professor", label: "Insights prof", shortLabel: "PR", match: "exact", roles: ["admin", "professor"] },

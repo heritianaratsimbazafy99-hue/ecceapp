@@ -636,6 +636,7 @@ type AdminProgramLane = "priority" | "scaffold" | "draft" | "active";
 type AgendaLane = "urgent" | "today" | "upcoming" | "recent";
 type AgendaScope = "sessions" | "deadlines";
 type LearnerProgramLane = "urgent" | "momentum" | "launch" | "completed";
+type LearnerProgressLane = "badge" | "quiz" | "content" | "program" | "coaching";
 
 function isAdminProgramLane(value: string | null | undefined): value is AdminProgramLane {
   return ["priority", "scaffold", "draft", "active"].includes(value ?? "");
@@ -707,6 +708,40 @@ function getLearnerProgramLaneTone(lane: LearnerProgramLane): BadgeTone {
       return "neutral";
     default:
       return "success";
+  }
+}
+
+function isLearnerProgressLane(value: string | null | undefined): value is LearnerProgressLane {
+  return ["badge", "quiz", "content", "program", "coaching"].includes(value ?? "");
+}
+
+function getLearnerProgressLaneLabel(lane: LearnerProgressLane) {
+  switch (lane) {
+    case "badge":
+      return "Badges";
+    case "quiz":
+      return "Quiz";
+    case "content":
+      return "Contenus";
+    case "program":
+      return "Parcours";
+    default:
+      return "Coaching";
+  }
+}
+
+function getLearnerProgressLaneTone(lane: LearnerProgressLane): BadgeTone {
+  switch (lane) {
+    case "badge":
+      return "success";
+    case "quiz":
+      return "accent";
+    case "content":
+      return "neutral";
+    case "program":
+      return "warning";
+    default:
+      return "accent";
   }
 }
 
@@ -11507,6 +11542,579 @@ export async function getLearnerProgramsPageData(filters?: {
     responsePlaybook,
     programWatchlist: sortedVisiblePrograms.slice(0, 5),
     programs: sortedVisiblePrograms
+  };
+}
+
+export async function getLearnerProgressHistoryPageData(filters?: {
+  query?: string;
+  lane?: string;
+}) {
+  const context = await requireRole(["admin", "coachee"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+  const userId = context.user.id;
+  const normalizedQuery = normalizeDataSearchQuery(filters?.query).toLowerCase();
+  const laneFilter: LearnerProgressLane | "all" = isLearnerProgressLane(filters?.lane) ? filters.lane : "all";
+  const uniqueIds = (items: Array<string | null | undefined>) =>
+    Array.from(new Set(items.filter(Boolean) as string[]));
+  const latestIso = (items: Array<string | null | undefined>) =>
+    items
+      .filter(Boolean)
+      .sort((left, right) => (getDateValue(right) ?? 0) - (getDateValue(left) ?? 0))[0] ?? null;
+
+  const cohortMembersResult = await admin.from("cohort_members").select("cohort_id").eq("user_id", userId);
+  const cohortIds = (cohortMembersResult.data ?? []).map((item) => item.cohort_id);
+  const assignmentFilters = [`assigned_user_id.eq.${userId}`, ...cohortIds.map((cohortId) => `cohort_id.eq.${cohortId}`)];
+
+  const [
+    assignmentsResult,
+    enrollmentsResult,
+    attemptsResult,
+    submissionsResult,
+    sessionsResult,
+    badgesResult
+  ] = await Promise.all([
+    admin
+      .from("learning_assignments")
+      .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at, created_at")
+      .eq("organization_id", organizationId)
+      .or(assignmentFilters.join(","))
+      .order("published_at", { ascending: false }),
+    admin
+      .from("program_enrollments")
+      .select("program_id, user_id, cohort_id, enrolled_at")
+      .eq("user_id", userId)
+      .order("enrolled_at", { ascending: false }),
+    admin
+      .from("quiz_attempts")
+      .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
+      .eq("user_id", userId)
+      .order("submitted_at", { ascending: false })
+      .limit(80),
+    admin
+      .from("submissions")
+      .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
+      .eq("user_id", userId)
+      .order("submitted_at", { ascending: false })
+      .limit(80),
+    admin
+      .from("coaching_sessions")
+      .select("id, coach_id, starts_at, ends_at, status, video_link")
+      .eq("organization_id", organizationId)
+      .eq("coachee_id", userId)
+      .eq("status", "completed")
+      .order("starts_at", { ascending: false })
+      .limit(60),
+    admin
+      .from("user_badges")
+      .select("id, user_id, awarded_at, badges(title, description, icon)")
+      .eq("user_id", userId)
+      .order("awarded_at", { ascending: false })
+      .limit(50)
+  ]);
+
+  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const enrollments = (enrollmentsResult.data ?? []) as ProgramEnrollmentRow[];
+  const attempts = (attemptsResult.data ?? []) as QuizAttemptResultRow[];
+  const submissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const sessions = (sessionsResult.data ?? []) as Array<{
+    id: string;
+    coach_id: string;
+    starts_at: string;
+    ends_at: string | null;
+    status: string;
+    video_link: string | null;
+  }>;
+  const badges = (badgesResult.data ?? []) as UserBadgeRow[];
+
+  const programIds = uniqueIds(enrollments.map((enrollment) => enrollment.program_id));
+  const [programsResult, modulesResult] = await Promise.all([
+    programIds.length
+      ? admin
+          .from("programs")
+          .select("id, title, slug, description, status, created_at")
+          .eq("organization_id", organizationId)
+          .in("id", programIds)
+      : Promise.resolve({ data: [] as ProgramRow[] }),
+    programIds.length
+      ? admin
+          .from("program_modules")
+          .select("id, program_id, title, description, position, status, available_at")
+          .in("program_id", programIds)
+          .order("position", { ascending: true })
+      : Promise.resolve({ data: [] as ProgramModuleRow[] })
+  ]);
+
+  const programs = (programsResult.data ?? []) as ProgramRow[];
+  const modules = (modulesResult.data ?? []) as ProgramModuleRow[];
+  const moduleIds = modules.map((module) => module.id);
+  const directContentIds = uniqueIds([
+    ...submissions.map((submission) => submission.content_item_id),
+    ...assignments.map((assignment) => assignment.content_item_id)
+  ]);
+  const directQuizIds = uniqueIds([
+    ...attempts.map((attempt) => attempt.quiz_id),
+    ...assignments.map((assignment) => assignment.quiz_id)
+  ]);
+  const coachIds = uniqueIds(sessions.map((session) => session.coach_id));
+
+  const [
+    moduleContentsResult,
+    directContentsResult,
+    moduleQuizzesResult,
+    directQuizzesResult,
+    coachProfilesResult
+  ] = await Promise.all([
+    moduleIds.length
+      ? admin
+          .from("content_items")
+          .select(
+            "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
+          )
+          .eq("organization_id", organizationId)
+          .eq("status", "published")
+          .in("module_id", moduleIds)
+      : Promise.resolve({ data: [] as ContentRow[] }),
+    directContentIds.length
+      ? admin
+          .from("content_items")
+          .select(
+            "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
+          )
+          .eq("organization_id", organizationId)
+          .in("id", directContentIds)
+      : Promise.resolve({ data: [] as ContentRow[] }),
+    moduleIds.length
+      ? admin
+          .from("quizzes")
+          .select("id, module_id, title, description, kind, status, attempts_allowed, time_limit_minutes, passing_score, content_item_id, created_at")
+          .eq("organization_id", organizationId)
+          .eq("status", "published")
+          .in("module_id", moduleIds)
+      : Promise.resolve({ data: [] as QuizRow[] }),
+    directQuizIds.length
+      ? admin
+          .from("quizzes")
+          .select("id, module_id, title, description, kind, status, attempts_allowed, time_limit_minutes, passing_score, content_item_id, created_at")
+          .eq("organization_id", organizationId)
+          .in("id", directQuizIds)
+      : Promise.resolve({ data: [] as QuizRow[] }),
+    coachIds.length
+      ? admin
+          .from("profiles")
+          .select("id, first_name, last_name, status")
+          .eq("organization_id", organizationId)
+          .in("id", coachIds)
+      : Promise.resolve({ data: [] as ProfileRow[] })
+  ]);
+
+  const contents = Array.from(
+    new Map(
+      [...((moduleContentsResult.data ?? []) as ContentRow[]), ...((directContentsResult.data ?? []) as ContentRow[])].map(
+        (content) => [content.id, content]
+      )
+    ).values()
+  );
+  const quizzes = Array.from(
+    new Map(
+      [...((moduleQuizzesResult.data ?? []) as QuizRow[]), ...((directQuizzesResult.data ?? []) as QuizRow[])].map(
+        (quiz) => [quiz.id, quiz]
+      )
+    ).values()
+  );
+
+  const programById = new Map(programs.map((program) => [program.id, program]));
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  const modulesByProgramId = modules.reduce((map, module) => {
+    const current = map.get(module.program_id) ?? [];
+    current.push(module);
+    map.set(module.program_id, current);
+    return map;
+  }, new Map<string, ProgramModuleRow[]>());
+  const contentsByModuleId = contents.reduce((map, content) => {
+    if (!content.module_id) {
+      return map;
+    }
+
+    const current = map.get(content.module_id) ?? [];
+    current.push(content);
+    map.set(content.module_id, current);
+    return map;
+  }, new Map<string, ContentRow[]>());
+  const quizzesByModuleId = quizzes.reduce((map, quiz) => {
+    if (!quiz.module_id) {
+      return map;
+    }
+
+    const current = map.get(quiz.module_id) ?? [];
+    current.push(quiz);
+    map.set(quiz.module_id, current);
+    return map;
+  }, new Map<string, QuizRow[]>());
+  const contentById = new Map(contents.map((content) => [content.id, content]));
+  const quizById = new Map(quizzes.map((quiz) => [quiz.id, quiz]));
+  const assignmentById = new Map(assignments.map((assignment) => [assignment.id, assignment]));
+  const assignmentByContentId = new Map<string, AssignmentRow>();
+  const assignmentByQuizId = new Map<string, AssignmentRow>();
+
+  for (const assignment of assignments) {
+    if (assignment.content_item_id && !assignmentByContentId.has(assignment.content_item_id)) {
+      assignmentByContentId.set(assignment.content_item_id, assignment);
+    }
+
+    if (assignment.quiz_id && !assignmentByQuizId.has(assignment.quiz_id)) {
+      assignmentByQuizId.set(assignment.quiz_id, assignment);
+    }
+  }
+
+  const latestSubmissionByContentId = new Map<string, SubmissionRow>();
+  for (const submission of submissions) {
+    if (submission.content_item_id && !latestSubmissionByContentId.has(submission.content_item_id)) {
+      latestSubmissionByContentId.set(submission.content_item_id, submission);
+    }
+  }
+
+  const latestAttemptByQuizId = new Map<string, QuizAttemptResultRow>();
+  for (const attempt of attempts) {
+    if (!latestAttemptByQuizId.has(attempt.quiz_id)) {
+      latestAttemptByQuizId.set(attempt.quiz_id, attempt);
+    }
+  }
+
+  const coachNameById = new Map(
+    ((coachProfilesResult.data ?? []) as ProfileRow[]).map((profile) => [profile.id, formatUserName(profile)])
+  );
+
+  const progressEvents: Array<{
+    id: string;
+    lane: LearnerProgressLane;
+    laneLabel: string;
+    title: string;
+    description: string;
+    occurredAt: string;
+    occurredAtIso: string;
+    tone: BadgeTone;
+    href: string | null;
+    ctaLabel: string | null;
+    meta: string[];
+    searchText: string;
+  }> = [];
+
+  for (const badge of badges) {
+    const badgeInfo = Array.isArray(badge.badges) ? badge.badges[0] : badge.badges;
+    const title = badgeInfo?.title ?? "Badge ECCE";
+    const description = badgeInfo?.description ?? "Nouveau jalon débloqué dans ton parcours ECCE.";
+
+    progressEvents.push({
+      id: `badge-${badge.id}`,
+      lane: "badge",
+      laneLabel: getLearnerProgressLaneLabel("badge"),
+      title,
+      description,
+      occurredAt: formatDate(badge.awarded_at),
+      occurredAtIso: badge.awarded_at,
+      tone: "success",
+      href: "/dashboard",
+      ctaLabel: "Voir mes badges",
+      meta: ["Badge", badgeInfo?.icon ?? "progression"],
+      searchText: [title, description, "badge"].join(" ").toLowerCase()
+    });
+  }
+
+  for (const attempt of attempts) {
+    if (!attempt.submitted_at) {
+      continue;
+    }
+
+    const quiz = quizById.get(attempt.quiz_id);
+    const programModule = quiz?.module_id ? moduleById.get(quiz.module_id) : null;
+    const program = programModule ? programById.get(programModule.program_id) : null;
+    const assignment = attempt.assignment_id ? assignmentById.get(attempt.assignment_id) : assignmentByQuizId.get(attempt.quiz_id);
+    const score = attempt.score !== null ? Math.round(Number(attempt.score)) : null;
+    const passingScore = quiz?.passing_score !== null && quiz?.passing_score !== undefined ? Number(quiz.passing_score) : null;
+    const tone: BadgeTone =
+      score === null ? "accent" : passingScore !== null ? (score >= passingScore ? "success" : "warning") : score >= 70 ? "success" : "accent";
+    const scoreLabel = score !== null ? `${score}%` : "correction en cours";
+    const title = quiz?.title ?? "Quiz ECCE";
+    const description = `Tentative ${attempt.attempt_number} · ${scoreLabel} · ${attempt.status === "graded" ? "corrigé" : "soumis"}`;
+
+    progressEvents.push({
+      id: `quiz-${attempt.id}`,
+      lane: "quiz",
+      laneLabel: getLearnerProgressLaneLabel("quiz"),
+      title,
+      description,
+      occurredAt: formatDate(attempt.submitted_at),
+      occurredAtIso: attempt.submitted_at,
+      tone,
+      href: assignment ? `/quiz/${attempt.quiz_id}?assignment=${assignment.id}` : `/quiz/${attempt.quiz_id}`,
+      ctaLabel: "Revoir le quiz",
+      meta: [program?.title, programModule?.title, quiz?.kind ?? "quiz", passingScore !== null ? `seuil ${passingScore}%` : null].filter(
+        Boolean
+      ) as string[],
+      searchText: [title, description, program?.title, programModule?.title, quiz?.kind].filter(Boolean).join(" ").toLowerCase()
+    });
+  }
+
+  for (const submission of submissions) {
+    const occurredAtIso = submission.reviewed_at ?? submission.submitted_at ?? submission.created_at ?? null;
+
+    if (!occurredAtIso) {
+      continue;
+    }
+
+    const content = submission.content_item_id ? contentById.get(submission.content_item_id) : null;
+    const programModule = content?.module_id ? moduleById.get(content.module_id) : null;
+    const program = programModule ? programById.get(programModule.program_id) : null;
+    const assignment = submission.assignment_id ? assignmentById.get(submission.assignment_id) : assignmentByContentId.get(submission.content_item_id ?? "");
+    const title = content?.title ?? submission.title;
+    const statusLabel = getSubmissionStatusLabel(submission.status);
+    const description = `${statusLabel} · ${content?.summary ?? submission.notes ?? "Rendu déposé dans ECCE."}`;
+
+    progressEvents.push({
+      id: `content-${submission.id}`,
+      lane: "content",
+      laneLabel: getLearnerProgressLaneLabel("content"),
+      title,
+      description,
+      occurredAt: formatDate(occurredAtIso),
+      occurredAtIso,
+      tone: getSubmissionStatusTone(submission.status),
+      href: assignment ? `/assignments/${assignment.id}` : content ? `/library/${content.slug}` : null,
+      ctaLabel: assignment ? "Voir le rendu" : content ? "Revoir le contenu" : null,
+      meta: [program?.title, programModule?.title, content?.category, content?.subcategory, content?.content_type].filter(Boolean) as string[],
+      searchText: [title, description, program?.title, programModule?.title, content?.category, content?.subcategory, content?.content_type]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+    });
+  }
+
+  for (const session of sessions) {
+    const coachName = coachNameById.get(session.coach_id) ?? "Coach ECCE";
+    const description = session.ends_at
+      ? `Séance terminée avec ${coachName} · fin ${formatDate(session.ends_at)}`
+      : `Séance terminée avec ${coachName}.`;
+
+    progressEvents.push({
+      id: `coaching-${session.id}`,
+      lane: "coaching",
+      laneLabel: getLearnerProgressLaneLabel("coaching"),
+      title: "Séance de coaching terminée",
+      description,
+      occurredAt: formatDate(session.starts_at),
+      occurredAtIso: session.starts_at,
+      tone: "accent",
+      href: "/agenda",
+      ctaLabel: "Voir l'agenda",
+      meta: [coachName, "coaching"],
+      searchText: ["Séance de coaching terminée", description, coachName].join(" ").toLowerCase()
+    });
+  }
+
+  for (const enrollment of enrollments) {
+    const program = programById.get(enrollment.program_id);
+
+    if (!program) {
+      continue;
+    }
+
+    progressEvents.push({
+      id: `program-enrollment-${program.id}`,
+      lane: "program",
+      laneLabel: getLearnerProgressLaneLabel("program"),
+      title: `Parcours activé · ${program.title}`,
+      description: program.description ?? "Un nouveau parcours ECCE a été ouvert pour ton profil.",
+      occurredAt: formatDate(enrollment.enrolled_at),
+      occurredAtIso: enrollment.enrolled_at,
+      tone: "accent",
+      href: "/programs",
+      ctaLabel: "Voir mes parcours",
+      meta: [program.status, "activation"],
+      searchText: [program.title, program.description, program.status, "activation parcours"].filter(Boolean).join(" ").toLowerCase()
+    });
+  }
+
+  for (const program of programs) {
+    const programModules = (modulesByProgramId.get(program.id) ?? []).sort((left, right) => left.position - right.position);
+    const programItemActivity: string[] = [];
+    let programTotalItems = 0;
+    let programCompletedItems = 0;
+
+    for (const programModule of programModules) {
+      const moduleContents = contentsByModuleId.get(programModule.id) ?? [];
+      const moduleQuizzes = quizzesByModuleId.get(programModule.id) ?? [];
+      const completedContentActivities = moduleContents
+        .map((content) => latestSubmissionByContentId.get(content.id))
+        .filter((submission): submission is SubmissionRow => Boolean(submission && ["submitted", "reviewed", "late"].includes(submission.status)))
+        .map((submission) => submission.reviewed_at ?? submission.submitted_at ?? submission.created_at ?? null)
+        .filter(Boolean) as string[];
+      const completedQuizActivities = moduleQuizzes
+        .map((quiz) => latestAttemptByQuizId.get(quiz.id))
+        .filter((attempt): attempt is QuizAttemptResultRow => Boolean(attempt?.submitted_at && ["submitted", "graded"].includes(attempt.status)))
+        .map((attempt) => attempt.submitted_at)
+        .filter(Boolean) as string[];
+      const totalItems = moduleContents.length + moduleQuizzes.length;
+      const completedItems = completedContentActivities.length + completedQuizActivities.length;
+      const moduleActivityAt = latestIso([...completedContentActivities, ...completedQuizActivities]);
+
+      programTotalItems += totalItems;
+      programCompletedItems += completedItems;
+
+      if (moduleActivityAt) {
+        programItemActivity.push(moduleActivityAt);
+      }
+
+      if (totalItems > 0 && completedItems === totalItems && moduleActivityAt) {
+        progressEvents.push({
+          id: `module-completed-${programModule.id}`,
+          lane: "program",
+          laneLabel: getLearnerProgressLaneLabel("program"),
+          title: `Module terminé · ${programModule.title}`,
+          description: `${program.title} · ${completedItems}/${totalItems} étapes validées.`,
+          occurredAt: formatDate(moduleActivityAt),
+          occurredAtIso: moduleActivityAt,
+          tone: "success",
+          href: "/programs",
+          ctaLabel: "Voir le parcours",
+          meta: [program.title, programModule.status, "module"],
+          searchText: [programModule.title, program.title, programModule.description, "module terminé"].filter(Boolean).join(" ").toLowerCase()
+        });
+      }
+    }
+
+    const programActivityAt = latestIso(programItemActivity);
+
+    if (programTotalItems > 0 && programCompletedItems === programTotalItems && programActivityAt) {
+      progressEvents.push({
+        id: `program-completed-${program.id}`,
+        lane: "program",
+        laneLabel: getLearnerProgressLaneLabel("program"),
+        title: `Parcours terminé · ${program.title}`,
+        description: `${programCompletedItems}/${programTotalItems} étapes complétées dans ce programme.`,
+        occurredAt: formatDate(programActivityAt),
+        occurredAtIso: programActivityAt,
+        tone: "success",
+        href: "/programs",
+        ctaLabel: "Revoir le parcours",
+        meta: [program.status, "parcours terminé"],
+        searchText: [program.title, program.description, "parcours terminé"].filter(Boolean).join(" ").toLowerCase()
+      });
+    }
+  }
+
+  const queryFilteredEvents = progressEvents.filter((event) =>
+    matchesDataSearch([event.title, event.description, ...event.meta], normalizedQuery)
+  );
+  const laneCounts = queryFilteredEvents.reduce(
+    (counts, event) => {
+      counts[event.lane] += 1;
+      return counts;
+    },
+    {
+      badge: 0,
+      quiz: 0,
+      content: 0,
+      program: 0,
+      coaching: 0
+    } as Record<LearnerProgressLane, number>
+  );
+  const sortedEvents = queryFilteredEvents
+    .filter((event) => laneFilter === "all" || event.lane === laneFilter)
+    .sort((left, right) => (getDateValue(right.occurredAtIso) ?? 0) - (getDateValue(left.occurredAtIso) ?? 0));
+  const focusEvent = sortedEvents[0] ?? null;
+  const activeFilterParts = [
+    laneFilter !== "all" ? `lane ${getLearnerProgressLaneLabel(laneFilter).toLowerCase()}` : null,
+    normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
+  ].filter(Boolean) as string[];
+  const scoredAttempts = attempts.filter((attempt) => attempt.score !== null);
+  const averageQuizScore = scoredAttempts.length
+    ? Math.round(scoredAttempts.reduce((total, attempt) => total + Number(attempt.score ?? 0), 0) / scoredAttempts.length)
+    : null;
+  const latestBadge = queryFilteredEvents.find((event) => event.lane === "badge") ?? null;
+  const bestQuizAttempt = attempts
+    .filter((attempt) => attempt.score !== null)
+    .sort((left, right) => Number(right.score ?? 0) - Number(left.score ?? 0))[0] ?? null;
+  const bestQuiz = bestQuizAttempt ? quizById.get(bestQuizAttempt.quiz_id) : null;
+  const latestProgramEvent = queryFilteredEvents
+    .filter((event) => event.lane === "program")
+    .sort((left, right) => (getDateValue(right.occurredAtIso) ?? 0) - (getDateValue(left.occurredAtIso) ?? 0))[0] ?? null;
+
+  return {
+    context,
+    filters: {
+      query: filters?.query?.trim() ?? "",
+      lane: laneFilter,
+      summary: activeFilterParts.length ? `Vue filtrée · ${activeFilterParts.join(" · ")}` : "Vue complète de progression"
+    },
+    metrics: [
+      {
+        label: "Événements",
+        value: sortedEvents.length.toString(),
+        delta: focusEvent ? `Dernier · ${focusEvent.occurredAt}` : "Aucun jalon détecté"
+      },
+      {
+        label: "Badges",
+        value: badges.length.toString(),
+        delta: latestBadge ? latestBadge.title : "À débloquer"
+      },
+      {
+        label: "Quiz moyen",
+        value: averageQuizScore !== null ? `${averageQuizScore}%` : "n/a",
+        delta: `${scoredAttempts.length} quiz noté(s)`
+      },
+      {
+        label: "Séances terminées",
+        value: sessions.length.toString(),
+        delta: sessions[0] ? formatDate(sessions[0].starts_at) : "Aucune séance finalisée"
+      }
+    ],
+    hero: {
+      title: focusEvent ? `${focusEvent.title} est ton dernier jalon` : "Ton historique de progression se construira ici",
+      summary: focusEvent
+        ? `${focusEvent.laneLabel} · ${focusEvent.description}`
+        : "Badges, résultats de quiz, contenus rendus, modules terminés et séances de coaching seront rassemblés dans une seule timeline."
+    },
+    laneBreakdown: (["badge", "quiz", "content", "program", "coaching"] as LearnerProgressLane[]).map((lane) => ({
+      id: lane,
+      label: getLearnerProgressLaneLabel(lane),
+      count: laneCounts[lane],
+      tone: getLearnerProgressLaneTone(lane),
+      isActive: laneFilter === lane
+    })),
+    focusEvent,
+    highlights: [
+      {
+        id: "latest",
+        title: "Dernier jalon",
+        body: focusEvent?.title ?? "Aucun événement récent dans cette vue.",
+        meta: focusEvent?.occurredAt ?? "Timeline en attente",
+        tone: focusEvent?.tone ?? ("neutral" as BadgeTone),
+        href: focusEvent?.href ?? null,
+        ctaLabel: focusEvent?.ctaLabel ?? null
+      },
+      {
+        id: "best-quiz",
+        title: "Meilleur score quiz",
+        body: bestQuizAttempt
+          ? `${bestQuiz?.title ?? "Quiz ECCE"} · ${Math.round(Number(bestQuizAttempt.score ?? 0))}%`
+          : "Aucun score noté pour le moment.",
+        meta: bestQuizAttempt?.submitted_at ? formatDate(bestQuizAttempt.submitted_at) : "À construire",
+        tone: bestQuizAttempt ? ("success" as BadgeTone) : ("neutral" as BadgeTone),
+        href: bestQuizAttempt ? `/quiz/${bestQuizAttempt.quiz_id}` : null,
+        ctaLabel: bestQuizAttempt ? "Revoir" : null
+      },
+      {
+        id: "program",
+        title: "Dernier jalon parcours",
+        body: latestProgramEvent?.title ?? "Aucun module ou parcours complété dans cette vue.",
+        meta: latestProgramEvent?.occurredAt ?? `${enrollments.length} activation(s)`,
+        tone: latestProgramEvent?.tone ?? ("neutral" as BadgeTone),
+        href: "/programs",
+        ctaLabel: "Voir mes parcours"
+      }
+    ],
+    events: sortedEvents.slice(0, 80)
   };
 }
 
