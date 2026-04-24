@@ -6133,6 +6133,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   place-items: center;
   padding: 24px;
   pointer-events: none;
+  overflow: hidden;
 }
 
 .celebration-burst.is-badge {
@@ -6143,8 +6144,11 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .celebration-backdrop {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.08), rgba(16, 24, 32, 0.16));
-  backdrop-filter: blur(6px);
+  background:
+    radial-gradient(circle at 20% 74%, rgba(247, 138, 73, 0.18), transparent 26%),
+    radial-gradient(circle at 80% 72%, rgba(84, 159, 112, 0.16), transparent 26%),
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.1), rgba(16, 24, 32, 0.18));
+  backdrop-filter: blur(5px);
   animation: celebration-backdrop-in 280ms ease;
 }
 
@@ -6183,24 +6187,77 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .celebration-confetti {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
 }
 
 .celebration-piece {
   position: absolute;
-  width: 12px;
+  width: 13px;
   height: 28px;
-  border-radius: 999px 999px 10px 10px;
-  background: linear-gradient(180deg, rgba(247, 138, 73, 1), rgba(255, 214, 102, 1));
-  animation: celebration-fall 2100ms ease-in infinite;
+  border-radius: 8px 8px 4px 4px;
+  box-shadow: 0 9px 20px rgba(16, 24, 32, 0.16);
+  transform-origin: center;
+  animation: celebration-burst-piece 2200ms cubic-bezier(0.16, 0.82, 0.26, 1) forwards;
 }
 
-.celebration-piece:nth-child(3n) {
-  background: linear-gradient(180deg, rgba(84, 159, 112, 1), rgba(168, 225, 195, 1));
+.celebration-piece.from-left {
+  transform: rotate(-24deg);
 }
 
-.celebration-piece:nth-child(4n) {
-  background: linear-gradient(180deg, rgba(53, 104, 151, 1), rgba(126, 171, 214, 1));
+.celebration-piece.from-right {
+  transform: rotate(24deg);
+}
+
+.celebration-piece.is-ribbon {
+  width: 9px;
+  height: 42px;
+  border-radius: 999px;
+}
+
+.celebration-piece.is-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.celebration-piece.is-spark {
+  width: 7px;
+  height: 30px;
+  border-radius: 999px;
+  filter: brightness(1.12);
+}
+
+.celebration-piece-shower {
+  animation: celebration-fall 2100ms ease-in forwards;
+}
+
+.celebration-cannons {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.celebration-cannons span {
+  position: absolute;
+  bottom: 13vh;
+  width: 86px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(16, 24, 32, 0.4), rgba(255, 255, 255, 0.72));
+  opacity: 0;
+  animation: celebration-cannon-pop 720ms ease-out forwards;
+}
+
+.celebration-cannons span:first-child {
+  left: 6vw;
+  transform: rotate(-28deg);
+}
+
+.celebration-cannons span:last-child {
+  right: 6vw;
+  transform: rotate(28deg) scaleX(-1);
 }
 
 .celebration-rings {
@@ -6252,6 +6309,41 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   }
 }
 
+@keyframes celebration-burst-piece {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(var(--piece-angle)) scale(0.4);
+  }
+
+  10% {
+    opacity: 1;
+  }
+
+  38% {
+    opacity: 1;
+    transform:
+      translate3d(var(--piece-spread-x), var(--piece-spread-y), 0)
+      rotate(var(--piece-half-rotate))
+      scale(var(--piece-scale));
+  }
+
+  68% {
+    opacity: 0.96;
+    transform:
+      translate3d(calc(var(--piece-spread-x) + var(--piece-wiggle)), 16vh, 0)
+      rotate(var(--piece-rotate))
+      scale(var(--piece-scale));
+  }
+
+  100% {
+    opacity: 0;
+    transform:
+      translate3d(var(--piece-fall-x), var(--piece-fall-y), 0)
+      rotate(var(--piece-final-rotate))
+      scale(var(--piece-scale));
+  }
+}
+
 @keyframes celebration-card-pop {
   0% {
     opacity: 0;
@@ -6287,6 +6379,41 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   100% {
     opacity: 0;
     transform: scale(1.06);
+  }
+}
+
+@keyframes celebration-cannon-pop {
+  0% {
+    opacity: 0;
+    filter: blur(6px);
+  }
+
+  20% {
+    opacity: 0.9;
+    filter: blur(0);
+  }
+
+  100% {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celebration-piece,
+  .celebration-piece-shower,
+  .celebration-cannons span,
+  .celebration-rings span,
+  .celebration-copy,
+  .celebration-backdrop {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+  }
+
+  .celebration-confetti,
+  .celebration-cannons,
+  .celebration-rings {
+    display: none;
   }
 }
 
