@@ -110,6 +110,15 @@ export function ContentEditForm({
   const isUploadingPdf = pdfUploadState === "uploading";
   const isBusy = pending || isUploadingPdf;
   const hasBlockingPdfError = Boolean(pdfUploadError && pdfFileName && !pdfFile);
+  const hasReadableSource =
+    contentType === "youtube"
+      ? Boolean(youtubeUrl.trim())
+      : Boolean(uploadedPdfPath || pdfFileName) ||
+        (!removePdf && Boolean(content.storage_path)) ||
+        Boolean(externalUrl.trim()) ||
+        Boolean(youtubeUrl.trim()) ||
+        contentType === "template";
+  const isPublishedWithoutSource = status === "published" && !hasReadableSource;
 
   useEffect(() => {
     if ((state.error || state.success) && uploadedPdfPath) {
@@ -210,7 +219,7 @@ export function ContentEditForm({
               Voir la ressource
             </Link>
           ) : null}
-          <button className="button" disabled={isBusy || !title.trim() || hasBlockingPdfError} type="submit">
+          <button className="button" disabled={isBusy || !title.trim() || hasBlockingPdfError || isPublishedWithoutSource} type="submit">
             {isUploadingPdf ? "Upload PDF..." : pending ? "Mise à jour..." : "Enregistrer"}
           </button>
         </div>
@@ -490,6 +499,9 @@ export function ContentEditForm({
               </div>
             )}
 
+            {isPublishedWithoutSource ? (
+              <p className="form-error">Ajoute un PDF ou un lien avant de publier cette ressource.</p>
+            ) : null}
             {state.error || pdfUploadError ? <p className="form-error">{state.error ?? pdfUploadError}</p> : null}
             {state.success ? <p className="form-success">{state.success}</p> : null}
           </section>

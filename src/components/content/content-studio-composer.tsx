@@ -164,6 +164,11 @@ export function ContentStudioComposer({
     selectedTheme?.subthemes[0];
   const hasPdfFile = Boolean(pdfFileName);
   const hasPrimaryLink = Boolean((contentType === "youtube" ? youtubeUrl : externalUrl).trim());
+  const hasReadableSource =
+    contentType === "youtube"
+      ? Boolean(youtubeUrl.trim())
+      : hasPdfFile || Boolean(externalUrl.trim()) || Boolean(youtubeUrl.trim()) || contentType === "template";
+  const isPublishedWithoutSource = status === "published" && !hasReadableSource;
   const isUploadingPdf = pdfUploadState === "uploading";
   const isBusy = pending || isUploadingPdf;
   const hasBlockingPdfError = Boolean(pdfUploadError && pdfFileName && !pdfFile);
@@ -553,10 +558,13 @@ export function ContentStudioComposer({
             </div>
           </div>
 
+          {isPublishedWithoutSource ? (
+            <p className="form-error">Ajoute un PDF ou un lien avant de publier cette ressource.</p>
+          ) : null}
           {state.error || pdfUploadError ? <p className="form-error">{state.error ?? pdfUploadError}</p> : null}
           {state.success ? <p className="form-success">{state.success}</p> : null}
 
-          <button className="button" disabled={isBusy || !title.trim() || hasBlockingPdfError} type="submit">
+          <button className="button" disabled={isBusy || !title.trim() || hasBlockingPdfError || isPublishedWithoutSource} type="submit">
             {isUploadingPdf ? "Upload PDF..." : pending ? "Création..." : "Créer le contenu"}
           </button>
         </section>

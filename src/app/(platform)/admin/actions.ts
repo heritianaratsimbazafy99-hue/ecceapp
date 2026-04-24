@@ -164,6 +164,76 @@ function getUploadedContentPdfPath(formData: FormData, organizationId: string, a
   return { storagePath };
 }
 
+function validateHttpUrl(value: string, label: string) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return `${label} doit commencer par http:// ou https://.`;
+    }
+
+    return null;
+  } catch {
+    return `${label} n'est pas une URL valide.`;
+  }
+}
+
+function validateContentUrls({ externalUrl, youtubeUrl }: { externalUrl: string; youtubeUrl: string }) {
+  const externalUrlError = validateHttpUrl(externalUrl, "Le lien externe");
+
+  if (externalUrlError) {
+    return externalUrlError;
+  }
+
+  const youtubeUrlError = validateHttpUrl(youtubeUrl, "Le lien YouTube");
+
+  if (youtubeUrlError) {
+    return youtubeUrlError;
+  }
+
+  if (youtubeUrl) {
+    const host = new URL(youtubeUrl).hostname.replace(/^www\./, "");
+
+    if (!host.includes("youtube.com") && !host.includes("youtu.be")) {
+      return "Le lien YouTube doit pointer vers youtube.com ou youtu.be.";
+    }
+  }
+
+  return null;
+}
+
+function validatePublishedContentSource({
+  contentType,
+  externalUrl,
+  status,
+  storagePath,
+  youtubeUrl
+}: {
+  contentType: string;
+  externalUrl: string;
+  status: string;
+  storagePath: string | null;
+  youtubeUrl: string;
+}) {
+  if (status !== "published" || contentType === "template") {
+    return null;
+  }
+
+  if (contentType === "youtube" && !youtubeUrl) {
+    return "Ajoute un lien YouTube avant de publier cette ressource.";
+  }
+
+  if (!storagePath && !externalUrl && !youtubeUrl) {
+    return "Ajoute un PDF ou un lien exploitable avant de publier cette ressource.";
+  }
+
+  return null;
+}
+
 async function removeContentPdfFile(
   storagePath: string | null,
   admin: ReturnType<typeof createSupabaseAdminClient>
@@ -1048,6 +1118,23 @@ export async function createContentAction(
   const slug = slugify(title);
   const tags = tagsInput ? parseTagList(tagsInput) : [];
   const resolvedContentType = fileUpload.storagePath ? "document" : contentType;
+  const urlValidationError = validateContentUrls({ externalUrl, youtubeUrl });
+
+  if (urlValidationError) {
+    return failAndCleanupContentPdf(urlValidationError, fileUpload.storagePath, admin);
+  }
+
+  const sourceValidationError = validatePublishedContentSource({
+    contentType: resolvedContentType,
+    externalUrl,
+    status,
+    storagePath: fileUpload.storagePath,
+    youtubeUrl
+  });
+
+  if (sourceValidationError) {
+    return failAndCleanupContentPdf(sourceValidationError, fileUpload.storagePath, admin);
+  }
 
   const { error } = await admin.from("content_items").insert({
     organization_id: organizationId,
@@ -1173,6 +1260,23 @@ export async function updateContentAction(
   const tags = tagsInput ? parseTagList(tagsInput) : [];
   const resolvedStoragePath = fileUpload.storagePath ?? (removePdf ? null : existingResult.data.storage_path);
   const resolvedContentType = fileUpload.storagePath ? "document" : contentType;
+  const urlValidationError = validateContentUrls({ externalUrl, youtubeUrl });
+
+  if (urlValidationError) {
+    return failAndCleanupContentPdf(urlValidationError, fileUpload.storagePath, admin);
+  }
+
+  const sourceValidationError = validatePublishedContentSource({
+    contentType: resolvedContentType,
+    externalUrl,
+    status,
+    storagePath: resolvedStoragePath,
+    youtubeUrl
+  });
+
+  if (sourceValidationError) {
+    return failAndCleanupContentPdf(sourceValidationError, fileUpload.storagePath, admin);
+  }
 
   const { error } = await admin
     .from("content_items")
