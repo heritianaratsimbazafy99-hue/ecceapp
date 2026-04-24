@@ -8,10 +8,12 @@ import { cn } from "@/lib/utils";
 
 function buildProgressHref({
   query,
-  lane
+  lane,
+  page
 }: {
   query?: string;
   lane?: string;
+  page?: number;
 }) {
   const searchParams = new URLSearchParams();
 
@@ -21,6 +23,10 @@ function buildProgressHref({
 
   if (lane && lane !== "all") {
     searchParams.set("lane", lane);
+  }
+
+  if (page && page > 1) {
+    searchParams.set("page", String(page));
   }
 
   const value = searchParams.toString();
@@ -33,13 +39,15 @@ export default async function ProgressPage({
   searchParams: Promise<{
     query?: string;
     lane?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
-  const { events, filters, focusEvent, hero, highlights, laneBreakdown, metrics } =
+  const { events, filters, focusEvent, hero, highlights, laneBreakdown, metrics, pageInfo } =
     await getLearnerProgressHistoryPageData({
       query: params.query,
-      lane: params.lane
+      lane: params.lane,
+      page: params.page
     });
   const activeLaneBadge =
     filters.lane === "all" ? null : laneBreakdown.find((lane) => lane.id === filters.lane)?.label ?? null;
@@ -155,36 +163,76 @@ export default async function ProgressPage({
           </form>
 
           {events.length ? (
-            <div className="learner-progress-timeline">
-              {events.map((event) => (
-                <article className="learner-progress-event" key={event.id}>
-                  <div className={cn("learner-progress-event-marker", `tone-${event.tone}`)} aria-hidden="true" />
+            <>
+              <div className="tag-row">
+                <Badge tone="neutral">
+                  {pageInfo.from}-{pageInfo.to} / {pageInfo.totalItems} jalon(s)
+                </Badge>
+                <Badge tone="accent">
+                  Page {pageInfo.page}/{pageInfo.totalPages}
+                </Badge>
+              </div>
 
-                  <div className="learner-progress-event-body">
-                    <div className="learner-progress-event-topline">
-                      <div>
-                        <strong>{event.title}</strong>
-                        <p>{event.description}</p>
+              <div className="learner-progress-timeline">
+                {events.map((event) => (
+                  <article className="learner-progress-event" key={event.id}>
+                    <div className={cn("learner-progress-event-marker", `tone-${event.tone}`)} aria-hidden="true" />
+
+                    <div className="learner-progress-event-body">
+                      <div className="learner-progress-event-topline">
+                        <div>
+                          <strong>{event.title}</strong>
+                          <p>{event.description}</p>
+                        </div>
+                        <Badge tone={event.tone}>{event.laneLabel}</Badge>
                       </div>
-                      <Badge tone={event.tone}>{event.laneLabel}</Badge>
-                    </div>
 
-                    <div className="learner-progress-event-meta">
-                      <span>{event.occurredAt}</span>
-                      {event.meta.slice(0, 4).map((meta) => (
-                        <span key={`${event.id}-${meta}`}>{meta}</span>
-                      ))}
-                    </div>
+                      <div className="learner-progress-event-meta">
+                        <span>{event.occurredAt}</span>
+                        {event.meta.slice(0, 4).map((meta) => (
+                          <span key={`${event.id}-${meta}`}>{meta}</span>
+                        ))}
+                      </div>
 
-                    {event.href && event.ctaLabel ? (
-                      <Link className="inline-link" href={event.href}>
-                        {event.ctaLabel}
-                      </Link>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
+                      {event.href && event.ctaLabel ? (
+                        <Link className="inline-link" href={event.href}>
+                          {event.ctaLabel}
+                        </Link>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {pageInfo.totalPages > 1 ? (
+                <div className="tag-row">
+                  {pageInfo.hasPreviousPage ? (
+                    <Link
+                      className="button button-secondary button-small"
+                      href={buildProgressHref({
+                        query: filters.query,
+                        lane: filters.lane,
+                        page: pageInfo.page - 1
+                      })}
+                    >
+                      Page précédente
+                    </Link>
+                  ) : null}
+                  {pageInfo.hasNextPage ? (
+                    <Link
+                      className="button button-secondary button-small"
+                      href={buildProgressHref({
+                        query: filters.query,
+                        lane: filters.lane,
+                        page: pageInfo.page + 1
+                      })}
+                    >
+                      Page suivante
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
           ) : (
             <div className="empty-state">
               <strong>Aucun jalon dans cette vue.</strong>

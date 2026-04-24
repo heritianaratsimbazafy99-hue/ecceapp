@@ -160,6 +160,17 @@ type QuizAttemptResultRow = {
 type BadgeTone = "neutral" | "accent" | "warning" | "success";
 type MessageInboxLane = "reply" | "watch" | "aligned";
 
+const ADMIN_CONTENT_ANALYSIS_LIMIT = 240;
+const ADMIN_QUIZ_ANALYSIS_LIMIT = 180;
+const ADMIN_ASSIGNMENT_ANALYSIS_LIMIT = 240;
+const ADMIN_ACTIVITY_ANALYSIS_LIMIT = 900;
+const LIBRARY_RESOURCE_WINDOW_LIMIT = 260;
+const NOTIFICATION_ANALYSIS_LIMIT = 160;
+const NOTIFICATION_PAGE_SIZE = 30;
+const PROGRESS_TIMELINE_PAGE_SIZE = 30;
+const PROGRESS_ASSIGNMENT_ANALYSIS_LIMIT = 120;
+const PROGRESS_ENROLLMENT_ANALYSIS_LIMIT = 80;
+
 type SubmissionRow = {
   id: string;
   assignment_id: string | null;
@@ -567,6 +578,34 @@ function matchesDataSearch(values: Array<string | null | undefined>, normalizedQ
 
   const haystack = values.join(" ").toLowerCase();
   return haystack.includes(normalizedQuery.toLowerCase());
+}
+
+function getDataPage(value: string | number | null | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+}
+
+function paginateDataItems<T>(items: T[], pageValue: string | number | null | undefined, pageSize: number) {
+  const totalItems = items.length;
+  const totalPages = Math.max(Math.ceil(totalItems / pageSize), 1);
+  const requestedPage = getDataPage(pageValue);
+  const page = Math.min(requestedPage, totalPages);
+  const startIndex = (page - 1) * pageSize;
+  const pageItems = items.slice(startIndex, startIndex + pageSize);
+
+  return {
+    items: pageItems,
+    pageInfo: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      hasPreviousPage: page > 1,
+      hasNextPage: page < totalPages,
+      from: totalItems ? startIndex + 1 : 0,
+      to: totalItems ? startIndex + pageItems.length : 0
+    }
+  };
 }
 
 async function getCoachVisibleLearnerScope() {
@@ -1986,12 +2025,13 @@ export async function getMessagesPageData(filters?: {
   };
 }
 
-export async function getNotificationsPageData(params: { lane?: string } = {}) {
+export async function getNotificationsPageData(params: { lane?: string; page?: string; query?: string } = {}) {
   const context = await requireRole(["admin", "professor", "coach", "coachee"]);
   const admin = createSupabaseAdminClient();
   const organizationId = context.profile.organization_id;
   const userId = context.user.id;
   const activeRole = context.role ?? context.roles[0] ?? "coachee";
+  const normalizedQuery = normalizeDataSearchQuery(params.query);
 
   const notificationsResult = await admin
     .from("notifications")
@@ -1999,7 +2039,7 @@ export async function getNotificationsPageData(params: { lane?: string } = {}) {
     .eq("organization_id", organizationId)
     .eq("recipient_id", userId)
     .order("created_at", { ascending: false })
-    .limit(40);
+    .limit(NOTIFICATION_ANALYSIS_LIMIT);
 
   const notifications = (notificationsResult.data ?? []) as NotificationRow[];
   const decoratedNotifications = notifications.map((notification) => {
@@ -2013,10 +2053,23 @@ export async function getNotificationsPageData(params: { lane?: string } = {}) {
     };
   });
   const laneFilter: NotificationOpsLane | "all" = isNotificationOpsLane(params.lane) ? params.lane : "all";
+  const queryFilteredNotifications = decoratedNotifications.filter((notification) =>
+    matchesDataSearch(
+      [
+        notification.title,
+        notification.body,
+        notification.deeplink,
+        notification.laneLabel,
+        notification.categoryLabel,
+        notification.nextAction
+      ],
+      normalizedQuery
+    )
+  );
   const visibleNotifications =
     laneFilter === "all"
-      ? decoratedNotifications
-      : decoratedNotifications.filter((notification) => notification.lane === laneFilter);
+      ? queryFilteredNotifications
+      : queryFilteredNotifications.filter((notification) => notification.lane === laneFilter);
   const sortedVisibleNotifications = [...visibleNotifications].sort((left, right) => {
     return (
       left.priorityRank - right.priorityRank ||
@@ -2025,18 +2078,23 @@ export async function getNotificationsPageData(params: { lane?: string } = {}) {
       (getDateValue(right.created_at) ?? 0) - (getDateValue(left.created_at) ?? 0)
     );
   });
-  const unreadCount = decoratedNotifications.filter((item) => item.isUnread).length;
-  const recentSevenDayCount = decoratedNotifications.filter((item) => isWithinDays(item.created_at, 7)).length;
-  const actionCount = decoratedNotifications.filter((item) => item.lane === "action").length;
-  const reviewCount = decoratedNotifications.filter((item) => item.lane === "review").length;
-  const clearedCount = decoratedNotifications.filter((item) => item.lane === "cleared").length;
-  const actionableUnreadCount = decoratedNotifications.filter(
+  const { items: paginatedNotifications, pageInfo } = paginateDataItems(
+    sortedVisibleNotifications,
+    params.page,
+    NOTIFICATION_PAGE_SIZE
+  );
+  const unreadCount = queryFilteredNotifications.filter((item) => item.isUnread).length;
+  const recentSevenDayCount = queryFilteredNotifications.filter((item) => isWithinDays(item.created_at, 7)).length;
+  const actionCount = queryFilteredNotifications.filter((item) => item.lane === "action").length;
+  const reviewCount = queryFilteredNotifications.filter((item) => item.lane === "review").length;
+  const clearedCount = queryFilteredNotifications.filter((item) => item.lane === "cleared").length;
+  const actionableUnreadCount = queryFilteredNotifications.filter(
     (item) => item.isUnread && item.isActionable
   ).length;
   const filtersSummary =
-    laneFilter === "all"
-      ? `${decoratedNotifications.length} signal(aux) dans la vue live globale`
-      : `${visibleNotifications.length} signal(aux) dans ${getNotificationOpsLaneLabel(laneFilter).toLowerCase()}`;
+    `${visibleNotifications.length} signal(aux) ${
+      laneFilter === "all" ? "dans la vue live globale" : `dans ${getNotificationOpsLaneLabel(laneFilter).toLowerCase()}`
+    }${normalizedQuery ? ` · recherche « ${normalizedQuery} »` : ""}`;
   const categorySpotlights = Array.from(
     visibleNotifications.reduce((map, notification) => {
       const current = map.get(notification.category) ?? {
@@ -2126,7 +2184,7 @@ export async function getNotificationsPageData(params: { lane?: string } = {}) {
         href: focusSource.deeplink ?? null
       }
     : null;
-  const priorityNotifications = sortedVisibleNotifications.slice(0, 5).map((notification) => ({
+  const priorityNotifications = paginatedNotifications.slice(0, 5).map((notification) => ({
     id: notification.id,
     title: notification.title,
     body: notification.body ?? "Notification systeme ECCE",
@@ -2162,7 +2220,7 @@ export async function getNotificationsPageData(params: { lane?: string } = {}) {
 
   return {
     context,
-    notifications,
+    notifications: paginatedNotifications,
     metrics: [
       {
         label: "Actions immediates",
@@ -2184,7 +2242,9 @@ export async function getNotificationsPageData(params: { lane?: string } = {}) {
       {
         label: "Activite 7 jours",
         value: recentSevenDayCount.toString(),
-        delta: notifications[0] ? `Derniere alerte · ${formatDate(notifications[0].created_at)}` : "Aucun evenement recent"
+        delta: queryFilteredNotifications[0]
+          ? `Derniere alerte · ${formatDate(queryFilteredNotifications[0].created_at)}`
+          : "Aucun evenement recent"
       }
     ],
     hero: {
@@ -2195,8 +2255,10 @@ export async function getNotificationsPageData(params: { lane?: string } = {}) {
     },
     filters: {
       lane: laneFilter,
+      query: params.query?.trim() ?? "",
       summary: filtersSummary
     },
+    pageInfo,
     laneBreakdown: [
       {
         id: "action" as NotificationOpsLane,
@@ -5773,7 +5835,8 @@ export async function getAdminContentStudioPageData(filters?: {
     .from("programs")
     .select("id, title, slug, description, status, created_at")
     .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(100);
   const programs = (programsResult.data ?? []) as ProgramRow[];
   const programIds = programs.map((program) => program.id);
 
@@ -5791,21 +5854,27 @@ export async function getAdminContentStudioPageData(filters?: {
         "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, storage_path, youtube_url, is_required, created_at"
       )
       .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT),
     programIds.length
       ? admin
           .from("program_modules")
           .select("id, program_id, title, description, position, status, available_at")
           .in("program_id", programIds)
+          .limit(400)
       : Promise.resolve({ data: [] as ProgramModuleRow[] }),
     admin
       .from("quizzes")
       .select("id, title, content_item_id, status")
-      .eq("organization_id", organizationId),
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT * 3),
     admin
       .from("learning_assignments")
       .select("id, content_item_id, due_at, published_at")
-      .eq("organization_id", organizationId),
+      .eq("organization_id", organizationId)
+      .order("published_at", { ascending: false })
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT * 3),
     admin
       .from("content_taxonomy_themes")
       .select("id, label, description, position")
@@ -6453,7 +6522,8 @@ export async function getAdminContentEditPageData(contentId: string) {
     .from("programs")
     .select("id, title, slug, description, status, created_at")
     .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(100);
   const programs = (programsResult.data ?? []) as ProgramRow[];
   const programIds = programs.map((program) => program.id);
 
@@ -6615,7 +6685,8 @@ export async function getAdminQuizStudioPageData(filters?: {
       .from("content_items")
       .select("id, title, status")
       .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT),
     admin
       .from("quizzes")
       .select(
@@ -6648,22 +6719,27 @@ export async function getAdminQuizStudioPageData(filters?: {
         `
       )
       .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(ADMIN_QUIZ_ANALYSIS_LIMIT),
     programIds.length
       ? admin
           .from("program_modules")
           .select("id, program_id, title, description, position, status, available_at")
           .in("program_id", programIds)
+          .limit(400)
       : Promise.resolve({ data: [] as ProgramModuleRow[] }),
     admin
       .from("learning_assignments")
       .select("id, quiz_id, due_at, published_at")
       .eq("organization_id", organizationId)
-      .not("quiz_id", "is", null),
+      .not("quiz_id", "is", null)
+      .order("published_at", { ascending: false })
+      .limit(ADMIN_QUIZ_ANALYSIS_LIMIT * 4),
     admin
       .from("quiz_attempts")
       .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
-      .order("submitted_at", { ascending: false }),
+      .order("submitted_at", { ascending: false })
+      .limit(ADMIN_ACTIVITY_ANALYSIS_LIMIT),
     admin
       .from("profiles")
       .select("id, first_name, last_name")
@@ -7205,7 +7281,8 @@ export async function getAdminProgramStudioPageData(filters?: {
       .from("profiles")
       .select("id, first_name, last_name, status, user_roles(role)")
       .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(300),
     admin.auth.admin.listUsers({
       page: 1,
       perPage: 200
@@ -7798,17 +7875,20 @@ export async function getAdminAssignmentStudioPageData(filters?: {
       .from("content_items")
       .select("id, title, summary, content_type, status, estimated_minutes")
       .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(ADMIN_CONTENT_ANALYSIS_LIMIT),
     admin
       .from("quizzes")
       .select("id, title, description, kind, status, time_limit_minutes")
       .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(ADMIN_QUIZ_ANALYSIS_LIMIT),
     admin
       .from("learning_assignments")
       .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at, created_at")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
+      .limit(ADMIN_ASSIGNMENT_ANALYSIS_LIMIT)
   ]);
 
   const rawProfiles = (profilesResult.data ?? []) as ProfileRow[];
@@ -7866,7 +7946,8 @@ export async function getAdminAssignmentStudioPageData(filters?: {
             "user_id",
             coacheeProfiles.map((profile) => profile.id)
           )
-          .order("submitted_at", { ascending: false }),
+          .order("submitted_at", { ascending: false })
+          .limit(ADMIN_ACTIVITY_ANALYSIS_LIMIT),
         admin
           .from("submissions")
           .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, submitted_at, reviewed_at, created_at")
@@ -7874,7 +7955,8 @@ export async function getAdminAssignmentStudioPageData(filters?: {
             "user_id",
             coacheeProfiles.map((profile) => profile.id)
           )
-          .order("submitted_at", { ascending: false }),
+          .order("submitted_at", { ascending: false })
+          .limit(ADMIN_ACTIVITY_ANALYSIS_LIMIT),
         admin
           .from("content_progress")
           .select("id, user_id, content_item_id, assignment_id, status, completed_at, created_at")
@@ -7884,6 +7966,7 @@ export async function getAdminAssignmentStudioPageData(filters?: {
             coacheeProfiles.map((profile) => profile.id)
           )
           .order("completed_at", { ascending: false })
+          .limit(ADMIN_ACTIVITY_ANALYSIS_LIMIT)
       ])
     : [
         {
@@ -8536,7 +8619,8 @@ export async function getLibraryPageData(filters?: {
       .eq("status", "published")
       .order("category", { ascending: true })
       .order("position", { ascending: true })
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(LIBRARY_RESOURCE_WINDOW_LIMIT),
     admin
       .from("quizzes")
       .select(
@@ -8545,6 +8629,7 @@ export async function getLibraryPageData(filters?: {
       .eq("organization_id", organizationId)
       .eq("status", "published")
       .order("created_at", { ascending: false })
+      .limit(LIBRARY_RESOURCE_WINDOW_LIMIT)
   ]);
 
   const contents = (contentsResult.data ?? []) as ContentRow[];
@@ -12090,6 +12175,7 @@ export async function getLearnerProgramsPageData(filters?: {
 export async function getLearnerProgressHistoryPageData(filters?: {
   query?: string;
   lane?: string;
+  page?: string;
 }) {
   const context = await requireRole(["admin", "coachee"]);
   const admin = createSupabaseAdminClient();
@@ -12122,12 +12208,14 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       .select("id, title, due_at, assigned_user_id, cohort_id, content_item_id, quiz_id, published_at, created_at")
       .eq("organization_id", organizationId)
       .or(assignmentFilters.join(","))
-      .order("published_at", { ascending: false }),
+      .order("published_at", { ascending: false })
+      .limit(PROGRESS_ASSIGNMENT_ANALYSIS_LIMIT),
     admin
       .from("program_enrollments")
       .select("program_id, user_id, cohort_id, enrolled_at")
       .eq("user_id", userId)
-      .order("enrolled_at", { ascending: false }),
+      .order("enrolled_at", { ascending: false })
+      .limit(PROGRESS_ENROLLMENT_ANALYSIS_LIMIT),
     admin
       .from("quiz_attempts")
       .select("id, quiz_id, user_id, assignment_id, score, status, attempt_number, submitted_at")
@@ -12611,6 +12699,11 @@ export async function getLearnerProgressHistoryPageData(filters?: {
   const sortedEvents = queryFilteredEvents
     .filter((event) => laneFilter === "all" || event.lane === laneFilter)
     .sort((left, right) => (getDateValue(right.occurredAtIso) ?? 0) - (getDateValue(left.occurredAtIso) ?? 0));
+  const { items: paginatedEvents, pageInfo } = paginateDataItems(
+    sortedEvents,
+    filters?.page,
+    PROGRESS_TIMELINE_PAGE_SIZE
+  );
   const focusEvent = sortedEvents[0] ?? null;
   const activeFilterParts = [
     laneFilter !== "all" ? `lane ${getLearnerProgressLaneLabel(laneFilter).toLowerCase()}` : null,
@@ -12671,6 +12764,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       tone: getLearnerProgressLaneTone(lane),
       isActive: laneFilter === lane
     })),
+    pageInfo,
     focusEvent,
     highlights: [
       {
@@ -12703,7 +12797,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
         ctaLabel: "Voir mes parcours"
       }
     ],
-    events: sortedEvents.slice(0, 80)
+    events: paginatedEvents
   };
 }
 

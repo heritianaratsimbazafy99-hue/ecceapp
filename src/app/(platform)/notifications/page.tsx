@@ -8,11 +8,27 @@ import { type NotificationOpsLane } from "@/lib/notification-ops";
 import { getNotificationsPageData } from "@/lib/platform-data";
 import { cn } from "@/lib/utils";
 
-function buildNotificationsHref(lane?: NotificationOpsLane | "all") {
+function buildNotificationsHref({
+  lane,
+  page,
+  query
+}: {
+  lane?: NotificationOpsLane | "all";
+  page?: number;
+  query?: string;
+} = {}) {
   const searchParams = new URLSearchParams();
 
   if (lane && lane !== "all") {
     searchParams.set("lane", lane);
+  }
+
+  if (query?.trim()) {
+    searchParams.set("query", query.trim());
+  }
+
+  if (page && page > 1) {
+    searchParams.set("page", String(page));
   }
 
   const value = searchParams.toString();
@@ -24,6 +40,8 @@ export default async function NotificationsPage({
 }: {
   searchParams: Promise<{
     lane?: string;
+    page?: string;
+    query?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -34,12 +52,15 @@ export default async function NotificationsPage({
     hero,
     filters,
     laneBreakdown,
+    pageInfo,
     focusNotification,
     priorityNotifications,
     categorySpotlights,
     responsePlaybook
   } = await getNotificationsPageData({
-    lane: params.lane
+    lane: params.lane,
+    page: params.page,
+    query: params.query
   });
   const activeLaneBadge =
     filters.lane === "all"
@@ -90,7 +111,10 @@ export default async function NotificationsPage({
             {laneBreakdown.map((lane) => (
               <Link
                 className={cn("notifications-lane-card", lane.isActive && "is-active")}
-                href={buildNotificationsHref(filters.lane === lane.id ? "all" : lane.id)}
+                href={buildNotificationsHref({
+                  lane: filters.lane === lane.id ? "all" : lane.id,
+                  query: filters.query
+                })}
                 key={lane.id}
               >
                 <span>{lane.label}</span>
@@ -127,8 +151,23 @@ export default async function NotificationsPage({
             </Link>
           </div>
 
+          <form className="library-search-bar" method="get">
+            {filters.lane !== "all" ? <input name="lane" type="hidden" value={filters.lane} /> : null}
+            <input
+              defaultValue={filters.query}
+              name="query"
+              placeholder="Rechercher une notification, une action ou une destination..."
+              type="search"
+            />
+            <button className="button button-secondary" type="submit">
+              Rechercher
+            </button>
+          </form>
+
           <div className="tag-row">
-            <Badge tone="neutral">{notifications.length} notification(s) chargee(s)</Badge>
+            <Badge tone="neutral">
+              {pageInfo.from}-{pageInfo.to} / {pageInfo.totalItems} signal(aux)
+            </Badge>
             <Badge tone="accent">{priorityNotifications.length} dans la watchlist</Badge>
             {focusNotification ? <Badge tone={focusNotification.tone}>{focusNotification.categoryLabel}</Badge> : null}
           </div>
@@ -185,6 +224,38 @@ export default async function NotificationsPage({
               <p>Reviens sur la vue globale ou attends les prochains evenements pour remplir la watchlist.</p>
             </div>
           )}
+
+          {pageInfo.totalPages > 1 ? (
+            <div className="tag-row">
+              {pageInfo.hasPreviousPage ? (
+                <Link
+                  className="button button-secondary button-small"
+                  href={buildNotificationsHref({
+                    lane: filters.lane,
+                    page: pageInfo.page - 1,
+                    query: filters.query
+                  })}
+                >
+                  Page précédente
+                </Link>
+              ) : null}
+              <Badge tone="neutral">
+                Page {pageInfo.page}/{pageInfo.totalPages}
+              </Badge>
+              {pageInfo.hasNextPage ? (
+                <Link
+                  className="button button-secondary button-small"
+                  href={buildNotificationsHref({
+                    lane: filters.lane,
+                    page: pageInfo.page + 1,
+                    query: filters.query
+                  })}
+                >
+                  Page suivante
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <aside className="notifications-side-stack">
