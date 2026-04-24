@@ -120,6 +120,30 @@ export function LibraryExplorer({
   const totalResources = groups.reduce((total, group) => total + group.items.length, 0);
   const totalSubthemes = themeMap.reduce((total, theme) => total + theme.subthemes.length, 0);
   const activeFilterLabel = activeTag === "all" ? "Toute la bibliothèque" : activeTag;
+  const availableFilters = new Set(taxonomy);
+  const resolveCoachFilter = (options: string[]) => options.find((option) => availableFilters.has(option)) ?? "all";
+  const coachLanes = [
+    {
+      label: "Préparer une séance",
+      description: "Cadre, scripts, supports et ressources à ouvrir avant un rendez-vous.",
+      filter: resolveCoachFilter(["Cadre de séance", "Pratique coach", "Outils et scripts", "séance"])
+    },
+    {
+      label: "Relancer un coaché",
+      description: "Ressources utiles quand l’engagement, les deadlines ou la motivation baissent.",
+      filter: resolveCoachFilter(["Engagement", "deadline", "relance", "motivation"])
+    },
+    {
+      label: "Renforcer un acquis",
+      description: "Quiz, feedbacks et contenus pivots pour consolider une compétence fragile.",
+      filter: resolveCoachFilter(["Évaluation", "quiz", "feedback", "compétence"])
+    },
+    {
+      label: "Outiller une action",
+      description: "Templates, exercices et trames directement activables en accompagnement.",
+      filter: resolveCoachFilter(["Outils et scripts", "template", "exercice", "support"])
+    }
+  ];
 
   return (
     <div className="library-explorer">
@@ -182,6 +206,19 @@ export function LibraryExplorer({
         <div className="library-taxonomy-summary">
           <strong>{activeFilterLabel}</strong>
           <span>{totalResources} ressource(s) dans la vue active sur {totalResourceCount} publiée(s), dont {themeMap.reduce((total, theme) => total + theme.quizCount, 0)} quiz rattachés au plan pédagogique.</span>
+        </div>
+
+        <div className="library-coach-lane-grid">
+          {coachLanes.map((lane) => (
+            <Link
+              className={`library-coach-lane-card${lane.filter !== "all" && activeTag === lane.filter ? " is-active" : ""}`}
+              href={buildLibraryHref({ filter: lane.filter, query: search })}
+              key={lane.label}
+            >
+              <strong>{lane.label}</strong>
+              <span>{lane.description}</span>
+            </Link>
+          ))}
         </div>
 
         <div className="library-taxonomy-map">

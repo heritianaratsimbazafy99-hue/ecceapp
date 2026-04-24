@@ -79,6 +79,17 @@ function formatDateForAudit(value: string) {
   }).format(new Date(value));
 }
 
+function parseTagList(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((tag) => tag.trim().replace(/\s+/g, " "))
+        .filter(Boolean)
+    )
+  );
+}
+
 async function ensureProgramBelongsToOrganization(
   programId: string,
   organizationId: string
@@ -801,12 +812,7 @@ export async function createContentAction(
   }
 
   const slug = slugify(title);
-  const tags = tagsInput
-    ? tagsInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-    : [];
+  const tags = tagsInput ? parseTagList(tagsInput) : [];
 
   const { error } = await admin.from("content_items").insert({
     organization_id: organizationId,
@@ -848,6 +854,117 @@ export async function createContentAction(
   revalidatePath("/dashboard");
 
   return ok(`Contenu "${title}" créé.`);
+}
+
+export async function updateContentAction(
+  _prevState: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  const context = await requireRole(["admin"]);
+  const organizationId = context.profile.organization_id;
+  const admin = createSupabaseAdminClient();
+
+  const contentId = String(formData.get("content_id") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const summary = String(formData.get("summary") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim();
+  const subcategory = String(formData.get("subcategory") ?? "").trim();
+  const moduleId = String(formData.get("module_id") ?? "").trim();
+  const contentType = String(formData.get("content_type") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const tagsInput = String(formData.get("tags") ?? "").trim();
+  const externalUrl = String(formData.get("external_url") ?? "").trim();
+  const youtubeUrl = String(formData.get("youtube_url") ?? "").trim();
+  const estimatedMinutes = Number(String(formData.get("estimated_minutes") ?? "").trim() || 0);
+  const isRequired = String(formData.get("is_required") ?? "") === "on";
+
+  if (!contentId) {
+    return fail("Le contenu à modifier est introuvable.");
+  }
+
+  if (!title || !VALID_CONTENT_TYPES.includes(contentType as (typeof VALID_CONTENT_TYPES)[number])) {
+    return fail("Le titre et le type de contenu sont obligatoires.");
+  }
+
+  if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
+    return fail("Le statut de publication n'est pas valide.");
+  }
+
+  const existingResult = await admin
+    .from("content_items")
+    .select("id, title, slug, status")
+    .eq("organization_id", organizationId)
+    .eq("id", contentId)
+    .maybeSingle<{
+      id: string;
+      title: string;
+      slug: string;
+      status: string;
+    }>();
+
+  if (existingResult.error || !existingResult.data) {
+    return fail("Le contenu à modifier est introuvable.");
+  }
+
+  if (moduleId) {
+    const moduleResult = await ensureProgramModuleBelongsToOrganization(moduleId, organizationId);
+
+    if (!moduleResult) {
+      return fail("Le module de parcours sélectionné est introuvable.");
+    }
+  }
+
+  const tags = tagsInput ? parseTagList(tagsInput) : [];
+
+  const { error } = await admin
+    .from("content_items")
+    .update({
+      title,
+      module_id: moduleId || null,
+      summary: summary || null,
+      category: category || null,
+      subcategory: subcategory || null,
+      tags,
+      content_type: contentType,
+      status,
+      external_url: externalUrl || null,
+      youtube_url: youtubeUrl || null,
+      is_required: isRequired,
+      estimated_minutes: estimatedMinutes > 0 ? estimatedMinutes : null
+    })
+    .eq("organization_id", organizationId)
+    .eq("id", contentId);
+
+  if (error) {
+    return fail(error.message);
+  }
+
+  await createAuditEvent({
+    organizationId,
+    actorId: context.user.id,
+    category: "curriculum",
+    action: "content.updated",
+    summary: `Contenu "${title}" mis à jour.`,
+    targetType: "content",
+    targetId: contentId,
+    targetLabel: title,
+    highlights: [
+      `ancien titre ${existingResult.data.title}`,
+      contentType,
+      status,
+      tags.length >= 3 ? `${tags.length} sujets` : "taxonomie à compléter"
+    ]
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/content");
+  revalidatePath(`/admin/content/${contentId}`);
+  revalidateAdminAudit();
+  revalidatePath("/library");
+  revalidatePath(`/library/${existingResult.data.slug}`);
+  revalidatePath("/dashboard");
+
+  return ok(`Contenu "${title}" mis à jour.`);
 }
 
 export async function createContentTaxonomyThemeAction(

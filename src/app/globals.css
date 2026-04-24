@@ -2433,7 +2433,15 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-taxonomy-form,
 .admin-content-taxonomy-report,
 .admin-content-taxonomy-card,
-.admin-content-issue-list {
+.admin-content-issue-list,
+.admin-content-card-actions,
+.content-edit-shell,
+.content-edit-hero,
+.content-edit-copy,
+.content-edit-actions,
+.content-edit-layout,
+.content-edit-main,
+.content-edit-side {
   display: grid;
   gap: 24px;
 }
@@ -2463,7 +2471,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-content-card-copy p,
 .admin-content-focus-copy p,
 .admin-content-category-card p,
-.admin-content-taxonomy-map p {
+.admin-content-taxonomy-map p,
+.content-edit-copy h3,
+.content-edit-copy p {
   margin: 0;
 }
 
@@ -2472,7 +2482,31 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   line-height: 1.02;
 }
 
-.admin-content-actions {
+.content-edit-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  background:
+    radial-gradient(circle at top right, rgba(47, 104, 85, 0.14), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(242, 248, 244, 0.92));
+}
+
+.content-edit-copy {
+  gap: 14px;
+}
+
+.content-edit-copy h3 {
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  line-height: 1.04;
+}
+
+.content-edit-layout {
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  align-items: start;
+}
+
+.admin-content-actions,
+.admin-content-card-actions,
+.content-edit-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -2645,6 +2679,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-taxonomy-layout,
   .admin-content-taxonomy-map,
   .admin-content-taxonomy-report,
+  .content-edit-hero,
+  .content-edit-layout,
   .admin-content-summary,
   .admin-content-focus-metrics,
   .admin-content-card-progress,
@@ -2666,6 +2702,8 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-content-taxonomy-layout,
   .admin-content-taxonomy-map,
   .admin-content-taxonomy-report,
+  .content-edit-hero,
+  .content-edit-layout,
   .admin-content-summary,
   .admin-content-focus-metrics,
   .admin-content-card-progress,
@@ -2674,7 +2712,9 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
     grid-template-columns: 1fr;
   }
 
-  .admin-content-actions {
+  .admin-content-actions,
+  .admin-content-card-actions,
+  .content-edit-actions {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -3193,6 +3233,40 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .library-taxonomy-summary span {
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.library-coach-lane-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.library-coach-lane-card {
+  display: grid;
+  gap: 8px;
+  min-height: 118px;
+  padding: 16px;
+  border: 1px solid rgba(16, 24, 32, 0.08);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(47, 104, 85, 0.08), transparent 32%),
+    rgba(255, 255, 255, 0.76);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.library-coach-lane-card:hover,
+.library-coach-lane-card.is-active {
+  transform: translateY(-2px);
+  border-color: rgba(47, 104, 85, 0.24);
+  box-shadow: 0 18px 42px rgba(16, 24, 32, 0.08);
+}
+
+.library-coach-lane-card span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .library-taxonomy-map {
@@ -8321,6 +8395,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .program-admin-kpis,
   .program-card-metrics,
   .agenda-hero-metrics,
+  .library-coach-lane-grid,
   .library-taxonomy-map,
   .content-taxonomy-theme-grid,
   .content-taxonomy-subtheme-grid {
@@ -8516,6 +8591,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .program-card-metrics,
   .library-intelligence-grid,
   .library-search-bar,
+  .library-coach-lane-grid,
   .library-taxonomy-map,
   .content-taxonomy-theme-grid,
   .content-taxonomy-subtheme-grid {

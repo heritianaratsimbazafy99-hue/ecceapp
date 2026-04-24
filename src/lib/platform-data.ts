@@ -5686,6 +5686,7 @@ export async function getAdminContentStudioPageData(filters?: {
       moduleLabel: programModule
         ? `${programTitle} · Module ${programModule.position + 1} · ${programModule.title}`
         : "Hors parcours",
+      editHref: `/admin/content/${content.id}`,
       previewHref: content.status === "published" ? `/library/${content.slug}` : "#content-studio",
       ctaLabel: content.status === "published" ? "Voir dans la bibliothèque" : "Compléter dans le studio",
       laneLabel:
@@ -5782,7 +5783,7 @@ export async function getAdminContentStudioPageData(filters?: {
       tagCount: content.tags?.length ?? 0,
       taxonomyScore: content.taxonomyScore,
       issues: content.taxonomyIssues,
-      previewHref: content.previewHref
+      editHref: content.editHref
     }));
   const focusContent = sortedVisibleContents[0] ?? null;
   const categoryRadar = Array.from(
@@ -5911,8 +5912,8 @@ export async function getAdminContentStudioPageData(filters?: {
           id: "taxonomy",
           title: `${visibleContents.filter((content) => content.taxonomyScore < 3).length} ressource(s) demandent encore un cadrage éditorial`,
           description: "Catégorie, résumé et tags restent essentiels pour rendre la bibliothèque navigable.",
-          href: "#content-studio",
-          ctaLabel: "Renforcer la taxonomie",
+          href: taxonomyGapReport[0]?.editHref ?? "#content-taxonomy",
+          ctaLabel: "Corriger la première fiche",
           tone: "accent" as const
         }
       : {
@@ -6046,6 +6047,152 @@ export async function getAdminContentStudioPageData(filters?: {
     editorialFeed,
     contents: visibleContents,
     moduleOptions,
+    taxonomyPresets
+  };
+}
+
+export async function getAdminContentEditPageData(contentId: string) {
+  const context = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+  const organizationId = context.profile.organization_id;
+
+  const programsResult = await admin
+    .from("programs")
+    .select("id, title, slug, description, status, created_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false });
+  const programs = (programsResult.data ?? []) as ProgramRow[];
+  const programIds = programs.map((program) => program.id);
+
+  const [
+    contentResult,
+    modulesResult,
+    quizzesResult,
+    assignmentsResult,
+    taxonomyThemesResult,
+    taxonomySubthemesResult
+  ] = await Promise.all([
+    admin
+      .from("content_items")
+      .select(
+        "id, module_id, title, slug, summary, category, subcategory, tags, content_type, status, estimated_minutes, external_url, youtube_url, is_required, created_at"
+      )
+      .eq("organization_id", organizationId)
+      .eq("id", contentId)
+      .maybeSingle<ContentRow>(),
+    programIds.length
+      ? admin
+          .from("program_modules")
+          .select("id, program_id, title, description, position, status, available_at")
+          .in("program_id", programIds)
+      : Promise.resolve({ data: [] as ProgramModuleRow[] }),
+    admin
+      .from("quizzes")
+      .select("id, title, status")
+      .eq("organization_id", organizationId)
+      .eq("content_item_id", contentId),
+    admin
+      .from("learning_assignments")
+      .select("id, due_at, published_at")
+      .eq("organization_id", organizationId)
+      .eq("content_item_id", contentId),
+    admin
+      .from("content_taxonomy_themes")
+      .select("id, label, description, position")
+      .eq("organization_id", organizationId)
+      .order("position", { ascending: true })
+      .order("label", { ascending: true }),
+    admin
+      .from("content_taxonomy_subthemes")
+      .select("id, theme_id, label, topics, position")
+      .eq("organization_id", organizationId)
+      .order("position", { ascending: true })
+      .order("label", { ascending: true })
+  ]);
+
+  if (contentResult.error || !contentResult.data) {
+    return null;
+  }
+
+  const content = contentResult.data;
+  const modules = (modulesResult.data ?? []) as ProgramModuleRow[];
+  const quizzes = (quizzesResult.data ?? []) as Array<{ id: string; title: string; status: string }>;
+  const assignments = (assignmentsResult.data ?? []) as Array<{
+    id: string;
+    due_at: string | null;
+    published_at: string | null;
+  }>;
+  const taxonomyThemes = (taxonomyThemesResult.data ?? []) as ContentTaxonomyThemeRow[];
+  const taxonomySubthemes = (taxonomySubthemesResult.data ?? []) as ContentTaxonomySubthemeRow[];
+  const taxonomyPresets = taxonomyThemes.map((theme) => ({
+    id: theme.id,
+    theme: theme.label,
+    description: theme.description ?? "",
+    subthemes: taxonomySubthemes
+      .filter((subtheme) => subtheme.theme_id === theme.id)
+      .map((subtheme) => ({
+        id: subtheme.id,
+        label: subtheme.label,
+        topics: subtheme.topics ?? []
+      }))
+  }));
+  const tags = content.tags ?? [];
+  const taxonomyIssues = [
+    content.summary?.trim() ? null : "Résumé manquant",
+    content.category?.trim() ? null : "Thème manquant",
+    content.subcategory?.trim() ? null : "Sous-thème manquant",
+    tags.length >= 3 ? null : "Moins de 3 sujets abordés"
+  ].filter(Boolean) as string[];
+  const taxonomyScore = 4 - taxonomyIssues.length;
+  const statusTone: BadgeTone =
+    content.status === "published"
+      ? "success"
+      : content.status === "scheduled"
+        ? "accent"
+        : content.status === "draft"
+          ? "warning"
+          : "neutral";
+  const assignmentOverdueCount = assignments.filter(
+    (assignment) => getDeadlineState(assignment.due_at, false) === "overdue"
+  ).length;
+
+  return {
+    context,
+    content: {
+      ...content,
+      tags,
+      tagsInput: tags.join(", "),
+      taxonomyIssues,
+      taxonomyScore,
+      statusTone,
+      createdAt: formatDate(content.created_at),
+      publishedHref: `/library/${content.slug}`
+    },
+    metrics: [
+      {
+        label: "Taxonomie",
+        value: `${taxonomyScore}/4`,
+        delta: taxonomyIssues.length ? `${taxonomyIssues.length} correction(s)` : "prête"
+      },
+      {
+        label: "Quiz liés",
+        value: quizzes.length.toString(),
+        delta: `${quizzes.filter((quiz) => quiz.status === "published").length} publié(s)`
+      },
+      {
+        label: "Assignations",
+        value: assignments.length.toString(),
+        delta: assignmentOverdueCount ? `${assignmentOverdueCount} en retard` : "rythme stable"
+      },
+      {
+        label: "Format",
+        value: content.content_type,
+        delta: content.estimated_minutes ? `${content.estimated_minutes} min` : "durée libre"
+      }
+    ],
+    linkedQuizzes: quizzes,
+    assignmentCount: assignments.length,
+    moduleOptions: buildProgramModuleOptions(programs, modules),
     taxonomyPresets
   };
 }

@@ -271,9 +271,14 @@ export default async function AdminContentPage({
                   <span>{focusContent.moduleLabel}</span>
                 </div>
 
-                <Link className="button button-secondary button-small" href={focusContent.previewHref}>
-                  {focusContent.ctaLabel}
-                </Link>
+                <div className="admin-content-card-actions">
+                  <Link className="button button-secondary button-small" href={focusContent.editHref}>
+                    Éditer
+                  </Link>
+                  <Link className="button button-secondary button-small" href={focusContent.previewHref}>
+                    {focusContent.ctaLabel}
+                  </Link>
+                </div>
               </>
             ) : (
               <div className="empty-state empty-state-compact">
@@ -354,8 +359,8 @@ export default async function AdminContentPage({
                   ))}
                 </div>
 
-                <Link className="button button-secondary button-small" href={content.previewHref}>
-                  Revoir la ressource
+                <Link className="button button-secondary button-small" href={content.editHref}>
+                  Corriger la fiche
                 </Link>
               </article>
             ))}
@@ -432,9 +437,14 @@ export default async function AdminContentPage({
                   </div>
                 </div>
 
-                <Link className="button button-secondary button-small" href={content.previewHref}>
-                  {content.ctaLabel}
-                </Link>
+                <div className="admin-content-card-actions">
+                  <Link className="button button-secondary button-small" href={content.editHref}>
+                    Éditer
+                  </Link>
+                  <Link className="button button-secondary button-small" href={content.previewHref}>
+                    {content.ctaLabel}
+                  </Link>
+                </div>
               </article>
             ))}
           </div>
