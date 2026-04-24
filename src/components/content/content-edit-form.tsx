@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useActionState, useMemo, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { updateContentAction, type AdminActionState } from "@/app/(platform)/admin/actions";
 import type { ContentTaxonomyPreset } from "@/components/content/content-studio-composer";
@@ -83,7 +83,9 @@ export function ContentEditForm({
   const [pdfUploadError, setPdfUploadError] = useState("");
   const [pdfUploadState, setPdfUploadState] = useState<"idle" | "uploading" | "uploaded">("idle");
   const [uploadedPdfPath, setUploadedPdfPath] = useState("");
+  const [removePdf, setRemovePdf] = useState(false);
   const [selectedThemeId, setSelectedThemeId] = useState(initialPreset?.id ?? "");
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
 
   const tagList = tags
     .split(",")
@@ -109,6 +111,18 @@ export function ContentEditForm({
   const isBusy = pending || isUploadingPdf;
   const hasBlockingPdfError = Boolean(pdfUploadError && pdfFileName && !pdfFile);
 
+  useEffect(() => {
+    if ((state.error || state.success) && uploadedPdfPath) {
+      setUploadedPdfPath("");
+      setPdfFile(null);
+      setPdfFileName("");
+      setPdfUploadState("idle");
+      if (pdfInputRef.current) {
+        pdfInputRef.current.value = "";
+      }
+    }
+  }, [state.error, state.success, uploadedPdfPath]);
+
   function applyTheme(preset: ContentTaxonomyPreset) {
     const firstSubtheme = preset.subthemes[0];
 
@@ -121,6 +135,18 @@ export function ContentEditForm({
   function applySubtheme(subtheme: ContentTaxonomyPreset["subthemes"][number]) {
     setSubcategory(subtheme.label);
     setTags((currentTags) => mergeTags(currentTags, subtheme.topics));
+  }
+
+  function clearSelectedPdf() {
+    setPdfFile(null);
+    setPdfFileName("");
+    setPdfUploadError("");
+    setPdfUploadState("idle");
+    setUploadedPdfPath("");
+
+    if (pdfInputRef.current) {
+      pdfInputRef.current.value = "";
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -157,6 +183,7 @@ export function ContentEditForm({
     <form action={formAction} className="content-edit-shell admin-form" onSubmit={handleSubmit}>
       <input name="content_id" type="hidden" value={content.id} />
       <input name="uploaded_storage_path" type="hidden" value={uploadedPdfPath} />
+      <input name="remove_pdf" type="hidden" value={removePdf ? "true" : ""} />
 
       <section className="panel panel-highlight content-edit-hero">
         <div className="content-edit-copy">
@@ -346,15 +373,22 @@ export function ContentEditForm({
               <div className="content-pdf-uploader form-grid-span">
                 <div>
                   <span className="eyebrow">Cours PDF</span>
-                  <strong>{content.storage_path ? "PDF déjà rattaché" : "Ajouter un PDF ECCE"}</strong>
+                  <strong>
+                    {removePdf
+                      ? "PDF marqué pour suppression"
+                      : content.storage_path
+                        ? "PDF déjà rattaché"
+                        : "Ajouter un PDF ECCE"}
+                  </strong>
                   <p>
-                    Dépose un nouveau PDF pour remplacer le support lu par les coachés dans l&apos;application.
+                    Remplace ou retire le support PDF lu par les coachés dans l&apos;application.
                   </p>
                 </div>
                 <label>
                   Fichier PDF
                   <input
                     accept="application/pdf,.pdf"
+                    ref={pdfInputRef}
                     onChange={(event) => {
                       const file = event.target.files?.[0] ?? null;
                       const validationError = validateContentPdfFile(file);
@@ -364,6 +398,7 @@ export function ContentEditForm({
                       setPdfUploadError(validationError ?? "");
                       setPdfUploadState("idle");
                       setUploadedPdfPath("");
+                      setRemovePdf(false);
 
                       if (file) {
                         setContentType("document");
@@ -381,10 +416,44 @@ export function ContentEditForm({
                         : isUploadingPdf
                           ? "Téléversement direct vers Supabase..."
                           : `Nouveau PDF prêt : ${pdfFileName}`
-                    : content.storage_path
+                    : removePdf
+                      ? "Le PDF actuel sera supprimé à l'enregistrement."
+                      : content.storage_path
                       ? "Le PDF actuel sera conservé si aucun nouveau fichier n'est déposé."
                       : "Format accepté : PDF jusqu'à 100 Mo."}
                 </small>
+                {content.storage_path || pdfFileName || removePdf ? (
+                  <div className="table-actions">
+                    {pdfFileName ? (
+                      <button className="button button-secondary button-small" disabled={isBusy} onClick={clearSelectedPdf} type="button">
+                        Retirer la sélection
+                      </button>
+                    ) : null}
+                    {content.storage_path && !removePdf ? (
+                      <button
+                        className="button button-secondary button-small"
+                        disabled={isBusy}
+                        onClick={() => {
+                          clearSelectedPdf();
+                          setRemovePdf(true);
+                        }}
+                        type="button"
+                      >
+                        Supprimer le PDF
+                      </button>
+                    ) : null}
+                    {removePdf ? (
+                      <button
+                        className="button button-secondary button-small"
+                        disabled={isBusy}
+                        onClick={() => setRemovePdf(false)}
+                        type="button"
+                      >
+                        Conserver le PDF
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <label className="form-grid-span">

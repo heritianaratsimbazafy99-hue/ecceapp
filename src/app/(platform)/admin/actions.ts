@@ -154,6 +154,30 @@ function getUploadedContentPdfPath(formData: FormData, organizationId: string, a
   return { storagePath };
 }
 
+async function removeContentPdfFile(
+  storagePath: string | null,
+  admin: ReturnType<typeof createSupabaseAdminClient>
+) {
+  if (!storagePath) {
+    return;
+  }
+
+  try {
+    await admin.storage.from(CONTENT_FILE_BUCKET).remove([storagePath]);
+  } catch {
+    // Cleanup is best-effort: the content save error should remain the user-facing signal.
+  }
+}
+
+async function failAndCleanupContentPdf(
+  error: string,
+  storagePath: string | null,
+  admin: ReturnType<typeof createSupabaseAdminClient>
+) {
+  await removeContentPdfFile(storagePath, admin);
+  return fail(error);
+}
+
 export async function createContentPdfUploadTicketAction(
   formData: FormData
 ): Promise<ContentPdfUploadTicketState> {
@@ -907,31 +931,38 @@ export async function createContentAction(
   const youtubeUrl = String(formData.get("youtube_url") ?? "").trim();
   const estimatedMinutes = Number(String(formData.get("estimated_minutes") ?? "").trim() || 0);
   const isRequired = String(formData.get("is_required") ?? "") === "on";
-
-  if (!title || !VALID_CONTENT_TYPES.includes(contentType as (typeof VALID_CONTENT_TYPES)[number])) {
-    return fail("Le titre et le type de contenu sont obligatoires.");
-  }
-
-  if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
-    return fail("Le statut de publication n'est pas valide.");
-  }
-
-  if (moduleId) {
-    const moduleResult = await ensureProgramModuleBelongsToOrganization(moduleId, organizationId);
-
-    if (!moduleResult) {
-      return fail("Le module de parcours sélectionné est introuvable.");
-    }
-  }
-
-  const slug = slugify(title);
-  const tags = tagsInput ? parseTagList(tagsInput) : [];
   const fileUpload = getUploadedContentPdfPath(formData, organizationId, context.user.id);
 
   if (fileUpload.error) {
     return fail(fileUpload.error);
   }
 
+  if (!title || !VALID_CONTENT_TYPES.includes(contentType as (typeof VALID_CONTENT_TYPES)[number])) {
+    return failAndCleanupContentPdf(
+      "Le titre et le type de contenu sont obligatoires.",
+      fileUpload.storagePath,
+      admin
+    );
+  }
+
+  if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
+    return failAndCleanupContentPdf("Le statut de publication n'est pas valide.", fileUpload.storagePath, admin);
+  }
+
+  if (moduleId) {
+    const moduleResult = await ensureProgramModuleBelongsToOrganization(moduleId, organizationId);
+
+    if (!moduleResult) {
+      return failAndCleanupContentPdf(
+        "Le module de parcours sélectionné est introuvable.",
+        fileUpload.storagePath,
+        admin
+      );
+    }
+  }
+
+  const slug = slugify(title);
+  const tags = tagsInput ? parseTagList(tagsInput) : [];
   const resolvedContentType = fileUpload.storagePath ? "document" : contentType;
 
   const { error } = await admin.from("content_items").insert({
@@ -954,7 +985,7 @@ export async function createContentAction(
   });
 
   if (error) {
-    return fail(error.message);
+    return failAndCleanupContentPdf(error.message, fileUpload.storagePath, admin);
   }
 
   await createAuditEvent({
@@ -1003,17 +1034,27 @@ export async function updateContentAction(
   const youtubeUrl = String(formData.get("youtube_url") ?? "").trim();
   const estimatedMinutes = Number(String(formData.get("estimated_minutes") ?? "").trim() || 0);
   const isRequired = String(formData.get("is_required") ?? "") === "on";
+  const removePdf = String(formData.get("remove_pdf") ?? "").trim() === "true";
+  const fileUpload = getUploadedContentPdfPath(formData, organizationId, context.user.id);
+
+  if (fileUpload.error) {
+    return fail(fileUpload.error);
+  }
 
   if (!contentId) {
-    return fail("Le contenu à modifier est introuvable.");
+    return failAndCleanupContentPdf("Le contenu à modifier est introuvable.", fileUpload.storagePath, admin);
   }
 
   if (!title || !VALID_CONTENT_TYPES.includes(contentType as (typeof VALID_CONTENT_TYPES)[number])) {
-    return fail("Le titre et le type de contenu sont obligatoires.");
+    return failAndCleanupContentPdf(
+      "Le titre et le type de contenu sont obligatoires.",
+      fileUpload.storagePath,
+      admin
+    );
   }
 
   if (!VALID_PUBLICATION_STATUS.includes(status as (typeof VALID_PUBLICATION_STATUS)[number])) {
-    return fail("Le statut de publication n'est pas valide.");
+    return failAndCleanupContentPdf("Le statut de publication n'est pas valide.", fileUpload.storagePath, admin);
   }
 
   const existingResult = await admin
@@ -1030,25 +1071,23 @@ export async function updateContentAction(
     }>();
 
   if (existingResult.error || !existingResult.data) {
-    return fail("Le contenu à modifier est introuvable.");
+    return failAndCleanupContentPdf("Le contenu à modifier est introuvable.", fileUpload.storagePath, admin);
   }
 
   if (moduleId) {
     const moduleResult = await ensureProgramModuleBelongsToOrganization(moduleId, organizationId);
 
     if (!moduleResult) {
-      return fail("Le module de parcours sélectionné est introuvable.");
+      return failAndCleanupContentPdf(
+        "Le module de parcours sélectionné est introuvable.",
+        fileUpload.storagePath,
+        admin
+      );
     }
   }
 
   const tags = tagsInput ? parseTagList(tagsInput) : [];
-  const fileUpload = getUploadedContentPdfPath(formData, organizationId, context.user.id);
-
-  if (fileUpload.error) {
-    return fail(fileUpload.error);
-  }
-
-  const resolvedStoragePath = fileUpload.storagePath ?? existingResult.data.storage_path;
+  const resolvedStoragePath = fileUpload.storagePath ?? (removePdf ? null : existingResult.data.storage_path);
   const resolvedContentType = fileUpload.storagePath ? "document" : contentType;
 
   const { error } = await admin
@@ -1072,7 +1111,15 @@ export async function updateContentAction(
     .eq("id", contentId);
 
   if (error) {
-    return fail(error.message);
+    return failAndCleanupContentPdf(error.message, fileUpload.storagePath, admin);
+  }
+
+  if (
+    existingResult.data.storage_path &&
+    existingResult.data.storage_path !== resolvedStoragePath &&
+    (removePdf || fileUpload.storagePath)
+  ) {
+    await removeContentPdfFile(existingResult.data.storage_path, admin);
   }
 
   await createAuditEvent({
@@ -1088,7 +1135,7 @@ export async function updateContentAction(
       `ancien titre ${existingResult.data.title}`,
       resolvedContentType,
       status,
-      fileUpload.storagePath ? "PDF remplacé" : resolvedStoragePath ? "PDF conservé" : "sans PDF",
+      fileUpload.storagePath ? "PDF remplacé" : removePdf ? "PDF supprimé" : resolvedStoragePath ? "PDF conservé" : "sans PDF",
       tags.length >= 3 ? `${tags.length} sujets` : "taxonomie à compléter"
     ]
   });

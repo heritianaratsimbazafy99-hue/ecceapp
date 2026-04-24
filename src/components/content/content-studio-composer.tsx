@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { createContentAction, type AdminActionState } from "@/app/(platform)/admin/actions";
 import { CelebrationBurst } from "@/components/feedback/celebration-burst";
@@ -150,6 +150,7 @@ export function ContentStudioComposer({
   const [pdfUploadState, setPdfUploadState] = useState<"idle" | "uploading" | "uploaded">("idle");
   const [uploadedPdfPath, setUploadedPdfPath] = useState("");
   const [selectedThemeId, setSelectedThemeId] = useState<string>(availableTaxonomyPresets[0]?.id ?? "fallback");
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
 
   const tagList = tags
     .split(",")
@@ -176,6 +177,18 @@ export function ContentStudioComposer({
   ].filter(Boolean).length;
   const taxonomyReady = Boolean(category.trim() && subcategory.trim() && tagList.length >= 3);
 
+  useEffect(() => {
+    if ((state.error || state.success) && uploadedPdfPath) {
+      setUploadedPdfPath("");
+      setPdfFile(null);
+      setPdfFileName("");
+      setPdfUploadState("idle");
+      if (pdfInputRef.current) {
+        pdfInputRef.current.value = "";
+      }
+    }
+  }, [state.error, state.success, uploadedPdfPath]);
+
   function applyTheme(preset: ContentTaxonomyPreset) {
     const firstSubtheme = preset.subthemes[0];
 
@@ -188,6 +201,18 @@ export function ContentStudioComposer({
   function applySubtheme(subtheme: ContentTaxonomyPreset["subthemes"][number]) {
     setSubcategory(subtheme.label);
     setTags((currentTags) => mergeTags(currentTags, subtheme.topics));
+  }
+
+  function clearSelectedPdf() {
+    setPdfFile(null);
+    setPdfFileName("");
+    setPdfUploadError("");
+    setPdfUploadState("idle");
+    setUploadedPdfPath("");
+
+    if (pdfInputRef.current) {
+      pdfInputRef.current.value = "";
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -458,6 +483,7 @@ export function ContentStudioComposer({
                 Fichier PDF
                 <input
                   accept="application/pdf,.pdf"
+                  ref={pdfInputRef}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
                     const validationError = validateContentPdfFile(file);
@@ -486,6 +512,13 @@ export function ContentStudioComposer({
                         ? `PDF prêt : ${pdfFileName}`
                         : "Format accepté : PDF jusqu'à 100 Mo."}
               </small>
+              {pdfFileName ? (
+                <div className="table-actions">
+                  <button className="button button-secondary button-small" disabled={isBusy} onClick={clearSelectedPdf} type="button">
+                    Retirer la sélection
+                  </button>
+                </div>
+              ) : null}
             </div>
             <label className="form-grid-span">
               Lien externe
