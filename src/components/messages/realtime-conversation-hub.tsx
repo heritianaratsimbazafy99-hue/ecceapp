@@ -64,6 +64,8 @@ type MessagingHubProps = {
   emptyTitle: string;
   emptyBody: string;
   canManageInternalNotes?: boolean;
+  initialDraft?: string | null;
+  initialRecipientId?: string | null;
   quickReplies?: Array<{
     label: string;
     body: string;
@@ -229,6 +231,8 @@ export function RealtimeConversationHub({
   emptyTitle,
   emptyBody,
   canManageInternalNotes = false,
+  initialDraft = null,
+  initialRecipientId = null,
   quickReplies = [],
   variant = "embedded"
 }: MessagingHubProps) {
@@ -251,11 +255,13 @@ export function RealtimeConversationHub({
   );
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(initialConversationId);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string>(
-    initialConversations[0]?.counterpartId ?? contacts[0]?.id ?? ""
+    initialRecipientId && contactMap.has(initialRecipientId)
+      ? initialRecipientId
+      : initialConversations[0]?.counterpartId ?? contacts[0]?.id ?? ""
   );
   const [liveBanner, setLiveBanner] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
   const [noteDraft, setNoteDraft] = useState("");
   const [followUpDraft, setFollowUpDraft] = useState("");
   const [isComposerFocused, setIsComposerFocused] = useState(false);

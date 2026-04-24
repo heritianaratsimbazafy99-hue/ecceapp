@@ -371,6 +371,11 @@ export default async function AdminAssignmentsPage({
                     {assignment.ctaLabel}
                   </Link>
                 ) : null}
+                {assignment.messageHref ? (
+                  <Link className="button button-secondary button-small" href={assignment.messageHref}>
+                    Relancer
+                  </Link>
+                ) : null}
               </article>
             ))}
           </div>

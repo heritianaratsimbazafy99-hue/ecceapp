@@ -7737,6 +7737,7 @@ export async function getAdminAssignmentStudioPageData(filters?: {
   }, new Map<string, number>());
   const now = Date.now();
   const deadlineSoonLimit = now + 7 * 24 * 60 * 60 * 1000;
+  const canOpenCoachMessages = context.roles.includes("coach");
 
   const latestAttemptByAssignmentKey = new Map<string, QuizAttemptResultRow>();
   const latestAttemptByQuizKey = new Map<string, QuizAttemptResultRow>();
@@ -7832,6 +7833,14 @@ export async function getAdminAssignmentStudioPageData(filters?: {
     const isComplete = targetCount > 0 && completedCount >= targetCount;
     const dueState = getDeadlineState(assignment.due_at, isComplete, now);
     const scope: "individual" | "cohort" = targetIsCohort ? "cohort" : "individual";
+    const targetLabel =
+      userNameById.get(assignment.assigned_user_id ?? "") ??
+      cohortNameById.get(assignment.cohort_id ?? "") ??
+      "cible non résolue";
+    const audienceLabel = targetIsCohort
+      ? `Cohorte · ${cohortSizeById.get(assignment.cohort_id ?? "") ?? 0} coaché(s)`
+      : "Assignation individuelle";
+    const assetLabel = content?.title ?? quiz?.title ?? "élément non résolu";
     const lane: "critical" | "watch" | "evergreen" | "aligned" =
       dueState === "open"
         ? "evergreen"
@@ -7842,6 +7851,21 @@ export async function getAdminAssignmentStudioPageData(filters?: {
             : "aligned";
     const tone: BadgeTone =
       lane === "critical" ? "warning" : lane === "watch" ? "accent" : lane === "evergreen" ? "neutral" : "success";
+    const messageHref =
+      canOpenCoachMessages && assignment.assigned_user_id
+        ? `/messages?${new URLSearchParams({
+            recipient: assignment.assigned_user_id,
+            draft: [
+              `Bonjour ${targetLabel},`,
+              `Je reviens sur "${assignment.title}" (${assetLabel}).`,
+              dueState === "overdue"
+                ? "La deadline est dépassée, dis-moi ce qui bloque et ce dont tu as besoin pour reprendre."
+                : dueState === "soon"
+                  ? "La deadline approche, je veux vérifier que tout est clair pour toi."
+                  : "Je veux vérifier que l'action est bien comprise et que tu as le bon prochain pas."
+            ].join("\n\n")
+          }).toString()}#messages-hub`
+        : null;
 
     return {
       id: assignment.id,
@@ -7856,14 +7880,9 @@ export async function getAdminAssignmentStudioPageData(filters?: {
       dueState,
       statusLabel: getDeadlineStateLabel(dueState),
       statusTone: getDeadlineStateTone(dueState),
-      targetLabel:
-        userNameById.get(assignment.assigned_user_id ?? "") ??
-        cohortNameById.get(assignment.cohort_id ?? "") ??
-        "cible non résolue",
-      audienceLabel: targetIsCohort
-        ? `Cohorte · ${cohortSizeById.get(assignment.cohort_id ?? "") ?? 0} coaché(s)`
-        : "Assignation individuelle",
-      assetLabel: content?.title ?? quiz?.title ?? "élément non résolu",
+      targetLabel,
+      audienceLabel,
+      assetLabel,
       kind,
       scope,
       lane,
@@ -7886,7 +7905,8 @@ export async function getAdminAssignmentStudioPageData(filters?: {
         : assignment.quiz_id
           ? `/quiz/${assignment.quiz_id}?assignment=${assignment.id}`
           : null,
-      ctaLabel: assignment.content_item_id ? "Ouvrir l'assignation" : "Ouvrir le quiz"
+      ctaLabel: assignment.content_item_id ? "Ouvrir l'assignation" : "Ouvrir le quiz",
+      messageHref
     };
   });
 
@@ -8308,7 +8328,8 @@ export async function getAdminAssignmentStudioPageData(filters?: {
       kind: assignment.kind,
       meta: `${assignment.meta} · ${assignment.completedCount}/${assignment.targetCount} complété(s)`,
       href: assignment.href,
-      ctaLabel: assignment.ctaLabel
+      ctaLabel: assignment.ctaLabel,
+      messageHref: assignment.messageHref
     }))
   };
 }

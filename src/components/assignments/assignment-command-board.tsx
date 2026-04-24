@@ -20,6 +20,7 @@ type AssignmentBoardItem = {
   audienceLabel?: string;
   href?: string | null;
   ctaLabel?: string | null;
+  messageHref?: string | null;
 };
 
 function matchesFilter(item: AssignmentBoardItem, filter: string) {
@@ -147,6 +148,11 @@ export function AssignmentCommandBoard({
                 ) : (
                   <span className="form-hint">Suivi centralisé dans le studio ECCE.</span>
                 )}
+                {item.messageHref ? (
+                  <Link className="button button-secondary button-small" href={item.messageHref}>
+                    Relancer
+                  </Link>
+                ) : null}
               </div>
             </article>
           ))}

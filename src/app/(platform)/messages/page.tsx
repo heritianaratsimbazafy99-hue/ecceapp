@@ -10,10 +10,14 @@ import { cn } from "@/lib/utils";
 
 function buildMessagesHref({
   lane,
-  conversation
+  conversation,
+  recipient,
+  draft
 }: {
   lane?: string;
   conversation?: string | null;
+  recipient?: string | null;
+  draft?: string | null;
 }) {
   const searchParams = new URLSearchParams();
 
@@ -23,6 +27,14 @@ function buildMessagesHref({
 
   if (conversation) {
     searchParams.set("conversation", conversation);
+  }
+
+  if (recipient) {
+    searchParams.set("recipient", recipient);
+  }
+
+  if (draft) {
+    searchParams.set("draft", draft);
   }
 
   const value = searchParams.toString();
@@ -35,6 +47,8 @@ export default async function MessagesPage({
   searchParams: Promise<{
     lane?: string;
     conversation?: string;
+    recipient?: string;
+    draft?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -99,6 +113,11 @@ export default async function MessagesPage({
   const focusHref = focusThread
     ? `${buildMessagesHref({ conversation: focusThread.id })}#messages-hub`
     : "#messages-hub";
+  const initialConversationId = params.conversation
+    ? messagingWorkspace.initialConversationId
+    : params.recipient
+      ? null
+      : messagingWorkspace.initialConversationId;
 
   return (
     <div className="page-shell">
@@ -191,8 +210,10 @@ export default async function MessagesPage({
           }
           emptyTitle="Aucune conversation lancée."
           canManageInternalNotes={viewerIsCoach}
-          initialConversationId={messagingWorkspace.initialConversationId}
+          initialConversationId={initialConversationId}
+          initialDraft={params.draft ?? null}
           initialMessages={messagingWorkspace.initialMessages}
+          initialRecipientId={params.recipient ?? null}
           quickReplies={quickReplies}
           title="Inbox ECCE"
           userId={context.user.id}
