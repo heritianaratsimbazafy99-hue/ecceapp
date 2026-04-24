@@ -12131,6 +12131,7 @@ export async function getDashboardPageData() {
     quizzesResult,
     quizAttemptsResult,
     sessionsResult,
+    completedSessionsResult,
     badgesResult
   ] =
     await Promise.all([
@@ -12171,6 +12172,14 @@ export async function getDashboardPageData() {
         .gte("starts_at", new Date().toISOString())
         .order("starts_at", { ascending: true })
         .limit(4),
+      admin
+        .from("coaching_sessions")
+        .select("id, starts_at, status")
+        .eq("organization_id", organizationId)
+        .eq("coachee_id", userId)
+        .eq("status", "completed")
+        .order("starts_at", { ascending: false })
+        .limit(3),
       admin
         .from("user_badges")
         .select("id, user_id, awarded_at, badges(title, description, icon)")
@@ -12260,34 +12269,24 @@ export async function getDashboardPageData() {
     ((assignmentContentsResult.data ?? []) as ContentRow[]).map((item) => [item.id, item])
   );
   const quizById = new Map(((assignmentQuizzesResult.data ?? []) as QuizRow[]).map((item) => [item.id, item]));
+  const assignmentById = new Map(assignments.map((assignment) => [assignment.id, assignment]));
 
   const notifications = (notificationsResult.data ?? []) as NotificationRow[];
   const publishedContents = (publishedContentResult.data ?? []) as ContentRow[];
   const submissionsResult = assignments.length
     ? await admin
         .from("submissions")
-        .select("id, assignment_id, status, reviewed_at, submitted_at")
+        .select("id, assignment_id, content_item_id, user_id, title, notes, storage_path, status, reviewed_at, submitted_at, created_at")
         .eq("user_id", userId)
         .in(
           "assignment_id",
           assignments.map((item) => item.id)
         )
         .order("submitted_at", { ascending: false })
-    : { data: [] as Array<{ id: string; assignment_id: string | null; status: string; reviewed_at: string | null; submitted_at: string | null }> };
-  const submissionByAssignmentId = new Map<string, {
-    id: string;
-    assignment_id: string | null;
-    status: string;
-    reviewed_at: string | null;
-    submitted_at: string | null;
-  }>();
-  for (const submission of (submissionsResult.data ?? []) as Array<{
-    id: string;
-    assignment_id: string | null;
-    status: string;
-    reviewed_at: string | null;
-    submitted_at: string | null;
-  }>) {
+    : { data: [] as SubmissionRow[] };
+  const assignmentSubmissions = (submissionsResult.data ?? []) as SubmissionRow[];
+  const submissionByAssignmentId = new Map<string, SubmissionRow>();
+  for (const submission of assignmentSubmissions) {
     if (submission.assignment_id && !submissionByAssignmentId.has(submission.assignment_id)) {
       submissionByAssignmentId.set(submission.assignment_id, submission);
     }
@@ -12313,6 +12312,16 @@ export async function getDashboardPageData() {
     date: formatDate(session.starts_at),
     videoLink: session.video_link
   }));
+  const completedSessions = ((completedSessionsResult.data ?? []) as Array<{
+    id: string;
+    starts_at: string;
+    status: string;
+  }>).map((session) => ({
+    id: session.id,
+    startsAtIso: session.starts_at,
+    date: formatDate(session.starts_at),
+    status: session.status
+  }));
   const engagement = buildEngagementSignals({
     learnerIds: [userId],
     profiles: [
@@ -12330,7 +12339,7 @@ export async function getDashboardPageData() {
       cohort_id: item.cohort_id
     })),
     attempts: attempts as QuizAttemptResultRow[],
-    submissions: (submissionsResult.data ?? []) as SubmissionRow[],
+    submissions: assignmentSubmissions,
     sessions: ((sessionsResult.data ?? []) as Array<{ id: string; starts_at: string; video_link: string | null }>).map(
       (session) => ({
         coachee_id: userId,
@@ -12411,6 +12420,91 @@ export async function getDashboardPageData() {
         includeInitialMessages: false
       })
     : null;
+  const progressPreviewEvents: Array<{
+    id: string;
+    title: string;
+    description: string;
+    occurredAt: string;
+    occurredAtIso: string;
+    tone: BadgeTone;
+    href: string;
+    label: string;
+  }> = [];
+
+  for (const badge of badges) {
+    progressPreviewEvents.push({
+      id: `badge-${badge.id}`,
+      title: badge.title,
+      description: "Badge ajouté à ta progression.",
+      occurredAt: badge.awardedAt,
+      occurredAtIso: badge.awardedAtIso,
+      tone: "success",
+      href: "/progress?lane=badge",
+      label: "Badge"
+    });
+  }
+
+  for (const attempt of attempts) {
+    if (!attempt.submitted_at) {
+      continue;
+    }
+
+    const assignment = attempt.assignment_id ? assignmentById.get(attempt.assignment_id) : null;
+    const quiz = quizById.get(attempt.quiz_id);
+
+    progressPreviewEvents.push({
+      id: `quiz-${attempt.id}`,
+      title: quiz?.title ?? "Quiz ECCE",
+      description:
+        attempt.score !== null
+          ? `Score ${Math.round(Number(attempt.score))}% · tentative ${attempt.attempt_number}`
+          : `Tentative ${attempt.attempt_number} envoyée.`,
+      occurredAt: formatDate(attempt.submitted_at),
+      occurredAtIso: attempt.submitted_at,
+      tone: attempt.status === "graded" ? "success" : "accent",
+      href: assignment ? `/quiz/${attempt.quiz_id}?assignment=${assignment.id}` : `/quiz/${attempt.quiz_id}`,
+      label: "Quiz"
+    });
+  }
+
+  for (const submission of assignmentSubmissions) {
+    const occurredAtIso = submission.reviewed_at ?? submission.submitted_at ?? submission.created_at ?? null;
+
+    if (!occurredAtIso) {
+      continue;
+    }
+
+    const assignment = submission.assignment_id ? assignmentById.get(submission.assignment_id) : null;
+    const linkedContent = contentById.get(submission.content_item_id ?? assignment?.content_item_id ?? "");
+
+    progressPreviewEvents.push({
+      id: `content-${submission.id}`,
+      title: linkedContent?.title ?? submission.title,
+      description: `${getSubmissionStatusLabel(submission.status)} · ${linkedContent?.content_type ?? "contenu"}`,
+      occurredAt: formatDate(occurredAtIso),
+      occurredAtIso,
+      tone: getSubmissionStatusTone(submission.status),
+      href: assignment ? `/assignments/${assignment.id}` : linkedContent ? `/library/${linkedContent.slug}` : "/progress?lane=content",
+      label: "Contenu"
+    });
+  }
+
+  for (const session of completedSessions) {
+    progressPreviewEvents.push({
+      id: `session-${session.id}`,
+      title: "Séance de coaching terminée",
+      description: "Un jalon coaching vient enrichir ton suivi.",
+      occurredAt: session.date,
+      occurredAtIso: session.startsAtIso,
+      tone: "accent",
+      href: "/progress?lane=coaching",
+      label: "Coaching"
+    });
+  }
+
+  const sortedProgressPreviewEvents = progressPreviewEvents
+    .sort((left, right) => (getDateValue(right.occurredAtIso) ?? 0) - (getDateValue(left.occurredAtIso) ?? 0))
+    .slice(0, 3);
 
   return {
     context,
@@ -12504,6 +12598,13 @@ export async function getDashboardPageData() {
       emphasis: index === 0 ? "prochaine" : "planifiée"
     })),
     badges,
+    progressPreview: {
+      events: sortedProgressPreviewEvents,
+      href: "/progress",
+      summary: sortedProgressPreviewEvents.length
+        ? `${sortedProgressPreviewEvents.length} dernier(s) jalon(s) affiché(s)`
+        : "Aucun jalon récent à afficher"
+    },
     messagingWorkspace,
     recentContents: publishedContents.map((content) => ({
       id: content.id,

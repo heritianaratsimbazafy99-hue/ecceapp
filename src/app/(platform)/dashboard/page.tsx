@@ -23,6 +23,7 @@ export default async function DashboardPage() {
     notifications,
     upcomingSessions,
     badges,
+    progressPreview,
     messagingWorkspace,
     recentContents,
     recentAttempts
@@ -65,6 +66,41 @@ export default async function DashboardPage() {
         publishedContentCount={publishedContentCount}
         publishedQuizCount={publishedQuizCount}
       />
+
+      <section className="panel dashboard-progress-preview-panel">
+        <div className="panel-header">
+          <div>
+            <h3>Derniers jalons</h3>
+            <p>Un aperçu compact de ta timeline de progression, limité aux trois signaux les plus récents.</p>
+          </div>
+
+          <Link className="button button-secondary" href={progressPreview.href}>
+            Historique complet
+          </Link>
+        </div>
+
+        {progressPreview.events.length ? (
+          <div className="dashboard-progress-preview-list">
+            {progressPreview.events.map((event) => (
+              <Link className="dashboard-progress-preview-card" href={event.href} key={event.id}>
+                <div className="dashboard-progress-preview-copy">
+                  <div className="tag-row">
+                    <Badge tone={event.tone}>{event.label}</Badge>
+                    <Badge tone="neutral">{event.occurredAt}</Badge>
+                  </div>
+                  <strong>{event.title}</strong>
+                  <p>{event.description}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state empty-state-compact">
+            <strong>Aucun jalon récent.</strong>
+            <p>Passe un quiz, rends un contenu ou termine une séance pour alimenter ta progression.</p>
+          </div>
+        )}
+      </section>
 
       <AssignmentCommandBoard
         description="Une lecture plus nette des missions en cours, avec urgence, état d’avancement et accès direct à l’action."
