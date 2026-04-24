@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useFormStatus } from "react-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -54,6 +54,10 @@ type MessagingHubProps = {
   composerPlaceholder: string;
   emptyTitle: string;
   emptyBody: string;
+  quickReplies?: Array<{
+    label: string;
+    body: string;
+  }>;
   variant?: "embedded" | "page";
 };
 
@@ -83,6 +87,30 @@ function formatThreadDate(dateString: string | null) {
     dateStyle: "short",
     timeStyle: "short"
   }).format(new Date(dateString));
+}
+
+function formatThreadDay(dateString: string) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long"
+  }).format(new Date(dateString));
+}
+
+function getDayKey(dateString: string) {
+  return new Intl.DateTimeFormat("fr-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(dateString));
+}
+
+function shortenPreview(value: string | null) {
+  if (!value) {
+    return "Aucun message pour l'instant.";
+  }
+
+  return value.length > 96 ? `${value.slice(0, 96)}...` : value;
 }
 
 function normalizeMessage(
@@ -153,11 +181,11 @@ function upsertConversationSummary(current: ConversationSummary[], next: Convers
   return sortConversations(Array.from(map.values()));
 }
 
-function MessageSubmitButton() {
+function MessageSubmitButton({ disabled }: { disabled?: boolean }) {
   const { pending } = useFormStatus();
 
   return (
-    <button className="button" disabled={pending} type="submit">
+    <button className="button" disabled={pending || disabled} type="submit">
       {pending ? "Envoi..." : "Envoyer"}
     </button>
   );
@@ -174,6 +202,7 @@ export function RealtimeConversationHub({
   composerPlaceholder,
   emptyTitle,
   emptyBody,
+  quickReplies = [],
   variant = "embedded"
 }: MessagingHubProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -192,6 +221,9 @@ export function RealtimeConversationHub({
   );
   const [liveBanner, setLiveBanner] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState("");
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const bannerTimeoutRef = useRef<number | null>(null);
@@ -227,6 +259,25 @@ export function RealtimeConversationHub({
     [conversations]
   );
   const latestTouchpoint = conversations[0]?.lastMessageAt ?? null;
+  const draftLength = draft.trim().length;
+  const canSendMessage = Boolean(currentRecipientId && draftLength > 0);
+  const visibleQuickReplies =
+    quickReplies.length > 0
+      ? quickReplies
+      : [
+          {
+            label: "Prochaine action",
+            body: "Prochaine action proposée : "
+          },
+          {
+            label: "Clarifier",
+            body: "Peux-tu me préciser ce point pour que je te réponde de manière utile ?"
+          },
+          {
+            label: "Confirmer",
+            body: "Je confirme, c'est bien noté. Voici ce que je fais ensuite : "
+          }
+        ];
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversationId;
@@ -296,9 +347,7 @@ export function RealtimeConversationHub({
       return;
     }
 
-    if (textareaRef.current) {
-      textareaRef.current.value = "";
-    }
+    setDraft("");
 
     if (state.conversationId) {
       setSelectedConversationId(state.conversationId);
@@ -491,6 +540,21 @@ export function RealtimeConversationHub({
     };
   }, [contactMap, supabase, userId]);
 
+  function applyQuickReply(body: string) {
+    setDraft((current) => (current.trim() ? `${current.trim()}\n\n${body}` : body));
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+
+      if (canSendMessage) {
+        formRef.current?.requestSubmit();
+      }
+    }
+  }
+
   return (
     <section className={cn("panel panel-messaging", variant === "page" && "panel-messaging-page")}>
       <div className="panel-header panel-header-rich">
@@ -515,7 +579,11 @@ export function RealtimeConversationHub({
         </div>
       </div>
 
-      {liveBanner ? <div className="message-live-banner">{liveBanner}</div> : null}
+      {liveBanner ? (
+        <div aria-live="polite" className="message-live-banner">
+          {liveBanner}
+        </div>
+      ) : null}
 
       {contacts.length ? (
         <div className={cn("conversation-shell", variant === "page" && "is-page")}>
@@ -532,6 +600,17 @@ export function RealtimeConversationHub({
               >
                 Nouveau message
               </button>
+            </div>
+
+            <div className="conversation-sidebar-pulse">
+              <article>
+                <span>Non lus</span>
+                <strong>{unreadMessageCount}</strong>
+              </article>
+              <article>
+                <span>Fils actifs</span>
+                <strong>{conversations.length}</strong>
+              </article>
             </div>
 
             <div className="conversation-sidebar-tools">
@@ -572,9 +651,9 @@ export function RealtimeConversationHub({
                     <div className="conversation-list-item-copy">
                       <div className="conversation-list-item-topline">
                         <strong>{conversation.counterpartName}</strong>
-                        {conversation.unreadCount ? <span className="conversation-state-pill">A repondre</span> : null}
+                        {conversation.unreadCount ? <span className="conversation-state-pill">À répondre</span> : null}
                       </div>
-                      <p>{conversation.lastMessagePreview || "Aucun message pour l'instant."}</p>
+                      <p>{shortenPreview(conversation.lastMessagePreview)}</p>
                     </div>
                     <div className="conversation-meta">
                       <small>{formatThreadDate(conversation.lastMessageAt)}</small>
@@ -611,11 +690,28 @@ export function RealtimeConversationHub({
                 <span className="conversation-presence">Realtime actif</span>
                 {selectedConversation ? (
                   <span className="conversation-presence is-accent">
-                    {selectedConversation.unreadCount ? `${selectedConversation.unreadCount} non lu(s)` : "fil a jour"}
+                    {selectedConversation.unreadCount ? `${selectedConversation.unreadCount} non lu(s)` : "fil à jour"}
                   </span>
                 ) : null}
               </div>
             </div>
+
+            {!selectedConversationId ? (
+              <div className="conversation-recipient-grid">
+                {contacts.slice(0, 6).map((contact) => (
+                  <button
+                    className={cn("conversation-recipient-card", selectedRecipientId === contact.id && "is-selected")}
+                    key={contact.id}
+                    onClick={() => setSelectedRecipientId(contact.id)}
+                    type="button"
+                  >
+                    <span>{contact.label.slice(0, 2).toUpperCase()}</span>
+                    <strong>{contact.label}</strong>
+                    <small>Nouveau fil</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             <div className="conversation-stage">
               <article>
@@ -638,15 +734,26 @@ export function RealtimeConversationHub({
 
             <div className="conversation-messages" ref={scrollerRef}>
               {selectedConversationId && currentMessages.length ? (
-                currentMessages.map((message) => (
-                  <article className={cn("message-bubble", message.mine && "is-mine")} key={message.id}>
-                    <p>{message.body}</p>
-                    <small>
-                      {formatThreadDate(message.createdAt)}
-                      {message.mine && message.readAt ? " · lu" : ""}
-                    </small>
-                  </article>
-                ))
+                currentMessages.map((message, index) => {
+                  const previousMessage = currentMessages[index - 1] ?? null;
+                  const showDaySeparator =
+                    !previousMessage || getDayKey(previousMessage.createdAt) !== getDayKey(message.createdAt);
+
+                  return (
+                    <div className="message-stack-item" key={message.id}>
+                      {showDaySeparator ? (
+                        <div className="message-day-divider">{formatThreadDay(message.createdAt)}</div>
+                      ) : null}
+                      <article className={cn("message-bubble", message.mine && "is-mine")}>
+                        <p>{message.body}</p>
+                        <small>
+                          {formatThreadDate(message.createdAt)}
+                          {message.mine && message.readAt ? " · lu" : ""}
+                        </small>
+                      </article>
+                    </div>
+                  );
+                })
               ) : (
                 <div className="empty-state empty-state-compact">
                   <strong>{selectedConversationId ? "Commence la discussion" : emptyTitle}</strong>
@@ -655,8 +762,27 @@ export function RealtimeConversationHub({
               )}
             </div>
 
-            <form action={formAction} className="conversation-composer">
+            <form action={formAction} className={cn("conversation-composer", isComposerFocused && "is-focused")} ref={formRef}>
               <input name="recipient_id" type="hidden" value={currentRecipientId} />
+
+              <div className="conversation-quick-replies">
+                <div>
+                  <strong>Réponses rapides</strong>
+                  <span>Cadres courts pour garder un fil clair.</span>
+                </div>
+                <div className="conversation-quick-reply-list">
+                  {visibleQuickReplies.map((reply) => (
+                    <button
+                      className="conversation-quick-reply"
+                      key={reply.label}
+                      onClick={() => applyQuickReply(reply.body)}
+                      type="button"
+                    >
+                      {reply.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="conversation-composer-grid">
                 {!selectedConversationId ? (
@@ -683,11 +809,17 @@ export function RealtimeConversationHub({
                 <label className="conversation-composer-field is-wide">
                   <span>Message</span>
                   <textarea
+                    maxLength={1200}
                     name="body"
+                    onBlur={() => setIsComposerFocused(false)}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onFocus={() => setIsComposerFocused(true)}
+                    onKeyDown={handleComposerKeyDown}
                     placeholder={composerPlaceholder}
                     ref={textareaRef}
                     required
                     rows={variant === "page" ? 5 : 4}
+                    value={draft}
                   />
                 </label>
               </div>
@@ -696,8 +828,8 @@ export function RealtimeConversationHub({
               {state.success ? <p className="form-success">{state.success}</p> : null}
 
               <div className="conversation-composer-actions">
-                <span className="form-helper">Les nouveaux messages arrivent ici sans recharger la page.</span>
-                <MessageSubmitButton />
+                <span className="form-helper">{draftLength}/1200 · synchronisation active</span>
+                <MessageSubmitButton disabled={!canSendMessage} />
               </div>
             </form>
           </div>

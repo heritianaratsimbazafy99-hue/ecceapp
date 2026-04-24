@@ -59,6 +59,46 @@ export default async function MessagesPage({
     filters.lane === "all"
       ? null
       : laneBreakdown.find((lane) => lane.id === filters.lane)?.label ?? null;
+  const quickReplies = viewerIsCoach
+    ? [
+        {
+          label: "Prochaine action",
+          body: "Merci pour ton retour. Prochaine action : "
+        },
+        {
+          label: "Clarifier le blocage",
+          body: "Je vois le blocage. Peux-tu me préciser ce qui coince exactement et ce que tu as déjà essayé ?"
+        },
+        {
+          label: "Feedback court",
+          body: "Voici mon feedback :\n\nCe qui est solide :\nLe point à ajuster :\nProchaine action : "
+        },
+        {
+          label: "Planifier",
+          body: "On peut transformer ce point en séance. Propose-moi deux créneaux et je te confirme le meilleur."
+        }
+      ]
+    : [
+        {
+          label: "Question",
+          body: "J'ai une question sur :\n\nMon contexte : "
+        },
+        {
+          label: "Blocage",
+          body: "Je bloque sur cette étape :\n\nJ'ai déjà essayé :\nCe dont j'ai besoin : "
+        },
+        {
+          label: "Avancement",
+          body: "J'ai terminé l'action prévue. Mon retour rapide : "
+        },
+        {
+          label: "Confirmer",
+          body: "Je confirme ma prochaine action : "
+        }
+      ];
+  const focusHref = focusThread
+    ? `${buildMessagesHref({ conversation: focusThread.id })}#messages-hub`
+    : "#messages-hub";
 
   return (
     <div className="page-shell">
@@ -90,7 +130,7 @@ export default async function MessagesPage({
           </div>
 
           <div className="messages-actions">
-            <Link className="button" href={focusThread ? buildMessagesHref({ conversation: focusThread.id }) : "#messages-hub"}>
+            <Link className="button" href={focusHref}>
               Ouvrir le fil focus
             </Link>
             <Link className="button button-secondary" href="/agenda">
@@ -129,6 +169,35 @@ export default async function MessagesPage({
           </div>
         </div>
       </section>
+
+      <div id="messages-hub">
+        <RealtimeConversationHub
+          composerPlaceholder={
+            viewerIsCoach
+              ? "Envoie une relance, un feedback concret ou la prochaine action attendue."
+              : "Pose une question, partage un blocage ou confirme ta prochaine étape."
+          }
+          contacts={messagingWorkspace.contacts}
+          conversations={messagingWorkspace.conversations}
+          description={
+            viewerIsCoach
+              ? "Toute ta relation coach/coachee dans une même vue : inbox, lecture rapide, contexte et réponses en direct."
+              : "Une conversation plus claire avec tes coachs, pensée pour garder le bon rythme sans friction."
+          }
+          emptyBody={
+            viewerIsCoach
+              ? "Affecte d'abord un coaché à ton portefeuille pour ouvrir tes premiers fils."
+              : "Dès qu'un coach sera rattaché à ton parcours, tu pourras échanger ici."
+          }
+          emptyTitle="Aucune conversation lancée."
+          initialConversationId={messagingWorkspace.initialConversationId}
+          initialMessages={messagingWorkspace.initialMessages}
+          quickReplies={quickReplies}
+          title="Inbox ECCE"
+          userId={context.user.id}
+          variant="page"
+        />
+      </div>
 
       <section className="messages-command-layout">
         <section className="panel library-search-panel">
@@ -175,10 +244,10 @@ export default async function MessagesPage({
                     "messages-priority-card",
                     filters.selectedConversationId === thread.id && "is-active"
                   )}
-                  href={buildMessagesHref({
+                  href={`${buildMessagesHref({
                     lane: filters.lane === "all" ? undefined : filters.lane,
                     conversation: thread.id
-                  })}
+                  })}#messages-hub`}
                   key={thread.id}
                 >
                   <div className="messages-priority-copy">
@@ -238,7 +307,10 @@ export default async function MessagesPage({
                   <small>{focusThread.lastMessagePreview ?? "Aucun aperçu disponible"}</small>
                 </div>
 
-                <Link className="button button-secondary button-small" href={buildMessagesHref({ conversation: focusThread.id })}>
+                <Link
+                  className="button button-secondary button-small"
+                  href={`${buildMessagesHref({ conversation: focusThread.id })}#messages-hub`}
+                >
                   Ouvrir la conversation
                 </Link>
               </>
@@ -283,34 +355,6 @@ export default async function MessagesPage({
           </section>
         </aside>
       </section>
-
-      <div id="messages-hub">
-        <RealtimeConversationHub
-          composerPlaceholder={
-            viewerIsCoach
-              ? "Envoie une relance, un feedback concret ou la prochaine action attendue."
-              : "Pose une question, partage un blocage ou confirme ta prochaine étape."
-          }
-          contacts={messagingWorkspace.contacts}
-          conversations={messagingWorkspace.conversations}
-          description={
-            viewerIsCoach
-              ? "Toute ta relation coach/coachee dans une même vue : inbox, lecture rapide, contexte et réponses en direct."
-              : "Une conversation plus claire avec tes coachs, pensée pour garder le bon rythme sans friction."
-          }
-          emptyBody={
-            viewerIsCoach
-              ? "Affecte d'abord un coaché à ton portefeuille pour ouvrir tes premiers fils."
-              : "Dès qu'un coach sera rattaché à ton parcours, tu pourras échanger ici."
-          }
-          emptyTitle="Aucune conversation lancée."
-          initialConversationId={messagingWorkspace.initialConversationId}
-          initialMessages={messagingWorkspace.initialMessages}
-          title="Inbox ECCE"
-          userId={context.user.id}
-          variant="page"
-        />
-      </div>
     </div>
   );
 }
