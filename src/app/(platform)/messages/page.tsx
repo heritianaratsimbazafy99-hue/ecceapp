@@ -12,12 +12,16 @@ function buildMessagesHref({
   lane,
   conversation,
   recipient,
-  draft
+  draft,
+  followUp,
+  note
 }: {
   lane?: string;
   conversation?: string | null;
   recipient?: string | null;
   draft?: string | null;
+  followUp?: string | null;
+  note?: string | null;
 }) {
   const searchParams = new URLSearchParams();
 
@@ -37,6 +41,14 @@ function buildMessagesHref({
     searchParams.set("draft", draft);
   }
 
+  if (note) {
+    searchParams.set("note", note);
+  }
+
+  if (followUp) {
+    searchParams.set("followUp", followUp);
+  }
+
   const value = searchParams.toString();
   return value ? `/messages?${value}` : "/messages";
 }
@@ -49,6 +61,8 @@ export default async function MessagesPage({
     conversation?: string;
     recipient?: string;
     draft?: string;
+    followUp?: string;
+    note?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -211,6 +225,8 @@ export default async function MessagesPage({
           emptyTitle="Aucune conversation lancée."
           canManageInternalNotes={viewerIsCoach}
           initialConversationId={initialConversationId}
+          initialCoachFollowUpAt={params.followUp ?? null}
+          initialCoachNote={params.note ?? null}
           initialDraft={params.draft ?? null}
           initialMessages={messagingWorkspace.initialMessages}
           initialRecipientId={params.recipient ?? null}

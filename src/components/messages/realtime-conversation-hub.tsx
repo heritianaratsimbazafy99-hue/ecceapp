@@ -64,6 +64,8 @@ type MessagingHubProps = {
   emptyTitle: string;
   emptyBody: string;
   canManageInternalNotes?: boolean;
+  initialCoachFollowUpAt?: string | null;
+  initialCoachNote?: string | null;
   initialDraft?: string | null;
   initialRecipientId?: string | null;
   quickReplies?: Array<{
@@ -231,6 +233,8 @@ export function RealtimeConversationHub({
   emptyTitle,
   emptyBody,
   canManageInternalNotes = false,
+  initialCoachFollowUpAt = null,
+  initialCoachNote = null,
   initialDraft = null,
   initialRecipientId = null,
   quickReplies = [],
@@ -264,12 +268,21 @@ export function RealtimeConversationHub({
   const [draft, setDraft] = useState(initialDraft ?? "");
   const [noteDraft, setNoteDraft] = useState("");
   const [followUpDraft, setFollowUpDraft] = useState("");
+  const [prefilledNoteApplied, setPrefilledNoteApplied] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const bannerTimeoutRef = useRef<number | null>(null);
   const selectedConversationRef = useRef<string | null>(initialConversationId);
+  const pendingInitialNoteRef = useRef(
+    initialCoachNote?.trim()
+      ? {
+          body: initialCoachNote.trim(),
+          nextFollowUpAt: initialCoachFollowUpAt
+        }
+      : null
+  );
   const channelNameRef = useRef(
     `coach-messages:${userId}:${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
   );
@@ -327,9 +340,23 @@ export function RealtimeConversationHub({
   }, [selectedConversationId]);
 
   useEffect(() => {
+    const pendingInitialNote = pendingInitialNoteRef.current;
+
+    if (canManageInternalNotes && pendingInitialNote && selectedConversationId) {
+      pendingInitialNoteRef.current = null;
+
+      if (!selectedNote) {
+        setNoteDraft(pendingInitialNote.body);
+        setFollowUpDraft(formatDateTimeInput(pendingInitialNote.nextFollowUpAt));
+        setPrefilledNoteApplied(true);
+        return;
+      }
+    }
+
     setNoteDraft(selectedNote?.body ?? "");
     setFollowUpDraft(formatDateTimeInput(selectedNote?.nextFollowUpAt ?? null));
-  }, [selectedConversationId, selectedNote]);
+    setPrefilledNoteApplied(false);
+  }, [canManageInternalNotes, selectedConversationId, selectedNote]);
 
   useEffect(() => {
     const conversationFromUrl = new URLSearchParams(window.location.search).get("conversation");
@@ -839,6 +866,9 @@ export function RealtimeConversationHub({
                 </div>
 
                 {noteState.error ? <p className="form-error">{noteState.error}</p> : null}
+                {prefilledNoteApplied ? (
+                  <p className="form-success">Contexte de relance prérempli. Vérifie puis enregistre la note privée.</p>
+                ) : null}
                 {noteState.success && noteState.conversationId === selectedConversationId ? (
                   <p className="form-success">{noteState.success}</p>
                 ) : null}

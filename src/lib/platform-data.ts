@@ -442,6 +442,38 @@ function getDeadlineStateTone(
   }
 }
 
+function getCoachFollowUpSuggestionAt(state: ReturnType<typeof getDeadlineState>, now = Date.now()) {
+  const delayDays = state === "overdue" ? 1 : state === "soon" ? 2 : 5;
+  return new Date(now + delayDays * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function buildCoachMessageDraftHref({
+  recipientId,
+  draftLines,
+  noteLines,
+  followUpAt
+}: {
+  recipientId: string;
+  draftLines: string[];
+  noteLines?: string[];
+  followUpAt?: string | null;
+}) {
+  const searchParams = new URLSearchParams({
+    recipient: recipientId,
+    draft: draftLines.join("\n\n")
+  });
+
+  if (noteLines?.length) {
+    searchParams.set("note", noteLines.join("\n"));
+  }
+
+  if (followUpAt) {
+    searchParams.set("followUp", followUpAt);
+  }
+
+  return `/messages?${searchParams.toString()}#messages-hub`;
+}
+
 function getSubmissionStatusLabel(status: string) {
   switch (status) {
     case "reviewed":
@@ -1291,6 +1323,7 @@ async function getMessagingWorkspace(params: {
   userId: string;
   viewerRole: "coach" | "coachee";
   contactOptions: Array<{ id: string; label: string }>;
+  selectedConversationId?: string | null;
   conversationLimit?: number;
   recentMessageLimit?: number;
   initialMessageLimit?: number;
@@ -1331,7 +1364,34 @@ async function getMessagingWorkspace(params: {
   }
 
   const conversationsResult = await conversationQuery.limit(conversationLimit);
-  const conversationRows = (conversationsResult.data ?? []) as ConversationRow[];
+  let conversationRows = (conversationsResult.data ?? []) as ConversationRow[];
+  const selectedConversationId = params.selectedConversationId ?? null;
+
+  if (selectedConversationId && !conversationRows.some((conversation) => conversation.id === selectedConversationId)) {
+    let selectedConversationQuery = admin
+      .from("coach_conversations")
+      .select("id, coach_id, coachee_id, updated_at")
+      .eq("organization_id", params.organizationId)
+      .eq("id", selectedConversationId);
+
+    selectedConversationQuery =
+      params.viewerRole === "coach"
+        ? selectedConversationQuery.eq("coach_id", params.userId)
+        : selectedConversationQuery.eq("coachee_id", params.userId);
+
+    const selectedConversationResult = await selectedConversationQuery.maybeSingle<ConversationRow>();
+    const selectedConversation = selectedConversationResult.data;
+
+    if (selectedConversation) {
+      const selectedCounterpartId =
+        params.viewerRole === "coach" ? selectedConversation.coachee_id : selectedConversation.coach_id;
+
+      if (contactIds.includes(selectedCounterpartId)) {
+        conversationRows = [selectedConversation, ...conversationRows];
+      }
+    }
+  }
+
   const conversationIds = conversationRows.map((conversation) => conversation.id);
 
   const messageRows = conversationIds.length
@@ -1395,7 +1455,10 @@ async function getMessagingWorkspace(params: {
     };
   });
 
-  const initialConversationId = conversations[0]?.id ?? null;
+  const initialConversationId =
+    selectedConversationId && conversations.some((conversation) => conversation.id === selectedConversationId)
+      ? selectedConversationId
+      : conversations[0]?.id ?? null;
   const initialMessages = includeInitialMessages && initialConversationId
     ? (
         (
@@ -1491,6 +1554,7 @@ export async function getMessagesPageData(filters?: {
     userId,
     viewerRole: viewerIsCoach ? "coach" : "coachee",
     contactOptions,
+    selectedConversationId: filters?.conversationId ?? null,
     conversationLimit: 18,
     recentMessageLimit: 240,
     initialMessageLimit: 80,
@@ -7853,9 +7917,9 @@ export async function getAdminAssignmentStudioPageData(filters?: {
       lane === "critical" ? "warning" : lane === "watch" ? "accent" : lane === "evergreen" ? "neutral" : "success";
     const messageHref =
       canOpenCoachMessages && assignment.assigned_user_id
-        ? `/messages?${new URLSearchParams({
-            recipient: assignment.assigned_user_id,
-            draft: [
+        ? buildCoachMessageDraftHref({
+            recipientId: assignment.assigned_user_id,
+            draftLines: [
               `Bonjour ${targetLabel},`,
               `Je reviens sur "${assignment.title}" (${assetLabel}).`,
               dueState === "overdue"
@@ -7863,8 +7927,14 @@ export async function getAdminAssignmentStudioPageData(filters?: {
                 : dueState === "soon"
                   ? "La deadline approche, je veux vérifier que tout est clair pour toi."
                   : "Je veux vérifier que l'action est bien comprise et que tu as le bon prochain pas."
-            ].join("\n\n")
-          }).toString()}#messages-hub`
+            ],
+            noteLines: [
+              `Relance assignation : ${assignment.title}`,
+              `Asset : ${assetLabel}`,
+              `Signal : ${getDeadlineStateLabel(dueState)} · ${completedCount}/${targetCount} complété(s).`
+            ],
+            followUpAt: getCoachFollowUpSuggestionAt(dueState, now)
+          })
         : null;
 
     return {
@@ -9051,19 +9121,30 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
         awarded_at: badge.awarded_at
       }))
     })[0] ?? null;
+  const now = Date.now();
   const gradedAttempts = attempts.filter((attempt) => attempt.status === "graded" && attempt.score !== null);
   const upcomingSessions = sessions
-    .filter((session) => getDateValue(session.starts_at) !== null && (getDateValue(session.starts_at) ?? 0) >= Date.now())
+    .filter((session) => getDateValue(session.starts_at) !== null && (getDateValue(session.starts_at) ?? 0) >= now)
     .sort((left, right) => (getDateValue(left.starts_at) ?? 0) - (getDateValue(right.starts_at) ?? 0));
   const coachProfiles = (coachProfilesResult.data ?? []) as ProfileRow[];
   const canMessageLearner = context.roles.includes("coach") && assignedCoachIds.includes(context.user.id);
   const learnerName = formatUserName(learner);
-  const buildLearnerMessageHref = (draftLines: string[]) =>
+  const buildLearnerMessageHref = ({
+    draftLines,
+    noteLines,
+    followUpAt
+  }: {
+    draftLines: string[];
+    noteLines?: string[];
+    followUpAt?: string | null;
+  }) =>
     canMessageLearner
-      ? `/messages?${new URLSearchParams({
-          recipient: learnerId,
-          draft: draftLines.join("\n\n")
-        }).toString()}#messages-hub`
+      ? buildCoachMessageDraftHref({
+          recipientId: learnerId,
+          draftLines,
+          noteLines,
+          followUpAt
+        })
       : null;
   const submissionCards = await Promise.all(
     submissions.slice(0, 8).map(async (submission) => ({
@@ -9111,15 +9192,23 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
         : latestSubmission
           ? getSubmissionStatusLabel(latestSubmission.status)
           : "Non démarré",
-      messageHref: buildLearnerMessageHref([
-        `Bonjour ${learnerName},`,
-        `Je reviens sur "${assignment.title}" (${assetTitle}).`,
-        dueState === "overdue"
-          ? "La deadline est dépassée : dis-moi ce qui bloque et le prochain pas que tu peux poser aujourd'hui."
-          : dueState === "soon"
-            ? "La deadline approche : je veux vérifier que tout est clair et que tu peux avancer sans friction."
-            : `Statut actuel : ${dueLabel}. Dis-moi où tu en es et ce dont tu as besoin pour continuer.`
-      ])
+      messageHref: buildLearnerMessageHref({
+        draftLines: [
+          `Bonjour ${learnerName},`,
+          `Je reviens sur "${assignment.title}" (${assetTitle}).`,
+          dueState === "overdue"
+            ? "La deadline est dépassée : dis-moi ce qui bloque et le prochain pas que tu peux poser aujourd'hui."
+            : dueState === "soon"
+              ? "La deadline approche : je veux vérifier que tout est clair et que tu peux avancer sans friction."
+              : `Statut actuel : ${dueLabel}. Dis-moi où tu en es et ce dont tu as besoin pour continuer.`
+        ],
+        noteLines: [
+          `Relance fiche coaché : ${assignment.title}`,
+          `Asset : ${assetTitle}`,
+          `Signal : ${dueLabel} · résultat ${latestAttempt?.score ?? latestSubmission?.status ?? "non démarré"}.`
+        ],
+        followUpAt: getCoachFollowUpSuggestionAt(dueState, now)
+      })
     };
   });
   const priorityAssignment =
@@ -9128,16 +9217,31 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
     assignmentCards.find((assignment) => assignment.latestResult === "Non démarré") ??
     assignmentCards[0] ??
     null;
-  const coachFollowUpHref = buildLearnerMessageHref([
-    `Bonjour ${learnerName},`,
-    `Je fais un point rapide sur ton suivi ECCE.`,
-    engagement?.nextFocus
-      ? `Signal principal : ${engagement.nextFocus}.`
-      : "Signal principal : je veux comprendre où tu en es et ce qui t'aiderait le plus maintenant.",
-    priorityAssignment
-      ? `Point de départ proposé : "${priorityAssignment.title}" (${priorityAssignment.assetTitle}).`
-      : "Point de départ proposé : dis-moi ta prochaine action concrète."
-  ]);
+  const priorityFollowUpState =
+    priorityAssignment?.deadlineState ??
+    (engagement?.band === "risk" ? "overdue" : engagement?.band === "watch" ? "soon" : "planned");
+  const coachFollowUpHref = buildLearnerMessageHref({
+    draftLines: [
+      `Bonjour ${learnerName},`,
+      `Je fais un point rapide sur ton suivi ECCE.`,
+      engagement?.nextFocus
+        ? `Signal principal : ${engagement.nextFocus}.`
+        : "Signal principal : je veux comprendre où tu en es et ce qui t'aiderait le plus maintenant.",
+      priorityAssignment
+        ? `Point de départ proposé : "${priorityAssignment.title}" (${priorityAssignment.assetTitle}).`
+        : "Point de départ proposé : dis-moi ta prochaine action concrète."
+    ],
+    noteLines: [
+      `Suivi individuel : ${learnerName}`,
+      engagement?.nextFocus
+        ? `Signal : ${engagement.nextFocus}`
+        : "Signal : reprendre un point de progression court.",
+      priorityAssignment
+        ? `Priorité : ${priorityAssignment.title} (${priorityAssignment.assetTitle}).`
+        : "Priorité : clarifier la prochaine action."
+    ],
+    followUpAt: getCoachFollowUpSuggestionAt(priorityFollowUpState, now)
+  });
   const coachFollowUp = canMessageLearner
     ? {
         href: coachFollowUpHref ?? "/messages#messages-hub",
