@@ -1,18 +1,16 @@
-import { unstable_cache } from "next/cache";
-
 import { AUDIT_CATEGORY_LABELS, AUDIT_EVENT_CATEGORIES, type AuditEventCategory } from "@/lib/audit";
-import { CONTENT_STORAGE_AUDIT_CACHE_TAG, CONTENT_TAXONOMY_CACHE_TAG } from "@/lib/cache-tags";
 import { getAssignedCoachIdsForCoachee, getCoachAssignmentScope } from "@/lib/coach-assignments";
-import {
-  getNotificationOpsLaneLabel,
-  getNotificationOpsNavigation,
-  isNotificationOpsLane,
-  summarizeNotificationOps,
-  type NotificationOpsLane
-} from "@/lib/notification-ops";
 import { requireRole, type AppRole } from "@/lib/auth";
-import { CONTENT_FILE_BUCKET, listOrganizationContentPdfFiles, type ContentPdfStorageFile } from "@/lib/content-files";
 import { getOrganizationBrandingById } from "@/lib/organization";
+import {
+  buildContentTaxonomyPresets,
+  getCachedContentStorageAudit,
+  getCachedContentTaxonomyRows,
+  getSignedContentFileUrl,
+  type ContentPdfStorageFile,
+  type ContentTaxonomySubthemeRow,
+  type ContentTaxonomyThemeRow
+} from "@/lib/platform-content-assets";
 import {
   buildAssignmentTargets,
   buildEngagementOverview,
@@ -26,6 +24,13 @@ import {
   type EngagementTrend,
   type LearnerEngagementSignal
 } from "@/lib/platform-engagement";
+import {
+  getNotificationOpsLaneLabel,
+  getNotificationOpsNavigation,
+  isNotificationOpsLane,
+  summarizeNotificationOps,
+  type NotificationOpsLane
+} from "@/lib/notification-ops";
 import {
   formatMessagePreview,
   formatUserName,
@@ -109,63 +114,6 @@ type ContentRow = {
   is_required: boolean;
   created_at: string;
 };
-
-type ContentTaxonomyThemeRow = {
-  id: string;
-  label: string;
-  description: string | null;
-  position: number;
-};
-
-type ContentTaxonomySubthemeRow = {
-  id: string;
-  theme_id: string;
-  label: string;
-  topics: string[] | null;
-  position: number;
-};
-
-const getCachedContentTaxonomyRows = unstable_cache(
-  async (organizationId: string) => {
-    const admin = createSupabaseAdminClient();
-    const [themesResult, subthemesResult] = await Promise.all([
-      admin
-        .from("content_taxonomy_themes")
-        .select("id, label, description, position")
-        .eq("organization_id", organizationId)
-        .order("position", { ascending: true })
-        .order("label", { ascending: true }),
-      admin
-        .from("content_taxonomy_subthemes")
-        .select("id, theme_id, label, topics, position")
-        .eq("organization_id", organizationId)
-        .order("position", { ascending: true })
-        .order("label", { ascending: true })
-    ]);
-
-    return {
-      themes: (themesResult.data ?? []) as ContentTaxonomyThemeRow[],
-      subthemes: (subthemesResult.data ?? []) as ContentTaxonomySubthemeRow[]
-    };
-  },
-  ["content-taxonomy-rows"],
-  {
-    revalidate: 300,
-    tags: [CONTENT_TAXONOMY_CACHE_TAG]
-  }
-);
-
-const getCachedContentStorageAudit = unstable_cache(
-  async (organizationId: string) => {
-    const admin = createSupabaseAdminClient();
-    return listOrganizationContentPdfFiles(admin, organizationId);
-  },
-  ["content-storage-audit"],
-  {
-    revalidate: 300,
-    tags: [CONTENT_STORAGE_AUDIT_CACHE_TAG]
-  }
-);
 
 type ProgramRow = {
   id: string;
@@ -502,15 +450,6 @@ async function getSignedSubmissionUrl(storagePath: string | null, admin = create
   }
 
   const { data } = await admin.storage.from(SUBMISSION_BUCKET).createSignedUrl(storagePath, 60 * 60);
-  return data?.signedUrl ?? null;
-}
-
-async function getSignedContentFileUrl(storagePath: string | null, admin = createSupabaseAdminClient()) {
-  if (!storagePath) {
-    return null;
-  }
-
-  const { data } = await admin.storage.from(CONTENT_FILE_BUCKET).createSignedUrl(storagePath, 60 * 60);
   return data?.signedUrl ?? null;
 }
 
@@ -4962,20 +4901,7 @@ export async function getAdminContentStudioPageData(filters?: {
   }>;
   const taxonomyThemes = taxonomyRows.themes;
   const taxonomySubthemes = taxonomyRows.subthemes;
-  const taxonomyPresets = taxonomyThemes.map((theme) => ({
-    id: theme.id,
-    theme: theme.label,
-    description: theme.description ?? "",
-    position: theme.position,
-    subthemes: taxonomySubthemes
-      .filter((subtheme) => subtheme.theme_id === theme.id)
-      .map((subtheme) => ({
-        id: subtheme.id,
-        label: subtheme.label,
-        topics: subtheme.topics ?? [],
-        position: subtheme.position
-      }))
-  }));
+  const taxonomyPresets = buildContentTaxonomyPresets(taxonomyThemes, taxonomySubthemes);
   const moduleOptions = buildProgramModuleOptions(programs, modules);
   const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
   const moduleById = new Map(modules.map((module) => [module.id, module]));
@@ -5644,20 +5570,7 @@ export async function getAdminContentEditPageData(contentId: string) {
   }>;
   const taxonomyThemes = (taxonomyThemesResult.data ?? []) as ContentTaxonomyThemeRow[];
   const taxonomySubthemes = (taxonomySubthemesResult.data ?? []) as ContentTaxonomySubthemeRow[];
-  const taxonomyPresets = taxonomyThemes.map((theme) => ({
-    id: theme.id,
-    theme: theme.label,
-    description: theme.description ?? "",
-    position: theme.position,
-    subthemes: taxonomySubthemes
-      .filter((subtheme) => subtheme.theme_id === theme.id)
-      .map((subtheme) => ({
-        id: subtheme.id,
-        label: subtheme.label,
-        topics: subtheme.topics ?? [],
-        position: subtheme.position
-      }))
-  }));
+  const taxonomyPresets = buildContentTaxonomyPresets(taxonomyThemes, taxonomySubthemes);
   const tags = content.tags ?? [];
   const taxonomyIssues = [
     content.summary?.trim() ? null : "Résumé manquant",
