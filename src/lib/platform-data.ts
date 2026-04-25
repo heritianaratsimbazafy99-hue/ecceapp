@@ -34,6 +34,11 @@ import {
   getCoachingSessionTimeLabel
 } from "@/lib/platform-sessions";
 import {
+  buildLearnerProgressEvent,
+  sortProgressItemsByRecency,
+  type LearnerProgressEvent
+} from "@/lib/platform-progress";
+import {
   buildLatestReviewBySubmissionId,
   buildLatestSubmissionByAssignmentId,
   buildLatestSubmissionByContentId,
@@ -11067,40 +11072,25 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     ((coachProfilesResult.data ?? []) as ProfileRow[]).map((profile) => [profile.id, formatUserName(profile)])
   );
 
-  const progressEvents: Array<{
-    id: string;
-    lane: LearnerProgressLane;
-    laneLabel: string;
-    title: string;
-    description: string;
-    occurredAt: string;
-    occurredAtIso: string;
-    tone: BadgeTone;
-    href: string | null;
-    ctaLabel: string | null;
-    meta: string[];
-    searchText: string;
-  }> = [];
+  const progressEvents: LearnerProgressEvent[] = [];
 
   for (const badge of badges) {
     const badgeInfo = Array.isArray(badge.badges) ? badge.badges[0] : badge.badges;
     const title = badgeInfo?.title ?? "Badge ECCE";
     const description = badgeInfo?.description ?? "Nouveau jalon débloqué dans ton parcours ECCE.";
 
-    progressEvents.push({
+    progressEvents.push(buildLearnerProgressEvent({
       id: `badge-${badge.id}`,
       lane: "badge",
-      laneLabel: getLearnerProgressLaneLabel("badge"),
       title,
       description,
-      occurredAt: formatDate(badge.awarded_at),
       occurredAtIso: badge.awarded_at,
       tone: "success",
       href: "/dashboard",
       ctaLabel: "Voir mes badges",
       meta: ["Badge", badgeInfo?.icon ?? "progression"],
-      searchText: [title, description, "badge"].join(" ").toLowerCase()
-    });
+      searchValues: [title, description, "badge"]
+    }));
   }
 
   for (const attempt of attempts) {
@@ -11120,22 +11110,18 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     const title = quiz?.title ?? "Quiz ECCE";
     const description = `Tentative ${attempt.attempt_number} · ${scoreLabel} · ${attempt.status === "graded" ? "corrigé" : "soumis"}`;
 
-    progressEvents.push({
+    progressEvents.push(buildLearnerProgressEvent({
       id: `quiz-${attempt.id}`,
       lane: "quiz",
-      laneLabel: getLearnerProgressLaneLabel("quiz"),
       title,
       description,
-      occurredAt: formatDate(attempt.submitted_at),
       occurredAtIso: attempt.submitted_at,
       tone,
       href: assignment ? `/quiz/${attempt.quiz_id}?assignment=${assignment.id}` : `/quiz/${attempt.quiz_id}`,
       ctaLabel: "Revoir le quiz",
-      meta: [program?.title, programModule?.title, quiz?.kind ?? "quiz", passingScore !== null ? `seuil ${passingScore}%` : null].filter(
-        Boolean
-      ) as string[],
-      searchText: [title, description, program?.title, programModule?.title, quiz?.kind].filter(Boolean).join(" ").toLowerCase()
-    });
+      meta: [program?.title, programModule?.title, quiz?.kind ?? "quiz", passingScore !== null ? `seuil ${passingScore}%` : null],
+      searchValues: [title, description, program?.title, programModule?.title, quiz?.kind]
+    }));
   }
 
   for (const submission of submissions) {
@@ -11153,23 +11139,18 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     const statusLabel = getSubmissionStatusLabel(submission.status);
     const description = `${statusLabel} · ${content?.summary ?? submission.notes ?? "Rendu déposé dans ECCE."}`;
 
-    progressEvents.push({
+    progressEvents.push(buildLearnerProgressEvent({
       id: `content-${submission.id}`,
       lane: "content",
-      laneLabel: getLearnerProgressLaneLabel("content"),
       title,
       description,
-      occurredAt: formatDate(occurredAtIso),
       occurredAtIso,
       tone: getSubmissionStatusTone(submission.status),
       href: assignment ? `/assignments/${assignment.id}` : content ? `/library/${content.slug}` : null,
       ctaLabel: assignment ? "Voir le rendu" : content ? "Revoir le contenu" : null,
-      meta: [program?.title, programModule?.title, content?.category, content?.subcategory, content?.content_type].filter(Boolean) as string[],
-      searchText: [title, description, program?.title, programModule?.title, content?.category, content?.subcategory, content?.content_type]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-    });
+      meta: [program?.title, programModule?.title, content?.category, content?.subcategory, content?.content_type],
+      searchValues: [title, description, program?.title, programModule?.title, content?.category, content?.subcategory, content?.content_type]
+    }));
   }
 
   for (const progress of contentProgress) {
@@ -11186,23 +11167,18 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       : assignmentByContentId.get(progress.content_item_id);
     const description = `Lecture terminée · ${content.summary ?? content.content_type}`;
 
-    progressEvents.push({
+    progressEvents.push(buildLearnerProgressEvent({
       id: `content-read-${progress.id}`,
       lane: "content",
-      laneLabel: getLearnerProgressLaneLabel("content"),
       title: content.title,
       description,
-      occurredAt: formatDate(progress.completed_at),
       occurredAtIso: progress.completed_at,
       tone: "success",
       href: assignment ? `/library/${content.slug}?assignment=${assignment.id}` : `/library/${content.slug}`,
       ctaLabel: "Revoir la ressource",
-      meta: [program?.title, programModule?.title, content.category, content.subcategory, content.content_type].filter(Boolean) as string[],
-      searchText: [content.title, description, program?.title, programModule?.title, content.category, content.subcategory, content.content_type]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-    });
+      meta: [program?.title, programModule?.title, content.category, content.subcategory, content.content_type],
+      searchValues: [content.title, description, program?.title, programModule?.title, content.category, content.subcategory, content.content_type]
+    }));
   }
 
   for (const session of sessions) {
@@ -11211,20 +11187,18 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       ? `Séance terminée avec ${coachName} · fin ${formatDate(session.ends_at)}`
       : `Séance terminée avec ${coachName}.`;
 
-    progressEvents.push({
+    progressEvents.push(buildLearnerProgressEvent({
       id: `coaching-${session.id}`,
       lane: "coaching",
-      laneLabel: getLearnerProgressLaneLabel("coaching"),
       title: "Séance de coaching terminée",
       description,
-      occurredAt: formatDate(session.starts_at),
       occurredAtIso: session.starts_at,
       tone: "accent",
       href: "/agenda",
       ctaLabel: "Voir l'agenda",
       meta: [coachName, "coaching"],
-      searchText: ["Séance de coaching terminée", description, coachName].join(" ").toLowerCase()
-    });
+      searchValues: ["Séance de coaching terminée", description, coachName]
+    }));
   }
 
   for (const enrollment of enrollments) {
@@ -11234,20 +11208,18 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       continue;
     }
 
-    progressEvents.push({
+    progressEvents.push(buildLearnerProgressEvent({
       id: `program-enrollment-${program.id}`,
       lane: "program",
-      laneLabel: getLearnerProgressLaneLabel("program"),
       title: `Parcours activé · ${program.title}`,
       description: program.description ?? "Un nouveau parcours ECCE a été ouvert pour ton profil.",
-      occurredAt: formatDate(enrollment.enrolled_at),
       occurredAtIso: enrollment.enrolled_at,
       tone: "accent",
       href: "/programs",
       ctaLabel: "Voir mes parcours",
       meta: [program.status, "activation"],
-      searchText: [program.title, program.description, program.status, "activation parcours"].filter(Boolean).join(" ").toLowerCase()
-    });
+      searchValues: [program.title, program.description, program.status, "activation parcours"]
+    }));
   }
 
   for (const program of programs) {
@@ -11284,40 +11256,36 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       }
 
       if (totalItems > 0 && completedItems === totalItems && moduleActivityAt) {
-        progressEvents.push({
+        progressEvents.push(buildLearnerProgressEvent({
           id: `module-completed-${programModule.id}`,
           lane: "program",
-          laneLabel: getLearnerProgressLaneLabel("program"),
           title: `Module terminé · ${programModule.title}`,
           description: `${program.title} · ${completedItems}/${totalItems} étapes validées.`,
-          occurredAt: formatDate(moduleActivityAt),
           occurredAtIso: moduleActivityAt,
           tone: "success",
           href: "/programs",
           ctaLabel: "Voir le parcours",
           meta: [program.title, programModule.status, "module"],
-          searchText: [programModule.title, program.title, programModule.description, "module terminé"].filter(Boolean).join(" ").toLowerCase()
-        });
+          searchValues: [programModule.title, program.title, programModule.description, "module terminé"]
+        }));
       }
     }
 
     const programActivityAt = latestIso(programItemActivity);
 
     if (programTotalItems > 0 && programCompletedItems === programTotalItems && programActivityAt) {
-      progressEvents.push({
+      progressEvents.push(buildLearnerProgressEvent({
         id: `program-completed-${program.id}`,
         lane: "program",
-        laneLabel: getLearnerProgressLaneLabel("program"),
         title: `Parcours terminé · ${program.title}`,
         description: `${programCompletedItems}/${programTotalItems} étapes complétées dans ce programme.`,
-        occurredAt: formatDate(programActivityAt),
         occurredAtIso: programActivityAt,
         tone: "success",
         href: "/programs",
         ctaLabel: "Revoir le parcours",
         meta: [program.status, "parcours terminé"],
-        searchText: [program.title, program.description, "parcours terminé"].filter(Boolean).join(" ").toLowerCase()
-      });
+        searchValues: [program.title, program.description, "parcours terminé"]
+      }));
     }
   }
 
@@ -11337,9 +11305,9 @@ export async function getLearnerProgressHistoryPageData(filters?: {
       coaching: 0
     } as Record<LearnerProgressLane, number>
   );
-  const sortedEvents = queryFilteredEvents
-    .filter((event) => laneFilter === "all" || event.lane === laneFilter)
-    .sort((left, right) => (getDateValue(right.occurredAtIso) ?? 0) - (getDateValue(left.occurredAtIso) ?? 0));
+  const sortedEvents = sortProgressItemsByRecency(
+    queryFilteredEvents.filter((event) => laneFilter === "all" || event.lane === laneFilter)
+  );
   const { items: paginatedEvents, pageInfo } = paginateDataItems(
     sortedEvents,
     filters?.page,
@@ -11359,9 +11327,9 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     .filter((attempt) => attempt.score !== null)
     .sort((left, right) => Number(right.score ?? 0) - Number(left.score ?? 0))[0] ?? null;
   const bestQuiz = bestQuizAttempt ? quizById.get(bestQuizAttempt.quiz_id) : null;
-  const latestProgramEvent = queryFilteredEvents
-    .filter((event) => event.lane === "program")
-    .sort((left, right) => (getDateValue(right.occurredAtIso) ?? 0) - (getDateValue(left.occurredAtIso) ?? 0))[0] ?? null;
+  const latestProgramEvent = sortProgressItemsByRecency(
+    queryFilteredEvents.filter((event) => event.lane === "program")
+  )[0] ?? null;
 
   return {
     context,
@@ -11853,9 +11821,7 @@ export async function getDashboardPageData() {
     });
   }
 
-  const sortedProgressPreviewEvents = progressPreviewEvents
-    .sort((left, right) => (getDateValue(right.occurredAtIso) ?? 0) - (getDateValue(left.occurredAtIso) ?? 0))
-    .slice(0, 3);
+  const sortedProgressPreviewEvents = sortProgressItemsByRecency(progressPreviewEvents).slice(0, 3);
 
   return {
     context,
