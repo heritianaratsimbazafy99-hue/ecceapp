@@ -13,6 +13,28 @@ import {
 import { requireRole, type AppRole } from "@/lib/auth";
 import { CONTENT_FILE_BUCKET, listOrganizationContentPdfFiles, type ContentPdfStorageFile } from "@/lib/content-files";
 import { getOrganizationBrandingById } from "@/lib/organization";
+import {
+  buildCoachMessageDraftHref,
+  clamp,
+  formatDate,
+  formatDateCompact,
+  formatFileSize,
+  formatLastActivity,
+  formatTimeOnly,
+  getCoachFollowUpSuggestionAt,
+  getDateValue,
+  getDaysSince,
+  getDeadlineState,
+  getDeadlineStateLabel,
+  getDeadlineStateTone,
+  getRelativeDayLabel,
+  isWithinDays,
+  matchesDataSearch,
+  normalizeDataSearchQuery,
+  paginateDataItems,
+  roundMetric,
+  uniqueById
+} from "@/lib/platform-data-utils";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ProfileRow = {
@@ -376,176 +398,6 @@ type EngagementOverview = {
 };
 
 const SUBMISSION_BUCKET = "submission-files";
-function formatDate(dateString: string | null) {
-  if (!dateString) {
-    return "Aucune échéance";
-  }
-
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(dateString));
-}
-
-function formatFileSize(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 Mo";
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
-  }
-
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} Mo`;
-  }
-
-  return `${Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10} Go`;
-}
-
-function formatDateCompact(dateString: string | null) {
-  if (!dateString) {
-    return "Date non définie";
-  }
-
-  return new Intl.DateTimeFormat("fr-FR", {
-    weekday: "short",
-    day: "numeric",
-    month: "long"
-  }).format(new Date(dateString));
-}
-
-function formatTimeOnly(dateString: string | null) {
-  if (!dateString) {
-    return "Heure libre";
-  }
-
-  return new Intl.DateTimeFormat("fr-FR", {
-    timeStyle: "short"
-  }).format(new Date(dateString));
-}
-
-function getRelativeDayLabel(dateString: string | null, now = Date.now()) {
-  if (!dateString) {
-    return "À planifier";
-  }
-
-  const targetDate = new Date(dateString);
-  const today = new Date(now);
-  const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const targetStart = new Date(
-    targetDate.getFullYear(),
-    targetDate.getMonth(),
-    targetDate.getDate()
-  ).getTime();
-  const diffDays = Math.round((targetStart - dayStart) / (24 * 60 * 60 * 1000));
-
-  if (diffDays === 0) {
-    return "Aujourd'hui";
-  }
-
-  if (diffDays === 1) {
-    return "Demain";
-  }
-
-  if (diffDays === -1) {
-    return "Hier";
-  }
-
-  return formatDateCompact(dateString);
-}
-
-function getDeadlineState(dateString: string | null | undefined, completed = false, now = Date.now()) {
-  if (completed) {
-    return "done" as const;
-  }
-
-  const value = getDateValue(dateString);
-
-  if (value === null) {
-    return "open" as const;
-  }
-
-  if (value < now) {
-    return "overdue" as const;
-  }
-
-  if (value <= now + 7 * 24 * 60 * 60 * 1000) {
-    return "soon" as const;
-  }
-
-  return "planned" as const;
-}
-
-function getDeadlineStateLabel(state: ReturnType<typeof getDeadlineState>) {
-  switch (state) {
-    case "done":
-      return "terminé";
-    case "overdue":
-      return "en retard";
-    case "soon":
-      return "à venir";
-    case "planned":
-      return "planifié";
-    default:
-      return "sans deadline";
-  }
-}
-
-function getDeadlineStateTone(
-  state: ReturnType<typeof getDeadlineState>
-): "neutral" | "accent" | "warning" | "success" {
-  switch (state) {
-    case "done":
-      return "success";
-    case "overdue":
-      return "warning";
-    case "soon":
-      return "accent";
-    case "planned":
-      return "neutral";
-    default:
-      return "neutral";
-  }
-}
-
-function getCoachFollowUpSuggestionAt(state: ReturnType<typeof getDeadlineState>, now = Date.now()) {
-  const delayDays = state === "overdue" ? 1 : state === "soon" ? 2 : 5;
-  return new Date(now + delayDays * 24 * 60 * 60 * 1000).toISOString();
-}
-
-function buildCoachMessageDraftHref({
-  conversationId,
-  recipientId,
-  draftLines,
-  noteLines,
-  followUpAt
-}: {
-  conversationId?: string | null;
-  recipientId: string;
-  draftLines: string[];
-  noteLines?: string[];
-  followUpAt?: string | null;
-}) {
-  const searchParams = new URLSearchParams({
-    recipient: recipientId,
-    draft: draftLines.join("\n\n")
-  });
-
-  if (conversationId) {
-    searchParams.set("conversation", conversationId);
-  }
-
-  if (noteLines?.length) {
-    searchParams.set("note", noteLines.join("\n"));
-  }
-
-  if (followUpAt) {
-    searchParams.set("followUp", followUpAt);
-  }
-
-  return `/messages?${searchParams.toString()}#messages-hub`;
-}
 
 function getSubmissionStatusLabel(status: string) {
   switch (status) {
@@ -606,51 +458,6 @@ function getCommunityRoleTone(roles: AppRole[]): BadgeTone {
   }
 
   return "neutral";
-}
-
-function normalizeDataSearchQuery(value: string | null | undefined) {
-  return (value ?? "")
-    .trim()
-    .replace(/[^\p{L}\p{N}\s@._-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .slice(0, 80);
-}
-
-function matchesDataSearch(values: Array<string | null | undefined>, normalizedQuery: string) {
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  const haystack = values.join(" ").toLowerCase();
-  return haystack.includes(normalizedQuery.toLowerCase());
-}
-
-function getDataPage(value: string | number | null | undefined) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
-}
-
-function paginateDataItems<T>(items: T[], pageValue: string | number | null | undefined, pageSize: number) {
-  const totalItems = items.length;
-  const totalPages = Math.max(Math.ceil(totalItems / pageSize), 1);
-  const requestedPage = getDataPage(pageValue);
-  const page = Math.min(requestedPage, totalPages);
-  const startIndex = (page - 1) * pageSize;
-  const pageItems = items.slice(startIndex, startIndex + pageSize);
-
-  return {
-    items: pageItems,
-    pageInfo: {
-      page,
-      pageSize,
-      totalItems,
-      totalPages,
-      hasPreviousPage: page > 1,
-      hasNextPage: page < totalPages,
-      from: totalItems ? startIndex + 1 : 0,
-      to: totalItems ? startIndex + pageItems.length : 0
-    }
-  };
 }
 
 async function getCoachVisibleLearnerScope() {
@@ -912,10 +719,6 @@ function getAgendaLaneTone(lane: AgendaLane): BadgeTone {
   }
 }
 
-function uniqueById<T extends { id: string }>(items: T[]) {
-  return Array.from(new Map(items.map((item) => [item.id, item])).values());
-}
-
 function formatMessagePreview(value: string | null) {
   if (!value) {
     return "Aucun message pour l'instant.";
@@ -975,65 +778,6 @@ function getAuditHighlights(metadata: Record<string, unknown> | null | undefined
   return highlights
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .slice(0, 4);
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function roundMetric(value: number) {
-  return Math.round(value);
-}
-
-function getDateValue(dateString: string | null | undefined) {
-  if (!dateString) {
-    return null;
-  }
-
-  const value = new Date(dateString).getTime();
-  return Number.isNaN(value) ? null : value;
-}
-
-function isWithinDays(dateString: string | null | undefined, days: number, now = Date.now()) {
-  const value = getDateValue(dateString);
-
-  if (value === null) {
-    return false;
-  }
-
-  return value <= now && value >= now - days * 24 * 60 * 60 * 1000;
-}
-
-function getDaysSince(dateString: string | null | undefined, now = Date.now()) {
-  const value = getDateValue(dateString);
-
-  if (value === null) {
-    return null;
-  }
-
-  return Math.floor((now - value) / (24 * 60 * 60 * 1000));
-}
-
-function formatLastActivity(dateString: string | null | undefined) {
-  const daysSince = getDaysSince(dateString);
-
-  if (daysSince === null) {
-    return "Aucune activité détectée";
-  }
-
-  if (daysSince <= 0) {
-    return "Actif aujourd'hui";
-  }
-
-  if (daysSince === 1) {
-    return "Actif hier";
-  }
-
-  if (daysSince < 7) {
-    return `Actif il y a ${daysSince} jours`;
-  }
-
-  return `Dernière activité ${formatDate(dateString ?? null)}`;
 }
 
 function getTrendLabel(trend: EngagementTrend) {
