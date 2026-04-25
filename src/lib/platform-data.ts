@@ -18,6 +18,12 @@ import {
   groupProgramModulesByProgramId
 } from "@/lib/platform-programs";
 import {
+  buildLatestReviewBySubmissionId,
+  buildLatestSubmissionByAssignmentId,
+  buildLatestSubmissionByContentId,
+  getSignedSubmissionUrl
+} from "@/lib/platform-submissions";
+import {
   buildAssignmentTargets,
   buildEngagementOverview,
   buildEngagementSignals,
@@ -352,8 +358,6 @@ type AuditEventRow = {
 const VALID_ROLES: AppRole[] = ["admin", "professor", "coach", "coachee"];
 const VALID_MEMBERSHIP_STATUSES: ProfileRow["status"][] = ["invited", "active", "suspended"];
 
-const SUBMISSION_BUCKET = "submission-files";
-
 async function getCoachVisibleLearnerScope() {
   const context = await requireRole(["admin", "coach"]);
   const admin = createSupabaseAdminClient();
@@ -432,15 +436,6 @@ async function getCoachVisibleLearnerScope() {
     cohortNameById,
     cohortNamesByUserId
   };
-}
-
-async function getSignedSubmissionUrl(storagePath: string | null, admin = createSupabaseAdminClient()) {
-  if (!storagePath) {
-    return null;
-  }
-
-  const { data } = await admin.storage.from(SUBMISSION_BUCKET).createSignedUrl(storagePath, 60 * 60);
-  return data?.signedUrl ?? null;
 }
 
 async function getMessagingWorkspace(params: {
@@ -8108,12 +8103,9 @@ export async function getCoachReviewQueueData(filters?: {
           )
       : Promise.resolve({ data: [] as Array<{ id: string; title: string }> })
   ]);
-  const latestReviewBySubmissionId = new Map<string, SubmissionReviewRow>();
-  for (const review of (reviewsResult.data ?? []) as SubmissionReviewRow[]) {
-    if (!latestReviewBySubmissionId.has(review.submission_id)) {
-      latestReviewBySubmissionId.set(review.submission_id, review);
-    }
-  }
+  const latestReviewBySubmissionId = buildLatestReviewBySubmissionId(
+    (reviewsResult.data ?? []) as SubmissionReviewRow[]
+  );
 
   const contentTitleById = new Map((contentRowsResult.data ?? []).map((item) => [item.id, item.title]));
   const reviewQueue = await Promise.all(
@@ -8296,12 +8288,9 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
   ]);
   const contentById = new Map((contentRowsResult.data ?? []).map((content) => [content.id, content]));
   const quizById = new Map((quizRowsResult.data ?? []).map((quiz) => [quiz.id, quiz]));
-  const latestReviewBySubmissionId = new Map<string, SubmissionReviewRow>();
-  for (const review of (reviewsResult.data ?? []) as SubmissionReviewRow[]) {
-    if (!latestReviewBySubmissionId.has(review.submission_id)) {
-      latestReviewBySubmissionId.set(review.submission_id, review);
-    }
-  }
+  const latestReviewBySubmissionId = buildLatestReviewBySubmissionId(
+    (reviewsResult.data ?? []) as SubmissionReviewRow[]
+  );
 
   const latestAttemptByAssignmentKey = new Map<string, QuizAttemptResultRow>();
   const latestAttemptByQuizKey = new Map<string, QuizAttemptResultRow>();
@@ -8315,12 +8304,7 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
     }
   }
 
-  const latestSubmissionByAssignmentId = new Map<string, SubmissionRow>();
-  for (const submission of submissions) {
-    if (submission.assignment_id && !latestSubmissionByAssignmentId.has(submission.assignment_id)) {
-      latestSubmissionByAssignmentId.set(submission.assignment_id, submission);
-    }
-  }
+  const latestSubmissionByAssignmentId = buildLatestSubmissionByAssignmentId(submissions);
 
   const engagement =
     buildEngagementSignals({
@@ -9164,12 +9148,9 @@ export async function getCoachPageData() {
       : Promise.resolve({ data: [] as Array<{ id: string; title: string }> })
   ]);
 
-  const latestReviewBySubmissionId = new Map<string, SubmissionReviewRow>();
-  for (const review of (reviewsResult.data ?? []) as SubmissionReviewRow[]) {
-    if (!latestReviewBySubmissionId.has(review.submission_id)) {
-      latestReviewBySubmissionId.set(review.submission_id, review);
-    }
-  }
+  const latestReviewBySubmissionId = buildLatestReviewBySubmissionId(
+    (reviewsResult.data ?? []) as SubmissionReviewRow[]
+  );
 
   const contentTitleById = new Map((contentRowsResult.data ?? []).map((item) => [item.id, item.title]));
   const reviewQueue = await Promise.all(
@@ -10660,12 +10641,7 @@ export async function getLearnerProgramsPageData(filters?: {
   const contentProgress = (contentProgressResult.data ?? []) as ContentProgressRow[];
   const contentProgressMaps = buildLatestContentProgressMaps(contentProgress);
 
-  const latestSubmissionByContentId = new Map<string, SubmissionRow>();
-  for (const submission of submissions) {
-    if (submission.content_item_id && !latestSubmissionByContentId.has(submission.content_item_id)) {
-      latestSubmissionByContentId.set(submission.content_item_id, submission);
-    }
-  }
+  const latestSubmissionByContentId = buildLatestSubmissionByContentId(submissions);
 
   const latestAttemptByQuizId = new Map<string, QuizAttemptResultRow>();
   for (const attempt of attempts) {
@@ -11357,12 +11333,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     }
   }
 
-  const latestSubmissionByContentId = new Map<string, SubmissionRow>();
-  for (const submission of submissions) {
-    if (submission.content_item_id && !latestSubmissionByContentId.has(submission.content_item_id)) {
-      latestSubmissionByContentId.set(submission.content_item_id, submission);
-    }
-  }
+  const latestSubmissionByContentId = buildLatestSubmissionByContentId(submissions);
 
   const latestAttemptByQuizId = new Map<string, QuizAttemptResultRow>();
   for (const attempt of attempts) {
@@ -11928,12 +11899,7 @@ export async function getDashboardPageData() {
   const assignmentSubmissions = (submissionsResult.data ?? []) as SubmissionRow[];
   const contentProgress = (contentProgressResult.data ?? []) as ContentProgressRow[];
   const contentProgressMaps = buildLatestContentProgressMaps(contentProgress);
-  const submissionByAssignmentId = new Map<string, SubmissionRow>();
-  for (const submission of assignmentSubmissions) {
-    if (submission.assignment_id && !submissionByAssignmentId.has(submission.assignment_id)) {
-      submissionByAssignmentId.set(submission.assignment_id, submission);
-    }
-  }
+  const submissionByAssignmentId = buildLatestSubmissionByAssignmentId(assignmentSubmissions);
   const badges = ((badgesResult.data ?? []) as UserBadgeRow[]).map((badge) => {
     const badgeInfo = Array.isArray(badge.badges) ? badge.badges[0] : badge.badges;
 
@@ -12396,13 +12362,9 @@ export async function getAssignmentPageData(assignmentId: string) {
         .in("submission_id", reviewIds)
         .order("created_at", { ascending: false })
     : { data: [] as SubmissionReviewRow[] };
-  const latestReviewBySubmissionId = new Map<string, SubmissionReviewRow>();
-
-  for (const review of (reviewsResult.data ?? []) as SubmissionReviewRow[]) {
-    if (!latestReviewBySubmissionId.has(review.submission_id)) {
-      latestReviewBySubmissionId.set(review.submission_id, review);
-    }
-  }
+  const latestReviewBySubmissionId = buildLatestReviewBySubmissionId(
+    (reviewsResult.data ?? []) as SubmissionReviewRow[]
+  );
 
   const latestSubmission = submissions[0] ?? null;
   const dueState = getDeadlineState(
