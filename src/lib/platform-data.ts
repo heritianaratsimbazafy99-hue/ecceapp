@@ -2,6 +2,7 @@ import { AUDIT_CATEGORY_LABELS, AUDIT_EVENT_CATEGORIES, type AuditEventCategory 
 import { getAssignedCoachIdsForCoachee, getCoachAssignmentScope } from "@/lib/coach-assignments";
 import { requireRole, type AppRole } from "@/lib/auth";
 import { getOrganizationBrandingById } from "@/lib/organization";
+import { getAgendaTiming } from "@/lib/platform-agenda";
 import {
   buildContentTaxonomyPresets,
   getCachedContentStorageAudit,
@@ -50,7 +51,6 @@ import {
   getAdminProgramLaneLabel,
   getAdminProgramLaneTone,
   getAgendaLaneLabel,
-  getAgendaLaneTone,
   getAppRoleLabel,
   getAuditHighlights,
   getCommunityRoleTone,
@@ -9808,11 +9808,10 @@ export async function getAgendaPageData(filters?: {
     const coachName = profileById.get(session.coach_id)
       ? formatUserName(profileById.get(session.coach_id)!)
       : "Coach inconnu";
-    const relativeDay = getRelativeDayLabel(session.starts_at, now);
-    const timestamp = new Date(session.starts_at).getTime();
-    const isToday = relativeDay === "Aujourd'hui";
-    const isOverdue = timestamp < now && session.status === "planned";
-    const lane: AgendaLane = isOverdue ? "urgent" : isToday ? "today" : timestamp >= now ? "upcoming" : "recent";
+    const agendaTiming = getAgendaTiming(session.starts_at, now, {
+      isOverdue: (getDateValue(session.starts_at) ?? now) < now && session.status === "planned"
+    });
+    const timestamp = agendaTiming.timestamp;
     const title = context.role === "coachee" ? "Séance de coaching" : coacheeName;
     const subtitle =
       context.role === "admin"
@@ -9831,7 +9830,7 @@ export async function getAgendaPageData(filters?: {
       id: `session-${session.id}`,
       type: "session" as const,
       timestamp,
-      dayLabel: relativeDay,
+      dayLabel: agendaTiming.relativeDay,
       dateLabel: formatDateCompact(session.starts_at),
       timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
       title,
@@ -9846,11 +9845,11 @@ export async function getAgendaPageData(filters?: {
       audienceLabel,
       href: context.role === "coachee" ? session.video_link || null : `/coach/sessions/${session.id}`,
       ctaLabel: context.role === "coachee" ? (session.video_link ? "Rejoindre" : null) : "Ouvrir la séance",
-      isOverdue,
-      isToday,
-      lane,
-      laneLabel: getAgendaLaneLabel(lane),
-      tone: getAgendaLaneTone(lane),
+      isOverdue: agendaTiming.isOverdue,
+      isToday: agendaTiming.isToday,
+      lane: agendaTiming.lane,
+      laneLabel: agendaTiming.laneLabel,
+      tone: agendaTiming.tone,
       nextAction:
         session.video_link && timestamp >= now
           ? "Le lien de séance est prêt: tu peux rejoindre ou préparer ce rendez-vous depuis l'agenda."
@@ -9868,11 +9867,12 @@ export async function getAgendaPageData(filters?: {
 
   const deadlineEvents = assignments.map((assignment) => {
     const dueState = getDeadlineState(assignment.due_at, false, now);
-    const dueTimestamp = assignment.due_at ? new Date(assignment.due_at).getTime() : now;
+    const agendaTiming = getAgendaTiming(assignment.due_at, now, {
+      isOverdue: dueState === "overdue"
+    });
+    const dueTimestamp = agendaTiming.timestamp;
     const content = assignment.content_item_id ? contentById.get(assignment.content_item_id) : null;
     const quiz = assignment.quiz_id ? quizById.get(assignment.quiz_id) : null;
-    const isToday = getRelativeDayLabel(assignment.due_at, now) === "Aujourd'hui";
-    const lane: AgendaLane = dueState === "overdue" ? "urgent" : isToday ? "today" : dueTimestamp >= now ? "upcoming" : "recent";
     const subtitle =
       assignment.quiz_id
         ? `Quiz · ${quiz?.title ?? "quiz"}`
@@ -9892,7 +9892,7 @@ export async function getAgendaPageData(filters?: {
       id: `deadline-${assignment.id}`,
       type: "deadline" as const,
       timestamp: dueTimestamp,
-      dayLabel: getRelativeDayLabel(assignment.due_at, now),
+      dayLabel: agendaTiming.relativeDay,
       dateLabel: formatDateCompact(assignment.due_at),
       timeLabel: formatTimeOnly(assignment.due_at),
       title: assignment.title,
@@ -9908,11 +9908,11 @@ export async function getAgendaPageData(filters?: {
             ? `/library/${content.slug}`
             : null,
       ctaLabel: assignment.quiz_id ? "Ouvrir le quiz" : context.role === "coachee" ? "Ouvrir l'assignation" : "Ouvrir la ressource",
-      isOverdue: dueState === "overdue",
-      isToday,
-      lane,
-      laneLabel: getAgendaLaneLabel(lane),
-      tone: getAgendaLaneTone(lane),
+      isOverdue: agendaTiming.isOverdue,
+      isToday: agendaTiming.isToday,
+      lane: agendaTiming.lane,
+      laneLabel: agendaTiming.laneLabel,
+      tone: agendaTiming.tone,
       nextAction:
         dueState === "overdue"
           ? "La deadline a basculé en retard: ouvre cette étape en priorité."
@@ -9936,12 +9936,8 @@ export async function getAgendaPageData(filters?: {
 
       const learner = profileById.get(conversation.coachee_id);
       const learnerName = learner ? formatUserName(learner) : "Coaché inconnu";
-      const timestamp = getDateValue(note.next_follow_up_at) ?? now;
-      const relativeDay = getRelativeDayLabel(note.next_follow_up_at, now);
-      const isToday = relativeDay === "Aujourd'hui";
-      const isOverdue = timestamp < now;
-      const lane: AgendaLane = isOverdue ? "urgent" : isToday ? "today" : timestamp >= now ? "upcoming" : "recent";
-      const nextFollowUpState = lane === "urgent" ? "overdue" : lane === "today" ? "soon" : "planned";
+      const agendaTiming = getAgendaTiming(note.next_follow_up_at, now);
+      const nextFollowUpState = agendaTiming.lane === "urgent" ? "overdue" : agendaTiming.lane === "today" ? "soon" : "planned";
       const nextFollowUpAt = getCoachFollowUpSuggestionAt(nextFollowUpState, now);
       const messageHref = buildCoachMessageDraftHref({
         conversationId: note.conversation_id,
@@ -9950,9 +9946,9 @@ export async function getAgendaPageData(filters?: {
           `Bonjour ${learnerName},`,
           "Je reviens vers toi comme prévu sur notre dernier point de suivi.",
           `Contexte rapide : ${formatMessagePreview(note.body)}`,
-          lane === "urgent"
+          agendaTiming.lane === "urgent"
             ? "La relance prévue est dépassée : dis-moi ce qui bloque et la prochaine action que tu peux poser aujourd'hui."
-            : lane === "today"
+            : agendaTiming.lane === "today"
               ? "Je voulais faire le point aujourd'hui : où en es-tu et quelle action peux-tu confirmer ?"
               : "Je prépare notre prochain point : dis-moi où tu en es pour que je t'aide à garder le rythme."
         ],
@@ -9966,30 +9962,30 @@ export async function getAgendaPageData(filters?: {
       return {
         id: `followup-${note.conversation_id}`,
         type: "followup" as const,
-        timestamp,
-        dayLabel: relativeDay,
+        timestamp: agendaTiming.timestamp,
+        dayLabel: agendaTiming.relativeDay,
         dateLabel: formatDateCompact(note.next_follow_up_at),
         timeLabel: formatTimeOnly(note.next_follow_up_at),
         title: `Relance · ${learnerName}`,
         subtitle: formatMessagePreview(note.body),
-        statusLabel: lane === "urgent" ? "relance en retard" : lane === "today" ? "relance du jour" : "relance planifiée",
-        statusTone: getAgendaLaneTone(lane),
+        statusLabel: agendaTiming.lane === "urgent" ? "relance en retard" : agendaTiming.lane === "today" ? "relance du jour" : "relance planifiée",
+        statusTone: agendaTiming.tone,
         audienceLabel: learnerName,
         href: messageHref,
         ctaLabel: "Préparer la relance",
-        isOverdue,
-        isToday,
-        lane,
-        laneLabel: getAgendaLaneLabel(lane),
-        tone: getAgendaLaneTone(lane),
+        isOverdue: agendaTiming.isOverdue,
+        isToday: agendaTiming.isToday,
+        lane: agendaTiming.lane,
+        laneLabel: agendaTiming.laneLabel,
+        tone: agendaTiming.tone,
         nextAction:
-          lane === "urgent"
+          agendaTiming.lane === "urgent"
             ? "Cette relance interne est en retard: prépare le message avant de replanifier le prochain point."
-            : lane === "today"
+            : agendaTiming.lane === "today"
               ? "Cette relance est prévue aujourd'hui: reprends le fil avec un message court et contextualisé."
               : "Cette relance est planifiée: garde-la visible dans l'agenda pour préparer le prochain contact.",
         contextLabel: "Note interne coach",
-        searchText: [`relance ${learnerName}`, note.body, relativeDay].join(" ").toLowerCase()
+        searchText: [`relance ${learnerName}`, note.body, agendaTiming.relativeDay].join(" ").toLowerCase()
       };
     })
     .filter((event): event is NonNullable<typeof event> => Boolean(event));
