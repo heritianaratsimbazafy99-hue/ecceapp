@@ -18,7 +18,13 @@ import {
   getProgramModuleLabel,
   groupProgramModulesByProgramId
 } from "@/lib/platform-programs";
-import { getMessagingWorkspace, type CoachConversationNoteRow } from "@/lib/platform-messaging";
+import {
+  buildCoachFollowUpDraft,
+  getCoachFollowUpDashboardTiming,
+  getCoachFollowUpNotesWithConversations,
+  getCoachFollowUpUrgencyFromAgendaLane
+} from "@/lib/platform-followups";
+import { getMessagingWorkspace } from "@/lib/platform-messaging";
 import {
   buildLatestReviewBySubmissionId,
   buildLatestSubmissionByAssignmentId,
@@ -9005,72 +9011,32 @@ export async function getCoachPageData() {
     cohortLabels: cohortNamesByUserId.get(profile.id) ?? []
   }));
 
-  const followUpNotesResult = context.roles.includes("coach")
-    ? await admin
-        .from("coach_conversation_notes")
-        .select("conversation_id, body, next_follow_up_at, updated_at")
-        .eq("organization_id", organizationId)
-        .eq("coach_id", context.user.id)
-        .not("next_follow_up_at", "is", null)
-        .order("next_follow_up_at", { ascending: true })
-        .limit(12)
-    : { data: [] as CoachConversationNoteRow[], error: null };
-  const followUpNotes = followUpNotesResult.error
-    ? []
-    : ((followUpNotesResult.data ?? []) as CoachConversationNoteRow[]);
-  const followUpConversationIds = followUpNotes.map((note) => note.conversation_id);
-  const followUpConversationsResult = followUpConversationIds.length
-    ? await admin
-        .from("coach_conversations")
-        .select("id, coachee_id")
-        .eq("organization_id", organizationId)
-        .eq("coach_id", context.user.id)
-        .in("id", followUpConversationIds)
-    : { data: [] as Array<{ id: string; coachee_id: string }> };
-  const followUpConversationById = new Map(
-    ((followUpConversationsResult.data ?? []) as Array<{ id: string; coachee_id: string }>).map((conversation) => [
-      conversation.id,
-      conversation
-    ])
-  );
+  const { notes: followUpNotes, conversationById: followUpConversationById } = context.roles.includes("coach")
+    ? await getCoachFollowUpNotesWithConversations({
+        admin,
+        organizationId,
+        coachId: context.user.id,
+        limit: 12
+      })
+    : { notes: [], conversationById: new Map() };
   const now = Date.now();
-  const nextDay = now + 24 * 60 * 60 * 1000;
   const internalFollowUps = followUpNotes
     .map((note) => {
-      const dueValue = getDateValue(note.next_follow_up_at);
       const conversation = followUpConversationById.get(note.conversation_id);
       const learner = conversation ? profileById.get(conversation.coachee_id) : null;
-      const urgency =
-        dueValue !== null && dueValue < now
-          ? "overdue"
-          : dueValue !== null && dueValue <= nextDay
-            ? "today"
-            : "upcoming";
-      const tone: BadgeTone = urgency === "overdue" ? "warning" : urgency === "today" ? "accent" : "neutral";
+      const followUpTiming = getCoachFollowUpDashboardTiming(note.next_follow_up_at, now);
       const learnerName = learner ? formatUserName(learner) : "Coaché inconnu";
-      const followUpState = urgency === "overdue" ? "overdue" : urgency === "today" ? "soon" : "planned";
-      const nextFollowUpAt = getCoachFollowUpSuggestionAt(followUpState, now);
-      const messageHref = conversation
-        ? buildCoachMessageDraftHref({
+      const followUpDraft = conversation
+        ? buildCoachFollowUpDraft({
             conversationId: note.conversation_id,
             recipientId: conversation.coachee_id,
-            draftLines: [
-              `Bonjour ${learnerName},`,
-              "Je reviens vers toi comme prévu sur notre dernier point de suivi.",
-              `Contexte rapide : ${formatMessagePreview(note.body)}`,
-              urgency === "overdue"
-                ? "La relance prévue est dépassée : dis-moi ce qui bloque et la prochaine action que tu peux poser aujourd'hui."
-                : urgency === "today"
-                  ? "Je voulais faire le point aujourd'hui : où en es-tu et quelle action peux-tu confirmer ?"
-                  : "Je prépare notre prochain point : dis-moi où tu en es pour que je t'aide à garder le rythme."
-            ],
-            noteLines: [
-              note.body,
-              `Relance traitée depuis le cockpit coach le ${formatDate(new Date(now).toISOString())}.`
-            ],
-            followUpAt: nextFollowUpAt
+            learnerName,
+            body: note.body,
+            urgency: followUpTiming.urgency,
+            noteActionLabel: "Relance traitée depuis le cockpit coach",
+            now
           })
-        : `/messages?conversation=${note.conversation_id}#messages-hub`;
+        : null;
 
       return {
         id: note.conversation_id,
@@ -9078,16 +9044,16 @@ export async function getCoachPageData() {
         learnerId: conversation?.coachee_id ?? null,
         learnerName,
         dueAt: formatDate(note.next_follow_up_at),
-        dueLabel: urgency === "overdue" ? "En retard" : getRelativeDayLabel(note.next_follow_up_at),
+        dueLabel: followUpTiming.dueLabel,
         bodyPreview: formatMessagePreview(note.body),
         updatedAt: formatDate(note.updated_at),
-        urgency,
-        tone,
+        urgency: followUpTiming.urgency,
+        tone: followUpTiming.tone,
         href: `/messages?conversation=${note.conversation_id}#messages-hub`,
         learnerHref: conversation ? `/coach/learners/${conversation.coachee_id}` : null,
-        messageHref,
-        nextFollowUpAt: formatDate(nextFollowUpAt),
-        sortValue: dueValue ?? Number.MAX_SAFE_INTEGER
+        messageHref: followUpDraft?.messageHref ?? `/messages?conversation=${note.conversation_id}#messages-hub`,
+        nextFollowUpAt: followUpDraft ? formatDate(followUpDraft.nextFollowUpAt) : "Aucune échéance",
+        sortValue: followUpTiming.sortValue
       };
     })
     .filter((item) => Boolean(item.learnerId))
@@ -9736,35 +9702,15 @@ export async function getAgendaPageData(filters?: {
 
   const contentById = new Map(((contentsResult.data ?? []) as Array<{ id: string; title: string; slug: string }>).map((item) => [item.id, item]));
   const quizById = new Map(((quizzesResult.data ?? []) as Array<{ id: string; title: string }>).map((item) => [item.id, item]));
-  const followUpNotesResult = context.roles.includes("coach")
-    ? await admin
-        .from("coach_conversation_notes")
-        .select("conversation_id, body, next_follow_up_at, updated_at")
-        .eq("organization_id", organizationId)
-        .eq("coach_id", userId)
-        .not("next_follow_up_at", "is", null)
-        .lte("next_follow_up_at", rangeEndIso)
-        .order("next_follow_up_at", { ascending: true })
-        .limit(80)
-    : { data: [] as CoachConversationNoteRow[], error: null };
-  const followUpNotes = followUpNotesResult.error
-    ? []
-    : ((followUpNotesResult.data ?? []) as CoachConversationNoteRow[]);
-  const followUpConversationIds = followUpNotes.map((note) => note.conversation_id);
-  const followUpConversationsResult = followUpConversationIds.length
-    ? await admin
-        .from("coach_conversations")
-        .select("id, coachee_id")
-        .eq("organization_id", organizationId)
-        .eq("coach_id", userId)
-        .in("id", followUpConversationIds)
-    : { data: [] as Array<{ id: string; coachee_id: string }> };
-  const followUpConversationById = new Map(
-    ((followUpConversationsResult.data ?? []) as Array<{ id: string; coachee_id: string }>).map((conversation) => [
-      conversation.id,
-      conversation
-    ])
-  );
+  const { notes: followUpNotes, conversationById: followUpConversationById } = context.roles.includes("coach")
+    ? await getCoachFollowUpNotesWithConversations({
+        admin,
+        organizationId,
+        coachId: userId,
+        limit: 80,
+        rangeEndIso
+      })
+    : { notes: [], conversationById: new Map() };
 
   const showPlanner = context.role === "admin" || (context.role === "coach" && branding.allowCoachSelfSchedule);
   const coachOptions = showPlanner
@@ -9937,26 +9883,14 @@ export async function getAgendaPageData(filters?: {
       const learner = profileById.get(conversation.coachee_id);
       const learnerName = learner ? formatUserName(learner) : "Coaché inconnu";
       const agendaTiming = getAgendaTiming(note.next_follow_up_at, now);
-      const nextFollowUpState = agendaTiming.lane === "urgent" ? "overdue" : agendaTiming.lane === "today" ? "soon" : "planned";
-      const nextFollowUpAt = getCoachFollowUpSuggestionAt(nextFollowUpState, now);
-      const messageHref = buildCoachMessageDraftHref({
+      const followUpDraft = buildCoachFollowUpDraft({
         conversationId: note.conversation_id,
         recipientId: conversation.coachee_id,
-        draftLines: [
-          `Bonjour ${learnerName},`,
-          "Je reviens vers toi comme prévu sur notre dernier point de suivi.",
-          `Contexte rapide : ${formatMessagePreview(note.body)}`,
-          agendaTiming.lane === "urgent"
-            ? "La relance prévue est dépassée : dis-moi ce qui bloque et la prochaine action que tu peux poser aujourd'hui."
-            : agendaTiming.lane === "today"
-              ? "Je voulais faire le point aujourd'hui : où en es-tu et quelle action peux-tu confirmer ?"
-              : "Je prépare notre prochain point : dis-moi où tu en es pour que je t'aide à garder le rythme."
-        ],
-        noteLines: [
-          note.body,
-          `Relance agenda préparée le ${formatDate(new Date(now).toISOString())}.`
-        ],
-        followUpAt: nextFollowUpAt
+        learnerName,
+        body: note.body,
+        urgency: getCoachFollowUpUrgencyFromAgendaLane(agendaTiming.lane),
+        noteActionLabel: "Relance agenda préparée",
+        now
       });
 
       return {
@@ -9971,7 +9905,7 @@ export async function getAgendaPageData(filters?: {
         statusLabel: agendaTiming.lane === "urgent" ? "relance en retard" : agendaTiming.lane === "today" ? "relance du jour" : "relance planifiée",
         statusTone: agendaTiming.tone,
         audienceLabel: learnerName,
-        href: messageHref,
+        href: followUpDraft.messageHref,
         ctaLabel: "Préparer la relance",
         isOverdue: agendaTiming.isOverdue,
         isToday: agendaTiming.isToday,
