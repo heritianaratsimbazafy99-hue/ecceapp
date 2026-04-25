@@ -49,6 +49,16 @@ import {
   type LearnerProgressEvent
 } from "@/lib/platform-progress";
 import {
+  getAverageQuizScore,
+  getBestQuizAttempt,
+  getDashboardQuizAttemptTone,
+  getQuizAttemptLabel,
+  getQuizAttemptPerformanceTone,
+  getQuizAttemptScoreLabel,
+  getQuizAttemptStatusTone,
+  getScoredQuizAttempts
+} from "@/lib/platform-quizzes";
+import {
   buildLatestReviewBySubmissionId,
   buildLatestSubmissionByAssignmentId,
   buildLatestSubmissionByContentId,
@@ -4464,14 +4474,9 @@ export async function getProfessorQuizDetailPageData(quizId: string) {
       learner: profile ? formatUserName(profile) : "Coaché inconnu",
       cohortLabel: learnerCohorts.length ? learnerCohorts.join(", ") : "Sans cohorte",
       status: attempt.status,
-      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
-      tone:
-        attempt.status === "graded"
-          ? attempt.score !== null && attempt.score < passingScore
-            ? ("warning" as const)
-            : ("success" as const)
-          : ("accent" as const),
-      attemptLabel: `Tentative ${attempt.attempt_number}`,
+      score: getQuizAttemptScoreLabel(attempt),
+      tone: getQuizAttemptPerformanceTone(attempt, passingScore),
+      attemptLabel: getQuizAttemptLabel(attempt.attempt_number),
       submittedAt: formatDate(attempt.submitted_at)
     };
   });
@@ -5799,26 +5804,15 @@ export async function getAdminQuizStudioPageData(filters?: {
     .map((attempt) => {
       const quiz = visibleQuizzes.find((item) => item.id === attempt.quiz_id);
       const learnerName = profileNameById.get(attempt.user_id) ?? "Coaché inconnu";
-      const tone: BadgeTone =
-        attempt.status === "graded"
-          ? attempt.score !== null && attempt.score < 60
-            ? "warning"
-            : "success"
-          : "accent";
 
       return {
         id: attempt.id,
         learnerName,
         quizTitle: quiz?.title ?? "Quiz",
         submittedAt: formatDate(attempt.submitted_at),
-        attemptLabel: `Tentative ${attempt.attempt_number}`,
-        scoreLabel:
-          attempt.status === "submitted"
-            ? "En correction"
-            : attempt.score !== null
-              ? `${attempt.score}%`
-              : "Non noté",
-        tone
+        attemptLabel: getQuizAttemptLabel(attempt.attempt_number),
+        scoreLabel: getQuizAttemptScoreLabel(attempt),
+        tone: getQuizAttemptPerformanceTone(attempt)
       };
     });
   const activeFilterParts = [
@@ -8295,10 +8289,13 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
     ...attempts.slice(0, 8).map((attempt) => ({
       id: `attempt-${attempt.id}`,
       title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
-      meta: `Tentative ${attempt.attempt_number} · ${attempt.status === "submitted" ? "correction en cours" : attempt.score !== null ? `${attempt.score}%` : "non noté"}`,
+      meta: `${getQuizAttemptLabel(attempt.attempt_number)} · ${getQuizAttemptScoreLabel(attempt, {
+        submittedLabel: "correction en cours",
+        unscoredLabel: "non noté"
+      })}`,
       date: formatDate(attempt.submitted_at),
       sortValue: getDateValue(attempt.submitted_at) ?? 0,
-      tone: (attempt.status === "graded" ? "success" : "accent") as BadgeTone
+      tone: getQuizAttemptStatusTone(attempt.status)
     })),
     ...submissions.slice(0, 8).map((submission) => ({
       id: `submission-${submission.id}`,
@@ -8371,9 +8368,9 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
     recentAttempts: attempts.slice(0, 8).map((attempt) => ({
       id: attempt.id,
       title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
-      meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}`,
+      meta: `${getQuizAttemptLabel(attempt.attempt_number)} · ${formatDate(attempt.submitted_at)}`,
       status: attempt.status,
-      score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté"
+      score: getQuizAttemptScoreLabel(attempt)
     })),
     sessions: sessions.slice(0, 8).map((session) => ({
       id: session.id,
@@ -11327,14 +11324,10 @@ export async function getLearnerProgressHistoryPageData(filters?: {
     laneFilter !== "all" ? `lane ${getLearnerProgressLaneLabel(laneFilter).toLowerCase()}` : null,
     normalizedQuery ? `recherche « ${filters?.query?.trim()} »` : null
   ].filter(Boolean) as string[];
-  const scoredAttempts = attempts.filter((attempt) => attempt.score !== null);
-  const averageQuizScore = scoredAttempts.length
-    ? Math.round(scoredAttempts.reduce((total, attempt) => total + Number(attempt.score ?? 0), 0) / scoredAttempts.length)
-    : null;
+  const scoredAttempts = getScoredQuizAttempts(attempts);
+  const averageQuizScore = getAverageQuizScore(attempts);
   const latestBadge = queryFilteredEvents.find((event) => event.lane === "badge") ?? null;
-  const bestQuizAttempt = attempts
-    .filter((attempt) => attempt.score !== null)
-    .sort((left, right) => Number(right.score ?? 0) - Number(left.score ?? 0))[0] ?? null;
+  const bestQuizAttempt = getBestQuizAttempt(attempts);
   const bestQuiz = bestQuizAttempt ? quizById.get(bestQuizAttempt.quiz_id) : null;
   const latestProgramEvent = sortProgressItemsByRecency(
     queryFilteredEvents.filter((event) => event.lane === "program")
@@ -11766,10 +11759,10 @@ export async function getDashboardPageData() {
       description:
         attempt.score !== null
           ? `Score ${Math.round(Number(attempt.score))}% · tentative ${attempt.attempt_number}`
-          : `Tentative ${attempt.attempt_number} envoyée.`,
+          : `${getQuizAttemptLabel(attempt.attempt_number)} envoyée.`,
       occurredAt: formatDate(attempt.submitted_at),
       occurredAtIso: attempt.submitted_at,
-      tone: attempt.status === "graded" ? "success" : "accent",
+      tone: getQuizAttemptStatusTone(attempt.status),
       href: assignment ? `/quiz/${attempt.quiz_id}?assignment=${assignment.id}` : `/quiz/${attempt.quiz_id}`,
       label: "Quiz"
     });
@@ -11931,14 +11924,12 @@ export async function getDashboardPageData() {
       href: `/library/${content.slug}`
     })),
     recentAttempts: attempts.map((attempt) => {
-      const tone: "neutral" | "success" = attempt.status === "submitted" ? "neutral" : "success";
-
       return {
         id: attempt.id,
         title: quizById.get(attempt.quiz_id)?.title ?? "Quiz",
-        score: attempt.status === "submitted" ? "En correction" : attempt.score !== null ? `${attempt.score}%` : "Non noté",
-        meta: `Tentative ${attempt.attempt_number} · ${formatDate(attempt.submitted_at)}${attempt.status === "submitted" ? " · correction coach en cours" : ""}`,
-        tone
+        score: getQuizAttemptScoreLabel(attempt),
+        meta: `${getQuizAttemptLabel(attempt.attempt_number)} · ${formatDate(attempt.submitted_at)}${attempt.status === "submitted" ? " · correction coach en cours" : ""}`,
+        tone: getDashboardQuizAttemptTone(attempt.status)
       };
     })
   };
