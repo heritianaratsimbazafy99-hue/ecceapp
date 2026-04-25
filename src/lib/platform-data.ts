@@ -4,6 +4,16 @@ import { requireRole, type AppRole } from "@/lib/auth";
 import { getOrganizationBrandingById } from "@/lib/organization";
 import { getAgendaTiming } from "@/lib/platform-agenda";
 import {
+  getLearningAssignmentAudienceLabel,
+  getLearningAssignmentHref,
+  getLearningAssignmentKind,
+  getLearnerAssignmentCompletionStatus,
+  getLearnerAssignmentStatusLabel,
+  getLearnerAssignmentStatusTone,
+  isLearnerAssignmentComplete,
+  isLearningAssignmentCompletedForDeadline
+} from "@/lib/platform-assignments";
+import {
   buildContentTaxonomyPresets,
   getCachedContentStorageAudit,
   getCachedContentTaxonomyRows,
@@ -6802,7 +6812,7 @@ export async function getAdminAssignmentStudioPageData(filters?: {
   const assignmentRows = expandedAssignments.map((assignment) => {
     const content = contentById.get(assignment.content_item_id ?? "");
     const quiz = quizById.get(assignment.quiz_id ?? "");
-    const kind: "quiz" | "contenu" = assignment.quiz_id ? "quiz" : "contenu";
+    const kind = getLearningAssignmentKind(assignment);
     const targetIsCohort = Boolean(assignment.cohort_id);
     const targetIds = assignment.targetIds.filter((targetId) => coacheeIds.has(targetId));
     const dueAtValue = getDateValue(assignment.due_at);
@@ -8182,9 +8192,12 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
       latestAttemptByAssignmentKey.get(assignment.id) ??
       (assignment.quiz_id ? latestAttemptByQuizKey.get(assignment.quiz_id) : undefined);
     const latestSubmission = latestSubmissionByAssignmentId.get(assignment.id);
-    const completed = assignment.quiz_id
-      ? Boolean(latestAttempt && latestAttempt.status !== "in_progress" && latestAttempt.status !== "expired")
-      : Boolean(latestSubmission && latestSubmission.status !== "not_started");
+    const kind = getLearningAssignmentKind(assignment);
+    const completed = isLearningAssignmentCompletedForDeadline({
+      kind,
+      attemptStatus: latestAttempt?.status ?? null,
+      submissionStatus: latestSubmission?.status ?? null
+    });
     const dueState = getDeadlineState(assignment.due_at, completed);
     const dueLabel = getDeadlineStateLabel(dueState);
     const content = contentById.get(assignment.content_item_id ?? "");
@@ -8195,15 +8208,13 @@ export async function getCoachLearnerDetailPageData(learnerId: string) {
       id: assignment.id,
       title: assignment.title,
       assetTitle,
-      kind: assignment.quiz_id ? "quiz" : "contenu",
+      kind,
       due: formatDate(assignment.due_at),
       deadlineState: dueState,
       statusLabel: dueLabel,
       statusTone: getDeadlineStateTone(dueState),
-      audienceLabel: assignment.cohort_id
-        ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
-        : "Assignation individuelle",
-      href: assignment.quiz_id ? `/quiz/${assignment.quiz_id}?assignment=${assignment.id}` : `/assignments/${assignment.id}`,
+      audienceLabel: getLearningAssignmentAudienceLabel(assignment.cohort_id, cohortNameById),
+      href: getLearningAssignmentHref(assignment),
       latestResult: latestAttempt?.score !== null && latestAttempt?.score !== undefined
         ? `${latestAttempt.score}%`
         : latestSubmission
@@ -8834,7 +8845,7 @@ export async function getCoachPageData() {
     .slice(0, 8)
     .map((assignment) => {
       const dueState = getDeadlineState(assignment.due_at);
-      const kind: "quiz" | "contenu" = assignment.quiz_id ? "quiz" : "contenu";
+      const kind = getLearningAssignmentKind(assignment);
 
       return {
         id: assignment.id,
@@ -8846,9 +8857,7 @@ export async function getCoachPageData() {
         targetCount: assignment.targetIds.length,
         meta: `${assignment.targetIds.length} coaché(s) concernés`,
         kind,
-        audienceLabel: assignment.cohort_id
-          ? `Cohorte · ${cohortNameById.get(assignment.cohort_id) ?? "groupe"}`
-          : "Assignation individuelle"
+        audienceLabel: getLearningAssignmentAudienceLabel(assignment.cohort_id, cohortNameById)
       };
     });
 
@@ -11859,19 +11868,14 @@ export async function getDashboardPageData() {
       const contentSubmission = submissionByAssignmentId.get(item.id);
       const contentProgressItem = getContentProgressForAssignment(contentProgressMaps, userId, item);
       const hasQuizAttempt = attemptByQuizId.has(item.quiz_id ?? "");
-      const kind: "quiz" | "contenu" = item.content_item_id ? "contenu" : "quiz";
-      const completionStatus = item.content_item_id
-        ? contentSubmission?.status === "reviewed"
-          ? "reviewed"
-          : contentSubmission?.status === "submitted"
-            ? "submitted"
-            : contentProgressItem
-              ? "done"
-            : "pending"
-        : hasQuizAttempt
-          ? "done"
-          : "pending";
-      const dueState = getDeadlineState(item.due_at, completionStatus === "reviewed" || completionStatus === "done");
+      const kind = getLearningAssignmentKind(item, "content");
+      const completionStatus = getLearnerAssignmentCompletionStatus({
+        kind,
+        submissionStatus: contentSubmission?.status ?? null,
+        hasContentProgress: Boolean(contentProgressItem),
+        hasQuizAttempt
+      });
+      const dueState = getDeadlineState(item.due_at, isLearnerAssignmentComplete(completionStatus));
 
       return {
         id: item.id,
@@ -11882,22 +11886,10 @@ export async function getDashboardPageData() {
           (item.quiz_id ? "Quiz prêt à être lancé depuis ton parcours." : "Ressource à consulter puis à rendre."),
         due: formatDate(item.due_at),
         dueState,
-        statusLabel:
-          completionStatus === "reviewed"
-            ? "corrigé"
-            : completionStatus === "submitted"
-              ? "en revue"
-              : completionStatus === "done"
-                ? "terminé"
-                : getDeadlineStateLabel(dueState),
-        statusTone:
-          completionStatus === "reviewed" || completionStatus === "done"
-            ? "success"
-            : completionStatus === "submitted"
-              ? "accent"
-              : getDeadlineStateTone(dueState),
+        statusLabel: getLearnerAssignmentStatusLabel(completionStatus, dueState),
+        statusTone: getLearnerAssignmentStatusTone(completionStatus, dueState),
         kind,
-        href: item.content_item_id ? `/assignments/${item.id}` : `/quiz/${item.quiz_id}?assignment=${item.id}`,
+        href: getLearningAssignmentHref(item, "content"),
         ctaLabel:
           item.content_item_id
             ? contentSubmission
