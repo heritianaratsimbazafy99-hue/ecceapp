@@ -26,6 +26,14 @@ import {
 } from "@/lib/platform-followups";
 import { getMessagingWorkspace } from "@/lib/platform-messaging";
 import {
+  getAgendaSessionNextAction,
+  getCoachingSessionHref,
+  getCoachingSessionNeedsNote,
+  getCoachingSessionStatusLabel,
+  getCoachingSessionStatusTone,
+  getCoachingSessionTimeLabel
+} from "@/lib/platform-sessions";
+import {
   buildLatestReviewBySubmissionId,
   buildLatestSubmissionByAssignmentId,
   buildLatestSubmissionByContentId,
@@ -3668,18 +3676,6 @@ export async function getProfessorCoachingOpsPageData(filters?: {
     map.set(note.session_id, current);
     return map;
   }, new Map<string, CoachingNoteRow[]>());
-  const getStatusLabel = (status: "planned" | "completed" | "cancelled") => {
-    switch (status) {
-      case "completed":
-        return "réalisée";
-      case "cancelled":
-        return "annulée";
-      default:
-        return "planifiée";
-    }
-  };
-  const getStatusTone = (status: "planned" | "completed" | "cancelled") =>
-    status === "completed" ? ("success" as const) : status === "cancelled" ? ("warning" as const) : ("accent" as const);
   const visibleSessions = sessions.map((session) => {
     const sessionNotes = notesBySessionId.get(session.id) ?? [];
     const latestNote = sessionNotes[0] ?? null;
@@ -3687,8 +3683,12 @@ export async function getProfessorCoachingOpsPageData(filters?: {
     const learner = profileById.get(session.coachee_id) ?? null;
     const coach = profileById.get(session.coach_id) ?? null;
     const fallbackCohort = learner ? (cohortNamesByUserId.get(learner.id) ?? [])[0] ?? null : null;
-    const isPast = timestamp < now;
-    const needsNote = session.status !== "cancelled" && isPast && sessionNotes.length === 0;
+    const needsNote = getCoachingSessionNeedsNote({
+      status: session.status,
+      timestamp,
+      noteCount: sessionNotes.length,
+      now
+    });
 
     return {
       id: session.id,
@@ -3699,18 +3699,18 @@ export async function getProfessorCoachingOpsPageData(filters?: {
       learnerStatus: learner?.status ?? "active",
       cohortName: session.cohort_id ? cohortNameById.get(session.cohort_id) ?? fallbackCohort : fallbackCohort,
       status: session.status,
-      statusLabel: getStatusLabel(session.status),
-      statusTone: getStatusTone(session.status),
+      statusLabel: getCoachingSessionStatusLabel(session.status),
+      statusTone: getCoachingSessionStatusTone(session.status),
       date: formatDate(session.starts_at),
       dayLabel: getRelativeDayLabel(session.starts_at),
-      timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
+      timeLabel: getCoachingSessionTimeLabel(session.starts_at, session.ends_at),
       timestamp,
       hasVideo: Boolean(session.video_link),
       noteCount: sessionNotes.length,
       latestNoteSummary: latestNote?.summary ?? latestNote?.next_actions ?? latestNote?.blockers ?? null,
       latestNoteAt: latestNote ? formatDate(latestNote.created_at) : null,
       needsNote,
-      href: `/coach/sessions/${session.id}`
+      href: getCoachingSessionHref(session.id)
     };
   });
   const plannedCount = visibleSessions.filter((session) => session.status === "planned").length;
@@ -3851,7 +3851,7 @@ export async function getProfessorCoachingOpsPageData(filters?: {
   ];
   const activeFilterParts = [
     periodWindow.label,
-    statusFilter !== "all" ? getStatusLabel(statusFilter) : null,
+    statusFilter !== "all" ? getCoachingSessionStatusLabel(statusFilter) : null,
     selectedCoachId ? coachOptions.find((coach) => coach.id === selectedCoachId)?.label ?? "Coach ciblé" : null,
     selectedCohortId ? cohortNameById.get(selectedCohortId) ?? "Cohorte ciblée" : null,
     normalizedQuery ? `Recherche « ${normalizedQuery} »` : null
@@ -3895,7 +3895,7 @@ export async function getProfessorCoachingOpsPageData(filters?: {
       {
         label: "Séances visibles",
         value: visibleSessions.length.toString(),
-        delta: `${periodWindow.label} · ${statusFilter === "all" ? "tous statuts" : getStatusLabel(statusFilter)}`
+        delta: `${periodWindow.label} · ${statusFilter === "all" ? "tous statuts" : getCoachingSessionStatusLabel(statusFilter)}`
       },
       {
         label: "À venir",
@@ -8467,15 +8467,10 @@ export async function getCoachSessionPageData(sessionId: string) {
     session: {
       id: session.id,
       status: session.status,
-      statusTone:
-        session.status === "completed"
-          ? ("success" as const)
-          : session.status === "cancelled"
-            ? ("warning" as const)
-            : ("accent" as const),
+      statusTone: getCoachingSessionStatusTone(session.status),
       date: formatDate(session.starts_at),
       dayLabel: getRelativeDayLabel(session.starts_at),
-      timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
+      timeLabel: getCoachingSessionTimeLabel(session.starts_at, session.ends_at),
       videoLink: session.video_link,
       isPast,
       cohort: cohortResult.data?.name ?? null,
@@ -9778,34 +9773,25 @@ export async function getAgendaPageData(filters?: {
       timestamp,
       dayLabel: agendaTiming.relativeDay,
       dateLabel: formatDateCompact(session.starts_at),
-      timeLabel: `${formatTimeOnly(session.starts_at)}${session.ends_at ? ` → ${formatTimeOnly(session.ends_at)}` : ""}`,
+      timeLabel: getCoachingSessionTimeLabel(session.starts_at, session.ends_at),
       title,
       subtitle,
       statusLabel: session.status,
-      statusTone:
-        session.status === "completed"
-          ? ("success" as const)
-          : session.status === "cancelled"
-            ? ("warning" as const)
-            : ("accent" as const),
+      statusTone: getCoachingSessionStatusTone(session.status),
       audienceLabel,
-      href: context.role === "coachee" ? session.video_link || null : `/coach/sessions/${session.id}`,
+      href: context.role === "coachee" ? session.video_link || null : getCoachingSessionHref(session.id),
       ctaLabel: context.role === "coachee" ? (session.video_link ? "Rejoindre" : null) : "Ouvrir la séance",
       isOverdue: agendaTiming.isOverdue,
       isToday: agendaTiming.isToday,
       lane: agendaTiming.lane,
       laneLabel: agendaTiming.laneLabel,
       tone: agendaTiming.tone,
-      nextAction:
-        session.video_link && timestamp >= now
-          ? "Le lien de séance est prêt: tu peux rejoindre ou préparer ce rendez-vous depuis l'agenda."
-          : session.video_link
-            ? "La séance est passée mais le lien reste utile pour reprendre le contexte."
-            : session.status === "planned"
-              ? "La séance est planifiée mais le lien n'est pas encore renseigné."
-              : session.status === "completed"
-                ? "La séance est terminée: tu peux relire le contexte avant la suite."
-                : "Vérifie le statut de cette séance avant de relancer le fil pédagogique.",
+      nextAction: getAgendaSessionNextAction({
+        videoLink: session.video_link,
+        timestamp,
+        status: session.status,
+        now
+      }),
       contextLabel: context.role === "coachee" ? `Coach · ${coachName}` : `Coaché · ${coacheeName}`,
       searchText: [title, subtitle, audienceLabel, coachName, coacheeName, session.status].join(" ").toLowerCase()
     };
