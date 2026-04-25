@@ -12,6 +12,12 @@ import {
   type ContentTaxonomyThemeRow
 } from "@/lib/platform-content-assets";
 import {
+  buildProgramModuleOptions,
+  buildProgramTitleMap,
+  getProgramModuleLabel,
+  groupProgramModulesByProgramId
+} from "@/lib/platform-programs";
+import {
   buildAssignmentTargets,
   buildEngagementOverview,
   buildEngagementSignals,
@@ -426,22 +432,6 @@ async function getCoachVisibleLearnerScope() {
     cohortNameById,
     cohortNamesByUserId
   };
-}
-
-function buildProgramModuleOptions(programs: ProgramRow[], modules: ProgramModuleRow[]) {
-  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
-
-  return modules
-    .slice()
-    .sort((left, right) =>
-      left.program_id === right.program_id
-        ? left.position - right.position
-        : (programTitleById.get(left.program_id) ?? "").localeCompare(programTitleById.get(right.program_id) ?? "")
-    )
-    .map((module) => ({
-      id: module.id,
-      label: `${programTitleById.get(module.program_id) ?? "Parcours"} · Module ${module.position + 1} · ${module.title}`
-    }));
 }
 
 async function getSignedSubmissionUrl(storagePath: string | null, admin = createSupabaseAdminClient()) {
@@ -4903,7 +4893,7 @@ export async function getAdminContentStudioPageData(filters?: {
   const taxonomySubthemes = taxonomyRows.subthemes;
   const taxonomyPresets = buildContentTaxonomyPresets(taxonomyThemes, taxonomySubthemes);
   const moduleOptions = buildProgramModuleOptions(programs, modules);
-  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
+  const programTitleById = buildProgramTitleMap(programs);
   const moduleById = new Map(modules.map((module) => [module.id, module]));
   const assignmentStatsByContentId = assignments.reduce((map, assignment) => {
     if (!assignment.content_item_id) {
@@ -4967,7 +4957,6 @@ export async function getAdminContentStudioPageData(filters?: {
 
   const contentRows = contents.map((content) => {
     const programModule = content.module_id ? moduleById.get(content.module_id) ?? null : null;
-    const programTitle = programModule ? programTitleById.get(programModule.program_id) ?? "Parcours" : null;
     const assignmentStats = assignmentStatsByContentId.get(content.id) ?? {
       assignmentCount: 0,
       overdueCount: 0,
@@ -5017,9 +5006,7 @@ export async function getAdminContentStudioPageData(filters?: {
       overdueCount: assignmentStats.overdueCount,
       dueSoonCount: assignmentStats.dueSoonCount,
       linkedQuizCount,
-      moduleLabel: programModule
-        ? `${programTitle} · Module ${programModule.position + 1} · ${programModule.title}`
-        : "Hors parcours",
+      moduleLabel: programModule ? getProgramModuleLabel(programModule, programTitleById) : "Hors parcours",
       editHref: `/admin/content/${content.id}`,
       previewHref: content.status === "published" ? `/library/${content.slug}` : "#content-studio",
       ctaLabel: content.status === "published" ? "Voir dans la bibliothèque" : "Compléter dans le studio",
@@ -5735,7 +5722,7 @@ export async function getAdminQuizStudioPageData(filters?: {
   const profileNameById = new Map(
     profiles.map((profile) => [profile.id, `${profile.first_name} ${profile.last_name}`.trim()])
   );
-  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
+  const programTitleById = buildProgramTitleMap(programs);
   const moduleById = new Map(modules.map((module) => [module.id, module]));
   const assignmentStatsByQuizId = assignments.reduce((map, assignment) => {
     if (!assignment.quiz_id) {
@@ -5818,9 +5805,7 @@ export async function getAdminQuizStudioPageData(filters?: {
       ? roundMetric(scores.reduce((total, score) => total + score, 0) / scores.length)
       : null;
     const programModule = quiz.module_id ? moduleById.get(quiz.module_id) ?? null : null;
-    const moduleLabel = programModule
-      ? `${programTitleById.get(programModule.program_id) ?? "Parcours"} · Module ${programModule.position + 1} · ${programModule.title}`
-      : "Hors parcours";
+    const moduleLabel = programModule ? getProgramModuleLabel(programModule, programTitleById) : "Hors parcours";
     const linkedContentLabel = quiz.content_item_id ? contentTitleById.get(quiz.content_item_id) ?? "Contenu lié" : null;
     const readinessScore = [
       Boolean(quiz.title.trim()),
@@ -6302,7 +6287,7 @@ export async function getAdminProgramStudioPageData(filters?: {
     map.set(item.module_id, (map.get(item.module_id) ?? 0) + 1);
     return map;
   }, new Map<string, number>());
-  const programTitleById = new Map(programs.map((program) => [program.id, program.title]));
+  const programTitleById = buildProgramTitleMap(programs);
   const emailByUserId = new Map(authUsers.map((user) => [user.id, user.email ?? "email indisponible"]));
   const cohortIdsByUserId = cohortMembers.reduce((map, item) => {
     const current = map.get(item.user_id) ?? [];
@@ -10701,18 +10686,13 @@ export async function getLearnerProgramsPageData(filters?: {
     }
   }
 
-  const moduleListByProgramId = modules.reduce((map, module) => {
-    const current = map.get(module.program_id) ?? [];
-    current.push(module);
-    map.set(module.program_id, current);
-    return map;
-  }, new Map<string, ProgramModuleRow[]>());
+  const moduleListByProgramId = groupProgramModulesByProgramId(modules);
 
   const normalizedQuery = filters?.query?.trim().toLowerCase() ?? "";
   const laneFilter: LearnerProgramLane | "all" = isLearnerProgramLane(filters?.lane) ? filters.lane : "all";
 
   const allPrograms = programs.map((program) => {
-    const programModules = (moduleListByProgramId.get(program.id) ?? []).sort((left, right) => left.position - right.position);
+    const programModules = moduleListByProgramId.get(program.id) ?? [];
 
     const moduleCards = programModules.map((module) => {
       const moduleContents = contents.filter((content) => content.module_id === module.id);
@@ -11340,12 +11320,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
 
   const programById = new Map(programs.map((program) => [program.id, program]));
   const moduleById = new Map(modules.map((module) => [module.id, module]));
-  const modulesByProgramId = modules.reduce((map, module) => {
-    const current = map.get(module.program_id) ?? [];
-    current.push(module);
-    map.set(module.program_id, current);
-    return map;
-  }, new Map<string, ProgramModuleRow[]>());
+  const modulesByProgramId = groupProgramModulesByProgramId(modules);
   const contentsByModuleId = contents.reduce((map, content) => {
     if (!content.module_id) {
       return map;
@@ -11584,7 +11559,7 @@ export async function getLearnerProgressHistoryPageData(filters?: {
   }
 
   for (const program of programs) {
-    const programModules = (modulesByProgramId.get(program.id) ?? []).sort((left, right) => left.position - right.position);
+    const programModules = modulesByProgramId.get(program.id) ?? [];
     const programItemActivity: string[] = [];
     let programTotalItems = 0;
     let programCompletedItems = 0;
