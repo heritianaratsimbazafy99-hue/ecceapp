@@ -200,6 +200,11 @@ export function ContentStudioComposer({
     selectedTheme?.subthemes[0];
   const hasPdfFile = Boolean(pdfFileName);
   const hasPrimaryLink = Boolean((contentType === "youtube" ? youtubeUrl : externalUrl).trim());
+  const selectedMode = CONTENT_CREATION_MODES.find((mode) => mode.id === creationMode) ?? CONTENT_CREATION_MODES[0];
+  const showPdfDelivery = contentType === "document";
+  const showYoutubeDelivery = contentType === "youtube";
+  const showExternalDelivery = ["link", "video", "audio", "replay"].includes(contentType);
+  const isTemplateMode = contentType === "template";
   const hasReadableSource =
     contentType === "youtube"
       ? Boolean(youtubeUrl.trim())
@@ -217,6 +222,37 @@ export function ContentStudioComposer({
     hasPrimaryLink || hasPdfFile || contentType === "template"
   ].filter(Boolean).length;
   const taxonomyReady = Boolean(category.trim() && subcategory.trim() && tagList.length >= 3);
+  const sourceLabel = isTemplateMode
+    ? "Template prêt"
+    : showPdfDelivery
+      ? hasPdfFile
+        ? "PDF sélectionné"
+        : "PDF attendu"
+      : showYoutubeDelivery
+        ? youtubeUrl.trim()
+          ? "YouTube prêt"
+          : "Lien YouTube attendu"
+        : externalUrl.trim()
+          ? "Lien prêt"
+          : "Lien attendu";
+  const contentWorkflowSteps = [
+    {
+      label: "Format",
+      state: selectedMode.title
+    },
+    {
+      label: "Source",
+      state: hasReadableSource ? "OK" : "À compléter"
+    },
+    {
+      label: "Message",
+      state: title.trim() && summary.trim() ? "OK" : "À cadrer"
+    },
+    {
+      label: "Publication",
+      state: status === "published" ? "Visible" : status
+    }
+  ];
 
   useEffect(() => {
     if ((state.error || state.success) && uploadedPdfPath) {
@@ -325,28 +361,22 @@ export function ContentStudioComposer({
       <input name="uploaded_storage_path" type="hidden" value={uploadedPdfPath} />
 
       <div className="content-studio-main">
-        <section className="panel panel-highlight content-studio-hero">
+        <section className="panel panel-highlight content-studio-hero studio-command-panel">
           <div className="content-studio-hero-copy">
             <span className="eyebrow">Content Studio</span>
-            <h3>Créer une ressource sans traverser tout le studio</h3>
+            <h3>Créer une ressource publiable en quelques minutes</h3>
             <p>
-              Choisis d’abord le format réel, puis complète seulement les champs utiles avant publication.
+              Un chemin court : format, source, promesse pédagogique, puis publication. Les réglages avancés restent disponibles sans envahir l’écran.
             </p>
           </div>
 
-          <div className="content-studio-hero-metrics">
-            <article>
-              <strong>{contentType}</strong>
-              <span>format choisi</span>
-            </article>
-            <article>
-              <strong>{estimatedMinutes || "—"}</strong>
-              <span>minutes estimées</span>
-            </article>
-            <article>
-              <strong>{readinessScore}/6</strong>
-              <span>niveau de préparation</span>
-            </article>
+          <div className="studio-command-steps">
+            {contentWorkflowSteps.map((step) => (
+              <article key={step.label}>
+                <span>{step.label}</span>
+                <strong>{step.state}</strong>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -357,7 +387,7 @@ export function ContentStudioComposer({
               <h3>Quel type de ressource veux-tu créer ?</h3>
               <p>Le studio ajuste le type et laisse les options avancées repliées tant qu’elles ne sont pas nécessaires.</p>
             </div>
-            <Badge tone="accent">{CONTENT_CREATION_MODES.find((mode) => mode.id === creationMode)?.title}</Badge>
+            <Badge tone="accent">{selectedMode.title}</Badge>
           </div>
 
           <div className="studio-mode-grid">
@@ -375,18 +405,18 @@ export function ContentStudioComposer({
           </div>
         </section>
 
-        <section className="panel content-briefing-panel">
+        <section className="panel content-focus-panel">
           <div className="panel-header">
-            <h3>Promesse pédagogique</h3>
-            <p>Le contenu doit annoncer clairement ce qu&apos;il apporte avant même d&apos;être ouvert.</p>
+            <h3>Créer le contenu utile</h3>
+            <p>Renseigne seulement ce qui permet au coaché de comprendre, ouvrir et utiliser la ressource.</p>
           </div>
 
-          <div className="content-briefing-layout">
+          <div className="content-focus-grid">
             <article className="content-briefing-card content-briefing-card-primary">
               <div className="content-briefing-card-head">
                 <span className="eyebrow">Message</span>
-                <strong>Positionner la ressource</strong>
-                <p>Travaille le titre et le résumé comme une promesse concrète pour le coaché.</p>
+                <strong>Titre et promesse</strong>
+                <p>Écris comme si le coaché devait décider en dix secondes si ce support l’aide maintenant.</p>
               </div>
 
               <div className="content-studio-grid">
@@ -412,7 +442,96 @@ export function ContentStudioComposer({
               </div>
             </article>
 
-            <div className="content-briefing-stack">
+            <article className="content-source-card">
+              <div className="content-briefing-card-head">
+                <span className="eyebrow">Source</span>
+                <strong>{sourceLabel}</strong>
+                <p>{selectedMode.description}</p>
+              </div>
+
+              {showPdfDelivery ? (
+                <div className="content-pdf-uploader">
+                  <div>
+                    <strong>Déposer le support principal</strong>
+                    <p>Le PDF sera stocké dans Supabase et ouvert dans le lecteur ECCE.</p>
+                  </div>
+                  <label>
+                    Fichier PDF
+                    <input
+                      accept="application/pdf,.pdf"
+                      ref={pdfInputRef}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        const validationError = validateContentPdfFile(file);
+
+                        setPdfFileName(file?.name ?? "");
+                        setPdfFile(validationError ? null : file);
+                        setPdfUploadError(validationError ?? "");
+                        setPdfUploadState("idle");
+                        setUploadedPdfPath("");
+
+                        if (file) {
+                          setContentType("document");
+                          setCreationMode("pdf");
+                        }
+                      }}
+                      type="file"
+                    />
+                  </label>
+                  <small>
+                    {pdfUploadError
+                      ? pdfUploadError
+                      : uploadedPdfPath
+                        ? "PDF téléversé, prêt à être enregistré."
+                        : isUploadingPdf
+                          ? "Téléversement direct vers Supabase..."
+                          : pdfFileName
+                            ? `PDF prêt : ${pdfFileName}`
+                            : "Format accepté : PDF jusqu'à 100 Mo."}
+                  </small>
+                  {pdfFileName ? (
+                    <div className="table-actions">
+                      <button className="button button-secondary button-small" disabled={isBusy} onClick={clearSelectedPdf} type="button">
+                        Retirer la sélection
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {showExternalDelivery ? (
+                <label>
+                  Lien de la ressource
+                  <input onChange={(event) => setExternalUrl(event.target.value)} placeholder="https://..." type="url" value={externalUrl} />
+                  <small>Colle le lien que le coaché devra ouvrir.</small>
+                </label>
+              ) : null}
+
+              {showYoutubeDelivery ? (
+                <label>
+                  Lien YouTube
+                  <input onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://youtube.com/..." type="url" value={youtubeUrl} />
+                  <small>La ressource restera visible dans ECCE avec un accès direct à la vidéo.</small>
+                </label>
+              ) : null}
+
+              {isTemplateMode ? (
+                <div className="content-template-note">
+                  <strong>Aucune source externe obligatoire.</strong>
+                  <p>Le template peut vivre comme une trame réutilisable dans la bibliothèque.</p>
+                </div>
+              ) : null}
+            </article>
+          </div>
+        </section>
+
+        <section className="panel content-advanced-panel">
+          <div className="panel-header">
+            <h3>Options avancées</h3>
+            <p>Classement, rattachement au parcours et règles de diffusion restent accessibles quand tu en as besoin.</p>
+          </div>
+
+          <div className="content-briefing-stack content-advanced-grid">
               <details className="ux-disclosure content-taxonomy-disclosure">
                 <summary>
                   <span>Taxonomie avancée</span>
@@ -568,76 +687,6 @@ export function ContentStudioComposer({
                   </div>
                 </div>
               </details>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <h3>Livraison et accès</h3>
-            <p>Prépare le lien ou le point d&apos;entrée que l&apos;apprenant utilisera réellement.</p>
-          </div>
-
-          <div className="content-studio-grid">
-            <div className="content-pdf-uploader form-grid-span">
-              <div>
-                <span className="eyebrow">Cours PDF</span>
-                <strong>Déposer le support principal</strong>
-                <p>
-                  Le PDF sera stocké dans Supabase et ouvert directement dans le lecteur ECCE avant le quiz lié.
-                </p>
-              </div>
-              <label>
-                Fichier PDF
-                <input
-                  accept="application/pdf,.pdf"
-                  ref={pdfInputRef}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    const validationError = validateContentPdfFile(file);
-
-                    setPdfFileName(file?.name ?? "");
-                    setPdfFile(validationError ? null : file);
-                    setPdfUploadError(validationError ?? "");
-                    setPdfUploadState("idle");
-                    setUploadedPdfPath("");
-
-                    if (file) {
-                      setContentType("document");
-                      setCreationMode("pdf");
-                    }
-                  }}
-                  type="file"
-                />
-              </label>
-              <small>
-                {pdfUploadError
-                  ? pdfUploadError
-                  : uploadedPdfPath
-                    ? "PDF téléversé, prêt à être enregistré."
-                    : isUploadingPdf
-                      ? "Téléversement direct vers Supabase..."
-                      : pdfFileName
-                        ? `PDF prêt : ${pdfFileName}`
-                        : "Format accepté : PDF jusqu'à 100 Mo."}
-              </small>
-              {pdfFileName ? (
-                <div className="table-actions">
-                  <button className="button button-secondary button-small" disabled={isBusy} onClick={clearSelectedPdf} type="button">
-                    Retirer la sélection
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            <label className="form-grid-span">
-              Lien externe
-              <input onChange={(event) => setExternalUrl(event.target.value)} placeholder="https://..." type="url" value={externalUrl} />
-              <small>Optionnel si tu téléverses un PDF ECCE.</small>
-            </label>
-            <label className="form-grid-span">
-              Lien YouTube
-              <input onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://youtube.com/..." type="url" value={youtubeUrl} />
-            </label>
           </div>
         </section>
 

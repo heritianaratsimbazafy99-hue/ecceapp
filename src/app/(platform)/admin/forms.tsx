@@ -69,9 +69,9 @@ function ActionFeedback({ state }: { state: AdminActionState }) {
             <small>Ce contenu n&apos;est pas publié : il reste accessible dans le studio, pas dans la bibliothèque.</small>
           ) : null}
         </span>
-        {state.contentHref ? (
-          <Link className="button button-secondary button-small" href={state.contentHref}>
-            {state.contentCtaLabel ?? "Ouvrir le contenu"}
+        {state.contentHref || state.quizHref ? (
+          <Link className="button button-secondary button-small" href={state.contentHref ?? state.quizHref ?? "#"}>
+            {state.contentCtaLabel ?? state.quizCtaLabel ?? "Ouvrir"}
           </Link>
         ) : null}
       </div>

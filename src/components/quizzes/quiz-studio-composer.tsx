@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 
 import { createQuizAction, type AdminActionState } from "@/app/(platform)/admin/actions";
@@ -188,6 +189,25 @@ export function QuizStudioComposer({
   const totalPoints = readyQuestions.reduce((total, question) => total + question.points, 0);
   const estimatedDuration = estimateDurationMinutes(readyQuestions.length || questions.length);
   const completionRate = questions.length ? Math.round((readyQuestions.length / questions.length) * 100) : 0;
+  const selectedPreset = QUIZ_PRESETS.find((preset) => preset.id === activePresetId);
+  const quizWorkflowSteps = [
+    {
+      label: "Format",
+      state: selectedPreset?.title ?? "Personnalisé"
+    },
+    {
+      label: "Questions",
+      state: `${readyQuestions.length}/${questions.length} prêtes`
+    },
+    {
+      label: "Points",
+      state: `${totalPoints} pt`
+    },
+    {
+      label: "Statut",
+      state: status === "published" ? "Visible" : status
+    }
+  ];
 
   const updateQuestion = (questionId: string, updater: (question: DraftQuestion) => DraftQuestion) => {
     setQuestions((currentQuestions) =>
@@ -353,28 +373,22 @@ export function QuizStudioComposer({
       <input name="questions_payload" type="hidden" value={questionPayload} />
 
       <div className="quiz-studio-main">
-        <section className="panel panel-highlight quiz-studio-hero">
+        <section className="panel panel-highlight quiz-studio-hero studio-command-panel">
           <div className="quiz-studio-hero-copy">
             <span className="eyebrow">Quiz Studio</span>
-            <h3>Créer un quiz en partant d’un usage coach clair</h3>
+            <h3>Créer un quiz clair sans construire une usine à questions</h3>
             <p>
-              Choisis un modèle, rattache une ressource si besoin, puis concentre-toi sur les questions.
+              Choisis le scénario, écris les questions, ajuste les règles seulement si nécessaire. Le storyboard reste au centre.
             </p>
           </div>
 
-          <div className="quiz-studio-hero-metrics">
-            <article>
-              <strong>{questions.length}</strong>
-              <span>brouillon(s)</span>
-            </article>
-            <article>
-              <strong>{readyQuestions.length}</strong>
-              <span>question(s) prêtes</span>
-            </article>
-            <article>
-              <strong>{totalPoints}</strong>
-              <span>points au total</span>
-            </article>
+          <div className="studio-command-steps">
+            {quizWorkflowSteps.map((step) => (
+              <article key={step.label}>
+                <span>{step.label}</span>
+                <strong>{step.state}</strong>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -385,9 +399,7 @@ export function QuizStudioComposer({
               <h3>Choisir le bon format de quiz</h3>
               <p>Les réglages de temps, tentatives et correction sont préconfigurés, puis restent ajustables.</p>
             </div>
-            <Badge tone="accent">
-              {QUIZ_PRESETS.find((preset) => preset.id === activePresetId)?.title ?? "Personnalisé"}
-            </Badge>
+            <Badge tone="accent">{selectedPreset?.title ?? "Personnalisé"}</Badge>
           </div>
 
           <div className="studio-mode-grid">
@@ -407,16 +419,16 @@ export function QuizStudioComposer({
 
         <section className="panel quiz-briefing-panel">
           <div className="panel-header">
-            <h3>Cadrage pédagogique</h3>
-            <p>Pose l&apos;intention du quiz, le niveau d&apos;exigence et son lien éventuel avec une ressource.</p>
+            <h3>Cadrage rapide</h3>
+            <p>Le coach doit comprendre le rôle du quiz avant d’ajuster les règles avancées.</p>
           </div>
 
           <div className="quiz-briefing-layout">
             <article className="quiz-briefing-card quiz-briefing-card-primary">
               <div className="quiz-briefing-card-head">
                 <span className="eyebrow">Identité</span>
-                <strong>Donne une personnalité claire au quiz</strong>
-                <p>Le titre et la description doivent déjà faire sentir le ton, le niveau et le bénéfice.</p>
+                <strong>Titre, intention, bénéfice</strong>
+                <p>Garde un intitulé actionnable et une description courte. Le reste peut rester optionnel.</p>
               </div>
 
               <div className="quiz-studio-grid">
@@ -438,32 +450,51 @@ export function QuizStudioComposer({
                     value={description}
                   />
                 </label>
-                <label className="form-grid-span">
-                  Ressource liée
-                  <select onChange={(event) => setContentItemId(event.target.value)} value={contentItemId}>
-                    <option value="">Aucun contenu rattaché</option>
-                    {contentOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-grid-span">
-                  Module de parcours
-                  <select onChange={(event) => setModuleId(event.target.value)} value={moduleId}>
-                    <option value="">Aucun module rattaché</option>
-                    {moduleOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
               </div>
             </article>
 
             <div className="quiz-briefing-stack">
+              <details className="ux-disclosure quiz-settings-disclosure">
+                <summary>
+                  <span>Contexte optionnel</span>
+                  <small>
+                    {contentItemId ? "contenu lié" : "aucun contenu"} · {moduleId ? "module lié" : "aucun module"}
+                  </small>
+                </summary>
+
+                <div className="ux-disclosure-body">
+                  <div className="quiz-briefing-card-head">
+                    <span className="eyebrow">Contexte</span>
+                    <strong>Rattache seulement si cela aide la diffusion</strong>
+                  </div>
+
+                  <div className="quiz-studio-grid">
+                    <label className="form-grid-span">
+                      Ressource liée
+                      <select onChange={(event) => setContentItemId(event.target.value)} value={contentItemId}>
+                        <option value="">Aucun contenu rattaché</option>
+                        {contentOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-grid-span">
+                      Module de parcours
+                      <select onChange={(event) => setModuleId(event.target.value)} value={moduleId}>
+                        <option value="">Aucun module rattaché</option>
+                        {moduleOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </details>
+
               <details className="ux-disclosure quiz-settings-disclosure">
                 <summary>
                   <span>Règles du quiz</span>
@@ -541,134 +572,135 @@ export function QuizStudioComposer({
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel quiz-storyboard-panel">
           <div className="panel-header">
             <h3>Storyboard des questions</h3>
-            <p>Compose le rythme du quiz question par question, comme une scène live.</p>
+            <p>La question active se travaille au centre, les autres restent accessibles sans allonger la page.</p>
           </div>
 
           <div className="quiz-studio-toolbar">
             <button className="button button-secondary" onClick={() => addQuestion("single_choice")} type="button">
-              + Question à choix
+              Ajouter un choix
             </button>
             <button className="button button-secondary" onClick={() => addQuestion("text")} type="button">
-              + Question ouverte
+              Ajouter une ouverte
             </button>
             <span>{completionRate}% du storyboard est prêt à publier.</span>
           </div>
 
-          <div className="quiz-question-rail">
-            {questions.map((question, index) => {
-              const ready = isQuestionReady(question);
+          <div className="quiz-builder-workspace">
+            <div className="quiz-question-rail">
+              {questions.map((question, index) => {
+                const ready = isQuestionReady(question);
 
-              return (
-                <button
-                  className={`quiz-question-pill${question.id === activeQuestion.id ? " is-active" : ""}${ready ? " is-ready" : ""}`}
-                  key={question.id}
-                  onClick={() => setActiveQuestionId(question.id)}
-                  type="button"
-                >
-                  <strong>Q{index + 1}</strong>
-                  <span>{question.questionType === "single_choice" ? "Choix" : "Texte"}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="quiz-builder-card">
-            <div className="quiz-builder-card-head">
-              <div>
-                <strong>{activeQuestion.questionType === "single_choice" ? "Question à choix" : "Question ouverte"}</strong>
-                <p>Travaille le wording, le rythme et la clarté avant publication.</p>
-              </div>
-
-              <div className="table-actions">
-                <button className="button button-secondary button-small" onClick={() => moveQuestion(activeQuestion.id, -1)} type="button">
-                  Monter
-                </button>
-                <button className="button button-secondary button-small" onClick={() => moveQuestion(activeQuestion.id, 1)} type="button">
-                  Descendre
-                </button>
-                <button className="button button-secondary button-small" onClick={() => duplicateQuestion(activeQuestion.id)} type="button">
-                  Dupliquer
-                </button>
-                <button className="button button-secondary button-small" onClick={() => removeQuestion(activeQuestion.id)} type="button">
-                  Retirer
-                </button>
-              </div>
+                return (
+                  <button
+                    className={`quiz-question-pill${question.id === activeQuestion.id ? " is-active" : ""}${ready ? " is-ready" : ""}`}
+                    key={question.id}
+                    onClick={() => setActiveQuestionId(question.id)}
+                    type="button"
+                  >
+                    <strong>Q{index + 1}</strong>
+                    <span>{question.questionType === "single_choice" ? "Choix" : "Texte"}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="quiz-studio-grid">
-              <label className="form-grid-span">
-                Intitulé
-                <textarea
-                  onChange={(event) =>
-                    updateQuestion(activeQuestion.id, (question) => ({
-                      ...question,
-                      prompt: event.target.value
-                    }))
-                  }
-                  placeholder="Formule la question comme si elle devait être lue à voix haute dans une salle."
-                  rows={4}
-                  value={activeQuestion.prompt}
-                />
-              </label>
-              <label className="form-grid-span">
-                Aide / nuance
-                <input
-                  onChange={(event) =>
-                    updateQuestion(activeQuestion.id, (question) => ({
-                      ...question,
-                      helperText: event.target.value
-                    }))
-                  }
-                  placeholder="Indice, précision ou règle de réponse."
-                  type="text"
-                  value={activeQuestion.helperText}
-                />
-              </label>
-              <label>
-                Format
-                <select
-                  onChange={(event) =>
-                    updateQuestion(activeQuestion.id, (question) => {
-                      const nextType = event.target.value as QuestionType;
-                      const nextChoices =
-                        nextType === "single_choice"
-                          ? question.choices.length
-                            ? question.choices
-                            : [createDraftChoice("Réponse 1"), createDraftChoice("Réponse 2")]
-                          : [];
+            <div className="quiz-builder-card">
+              <div className="quiz-builder-card-head">
+                <div>
+                  <strong>{activeQuestion.questionType === "single_choice" ? "Question à choix" : "Question ouverte"}</strong>
+                  <p>Travaille le wording, le rythme et la clarté avant publication.</p>
+                </div>
 
-                      return {
+                <div className="table-actions">
+                  <button className="button button-secondary button-small" onClick={() => moveQuestion(activeQuestion.id, -1)} type="button">
+                    Monter
+                  </button>
+                  <button className="button button-secondary button-small" onClick={() => moveQuestion(activeQuestion.id, 1)} type="button">
+                    Descendre
+                  </button>
+                  <button className="button button-secondary button-small" onClick={() => duplicateQuestion(activeQuestion.id)} type="button">
+                    Dupliquer
+                  </button>
+                  <button className="button button-secondary button-small" onClick={() => removeQuestion(activeQuestion.id)} type="button">
+                    Retirer
+                  </button>
+                </div>
+              </div>
+
+              <div className="quiz-studio-grid">
+                <label className="form-grid-span">
+                  Intitulé
+                  <textarea
+                    onChange={(event) =>
+                      updateQuestion(activeQuestion.id, (question) => ({
                         ...question,
-                        questionType: nextType,
-                        choices: nextChoices,
-                        correctChoiceId: nextChoices[0]?.id ?? ""
-                      };
-                    })
-                  }
-                  value={activeQuestion.questionType}
-                >
-                  <option value="single_choice">Choix unique</option>
-                  <option value="text">Réponse ouverte</option>
-                </select>
-              </label>
-              <label>
-                Points
-                <input
-                  min="1"
-                  onChange={(event) =>
-                    updateQuestion(activeQuestion.id, (question) => ({
-                      ...question,
-                      points: Math.max(1, Number(event.target.value) || 1)
-                    }))
-                  }
-                  type="number"
-                  value={activeQuestion.points}
-                />
-              </label>
-            </div>
+                        prompt: event.target.value
+                      }))
+                    }
+                    placeholder="Formule la question comme si elle devait être lue à voix haute dans une salle."
+                    rows={4}
+                    value={activeQuestion.prompt}
+                  />
+                </label>
+                <label className="form-grid-span">
+                  Aide / nuance
+                  <input
+                    onChange={(event) =>
+                      updateQuestion(activeQuestion.id, (question) => ({
+                        ...question,
+                        helperText: event.target.value
+                      }))
+                    }
+                    placeholder="Indice, précision ou règle de réponse."
+                    type="text"
+                    value={activeQuestion.helperText}
+                  />
+                </label>
+                <label>
+                  Format
+                  <select
+                    onChange={(event) =>
+                      updateQuestion(activeQuestion.id, (question) => {
+                        const nextType = event.target.value as QuestionType;
+                        const nextChoices =
+                          nextType === "single_choice"
+                            ? question.choices.length
+                              ? question.choices
+                              : [createDraftChoice("Réponse 1"), createDraftChoice("Réponse 2")]
+                            : [];
+
+                        return {
+                          ...question,
+                          questionType: nextType,
+                          choices: nextChoices,
+                          correctChoiceId: nextChoices[0]?.id ?? ""
+                        };
+                      })
+                    }
+                    value={activeQuestion.questionType}
+                  >
+                    <option value="single_choice">Choix unique</option>
+                    <option value="text">Réponse ouverte</option>
+                  </select>
+                </label>
+                <label>
+                  Points
+                  <input
+                    min="1"
+                    onChange={(event) =>
+                      updateQuestion(activeQuestion.id, (question) => ({
+                        ...question,
+                        points: Math.max(1, Number(event.target.value) || 1)
+                      }))
+                    }
+                    type="number"
+                    value={activeQuestion.points}
+                  />
+                </label>
+              </div>
 
             {activeQuestion.questionType === "single_choice" ? (
               <div className="quiz-choice-editor">
@@ -727,6 +759,7 @@ export function QuizStudioComposer({
                 </p>
               </div>
             )}
+            </div>
           </div>
         </section>
 
@@ -752,7 +785,21 @@ export function QuizStudioComposer({
           </div>
 
           {state.error ? <p className="form-error">{state.error}</p> : null}
-          {state.success ? <p className="form-success">{state.success}</p> : null}
+          {state.success ? (
+            <div className="form-success content-success-actions">
+              <span className="content-success-copy">
+                <span>{state.success}</span>
+                {state.quizStatus && state.quizStatus !== "published" ? (
+                  <small>Ce quiz n&apos;est pas publié : il reste accessible au studio, pas au passage coaché.</small>
+                ) : null}
+              </span>
+              {state.quizHref ? (
+                <Link className="button button-secondary button-small" href={state.quizHref}>
+                  {state.quizCtaLabel ?? "Ouvrir le quiz"}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
 
           <button className="button" disabled={pending || !title.trim()} type="submit">
             {pending ? "Création du studio..." : "Créer le quiz"}

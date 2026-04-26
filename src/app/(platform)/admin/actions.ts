@@ -19,6 +19,9 @@ export type AdminActionState = {
   contentHref?: string;
   contentStatus?: string;
   error?: string;
+  quizCtaLabel?: string;
+  quizHref?: string;
+  quizStatus?: string;
   success?: string;
 };
 
@@ -1969,13 +1972,17 @@ export async function createQuizAction(
   revalidatePath("/admin/quizzes");
   revalidateAdminAudit();
   revalidatePath("/library");
+  revalidatePath(`/quiz/${quizInsert.data.id}`);
   revalidatePath("/dashboard");
 
-  return ok(
-    normalizedQuestions.length
+  return {
+    quizCtaLabel: status === "published" ? "Tester le quiz" : "Ouvrir le quiz",
+    quizHref: `/quiz/${quizInsert.data.id}`,
+    quizStatus: status,
+    success: normalizedQuestions.length
       ? `Quiz "${title}" créé avec ${normalizedQuestions.length} question(s).`
       : `Quiz "${title}" créé.`
-  );
+  };
 }
 
 export async function addQuizQuestionAction(
