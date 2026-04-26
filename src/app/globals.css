@@ -10241,3 +10241,939 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
     line-height: 1.03;
   }
 }
+
+/* Global UI density recalibration: lighter SaaS rhythm without touching product logic. */
+:root {
+  --surface: rgba(255, 255, 255, 0.76);
+  --surface-strong: rgba(255, 255, 255, 0.9);
+  --line: rgba(16, 24, 32, 0.085);
+  --muted: #64707c;
+  --shadow: 0 14px 38px rgba(16, 24, 32, 0.08);
+  --radius-xl: 26px;
+  --radius-lg: 18px;
+  --radius-md: 14px;
+}
+
+html {
+  font-size: 15.5px;
+}
+
+body {
+  line-height: 1.45;
+}
+
+p,
+li,
+small {
+  line-height: 1.48;
+}
+
+.marketing-page {
+  padding: 22px;
+}
+
+.site-header {
+  gap: 16px;
+  padding: 14px 18px;
+}
+
+.brand {
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  font-size: 0.76rem;
+}
+
+.brand-copy strong {
+  font-size: 0.9rem;
+}
+
+.brand-copy small {
+  font-size: 0.78rem;
+}
+
+.site-nav {
+  gap: 16px;
+  font-size: 0.9rem;
+}
+
+.button {
+  min-height: 40px;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 0.9rem;
+  font-weight: 720;
+}
+
+.button-small {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 0.84rem;
+}
+
+.button-secondary {
+  background: rgba(16, 24, 32, 0.055);
+}
+
+.eyebrow,
+.section-eyebrow {
+  gap: 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+.badge {
+  min-height: 26px;
+  padding: 0 9px;
+  font-size: 0.74rem;
+  font-weight: 760;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.hero {
+  gap: 24px;
+  margin-top: 22px;
+  padding: 32px;
+}
+
+.hero-copy h1 {
+  margin: 14px 0 12px;
+  font-size: clamp(2.15rem, 4.1vw, 3.6rem);
+  line-height: 1.01;
+  letter-spacing: -0.02em;
+}
+
+.hero-copy p,
+.section-heading p,
+.platform-topbar p,
+.auth-card p,
+.feature-card p,
+.roadmap-card li,
+.metric-card small,
+.panel-header p,
+.list-row p,
+.collection-card p,
+.message-card p {
+  line-height: 1.48;
+}
+
+.hero-actions {
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.hero-panel {
+  padding: 20px;
+}
+
+.hero-metrics {
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.hero-metric-card {
+  padding: 15px;
+  border-radius: 16px;
+}
+
+.hero-metric-card strong {
+  margin-bottom: 6px;
+  font-size: 1.36rem;
+}
+
+.section {
+  margin-top: 58px;
+}
+
+.section-heading {
+  max-width: 680px;
+}
+
+.section-heading h2 {
+  margin: 10px 0 8px;
+  font-size: clamp(1.55rem, 2.8vw, 2.35rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.card-grid,
+.roadmap-grid,
+.metric-grid,
+.content-grid,
+.library-grid,
+.admin-grid,
+.page-shell,
+.stack-list {
+  gap: 16px;
+}
+
+.card-grid,
+.roadmap-grid {
+  margin-top: 22px;
+}
+
+.feature-card,
+.roadmap-card,
+.panel,
+.collection-card,
+.auth-card {
+  padding: 18px;
+}
+
+.feature-card,
+.roadmap-card,
+.panel,
+.metric-card,
+.collection-card,
+.auth-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.feature-card h3,
+.roadmap-card strong,
+.panel h3,
+.collection-card h3 {
+  margin: 10px 0 6px;
+  font-size: 1.05rem;
+  line-height: 1.18;
+}
+
+.platform-content {
+  padding: 22px;
+}
+
+html[data-platform-sidebar-state="pinned"] .platform-content {
+  padding-left: 328px;
+}
+
+.platform-sidebar-rail {
+  top: 20px;
+  bottom: 20px;
+  width: 14px;
+}
+
+.platform-sidebar {
+  top: 14px;
+  left: 14px;
+  bottom: 14px;
+  width: min(292px, calc(100vw - 28px));
+  gap: 14px;
+  padding: 16px;
+  border-radius: 24px;
+}
+
+.platform-sidebar-top {
+  gap: 10px;
+}
+
+.platform-sidebar-toggle {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 0.76rem;
+}
+
+.platform-sidebar-status {
+  display: none;
+}
+
+.platform-nav {
+  gap: 6px;
+}
+
+.platform-nav-link {
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 14px;
+}
+
+.platform-nav-link-mark {
+  min-width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  font-size: 0.66rem;
+}
+
+.platform-nav-link-content {
+  gap: 1px;
+}
+
+.platform-nav-link-label {
+  font-size: 0.9rem;
+  line-height: 1.18;
+}
+
+.platform-nav-link-content small {
+  display: none;
+}
+
+.platform-nav-link.is-active,
+.platform-nav-link:hover {
+  transform: translateX(2px);
+}
+
+.sidebar-footnote {
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.sidebar-footnote p {
+  display: none;
+}
+
+.account-chip {
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border-radius: 16px;
+}
+
+.account-chip p {
+  margin: 2px 0 0;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.account-chip-actions {
+  gap: 8px;
+}
+
+.notification-bell {
+  min-height: 36px;
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 0.86rem;
+  box-shadow: 0 10px 24px rgba(16, 24, 32, 0.065);
+}
+
+.notification-bell strong {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.platform-topbar {
+  gap: 18px;
+  padding: 18px 20px;
+  border-radius: 22px;
+}
+
+.platform-topbar h1 {
+  margin: 6px 0 8px;
+  font-size: clamp(1.42rem, 2.45vw, 2.18rem);
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+}
+
+.platform-topbar p {
+  max-width: 760px;
+  font-size: 0.9rem;
+}
+
+.topbar-actions {
+  gap: 9px;
+}
+
+.metric-card {
+  padding: 15px 16px;
+}
+
+.metric-card span {
+  font-size: 0.82rem;
+}
+
+.metric-card strong {
+  margin: 9px 0 4px;
+  font-size: 1.5rem;
+  line-height: 1.05;
+}
+
+.engagement-meter {
+  gap: 11px;
+  padding: 16px;
+  border-radius: 18px;
+}
+
+.engagement-meter.is-compact {
+  gap: 9px;
+  padding: 12px 14px;
+}
+
+.engagement-meter-head {
+  gap: 12px;
+}
+
+.engagement-meter-head span {
+  font-size: 0.8rem;
+}
+
+.engagement-meter-head strong {
+  margin: 5px 0 3px;
+  font-size: clamp(1.45rem, 2.6vw, 2.05rem);
+}
+
+.engagement-bar,
+.program-progress-track {
+  height: 8px;
+}
+
+.panel-header,
+.panel-header-rich {
+  margin-bottom: 12px;
+}
+
+.panel-header h3,
+.panel-header-rich h3,
+.library-search-head h3,
+.notification-command-head h3 {
+  margin: 4px 0 5px;
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.panel-header p,
+.panel-header-rich p,
+.library-search-head p,
+.notification-command-head p {
+  font-size: 0.88rem;
+}
+
+.admin-link-grid {
+  gap: 12px;
+}
+
+.admin-link-card,
+.timeline-card,
+.list-row,
+.message-card,
+.table-row,
+.analytics-item,
+.empty-state {
+  padding: 13px 14px;
+  border-radius: 16px;
+}
+
+.table-head,
+.table-row {
+  gap: 12px;
+}
+
+.table-head {
+  font-size: 0.82rem;
+}
+
+.analytics-list {
+  gap: 10px;
+}
+
+.analytics-item strong {
+  font-size: 1.12rem;
+}
+
+.tag-row,
+.collection-tags,
+.content-preview-meta,
+.library-resource-meta,
+.assignment-preview-meta,
+.assignment-card-meta,
+.coach-session-preview-meta,
+.coach-roster-meta {
+  gap: 7px;
+}
+
+.collection-card {
+  min-height: 220px;
+}
+
+.collection-tags {
+  margin-top: 12px;
+}
+
+.collection-tag {
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
+.auth-page {
+  padding: 20px;
+}
+
+.auth-page-split,
+.onboarding-page {
+  gap: 22px;
+  padding: 22px;
+}
+
+.auth-showcase {
+  gap: 18px;
+  min-height: min(760px, calc(100vh - 44px));
+  padding: 28px;
+  border-radius: 26px;
+}
+
+.auth-showcase-copy {
+  gap: 12px;
+}
+
+.auth-showcase h1,
+.auth-card h1 {
+  margin: 10px 0 8px;
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.auth-showcase-grid,
+.auth-metric-row,
+.onboarding-checklist {
+  gap: 12px;
+}
+
+.auth-value-card,
+.onboarding-checklist-item,
+.auth-metric-card,
+.auth-suspended-card {
+  gap: 7px;
+  padding: 14px 15px;
+  border-radius: 18px;
+}
+
+.auth-card {
+  gap: 18px;
+}
+
+.auth-card-premium {
+  padding: 26px;
+  border-radius: 26px;
+}
+
+.auth-card-copy {
+  gap: 10px;
+}
+
+.auth-form,
+.auth-form-shell,
+.admin-form,
+.quiz-studio-shell,
+.content-studio-shell,
+.program-studio-shell {
+  gap: 14px;
+}
+
+.admin-form label,
+.auth-form label,
+.quiz-studio-shell label,
+.content-studio-shell label,
+.program-studio-shell label {
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.admin-form input,
+.admin-form select,
+.admin-form textarea,
+.auth-form input,
+.auth-form select,
+.auth-form textarea,
+.quiz-studio-shell input:not([type="hidden"]),
+.quiz-studio-shell select,
+.quiz-studio-shell textarea,
+.content-studio-shell input:not([type="hidden"]),
+.content-studio-shell select,
+.content-studio-shell textarea,
+.program-studio-shell input:not([type="hidden"]),
+.program-studio-shell select,
+.program-studio-shell textarea,
+.library-search-bar input:not([type="hidden"]) {
+  min-height: 46px;
+  padding: 0 13px;
+  border-radius: 13px;
+}
+
+.admin-form textarea,
+.auth-form textarea,
+.quiz-studio-shell textarea,
+.content-studio-shell textarea,
+.program-studio-shell textarea {
+  padding-top: 12px;
+}
+
+.form-grid,
+.form-grid-compact,
+.auth-form-grid,
+.quiz-studio-grid,
+.content-studio-grid,
+.assignment-studio-grid,
+.coach-session-grid,
+.program-studio-grid,
+.program-inline-grid {
+  gap: 12px;
+}
+
+[class$="-hero"] {
+  gap: 16px;
+  padding: 20px 22px;
+  border-radius: 24px;
+}
+
+[class$="-hero"] h2,
+[class$="-hero"] h3 {
+  font-size: clamp(1.45rem, 2.5vw, 2.12rem);
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+}
+
+[class$="-side"],
+[class$="-stack"],
+[class$="-main"],
+[class$="-layout"],
+[class$="-grid"],
+[class$="-list"],
+[class$="-meta"],
+[class$="-actions"] {
+  gap: 14px;
+}
+
+[class$="-copy"] {
+  gap: 10px;
+}
+
+.brand-copy {
+  gap: 2px;
+}
+
+.quiz-studio-hero-metrics,
+.quiz-player-hero-metrics,
+.content-studio-hero-metrics,
+.content-readiness-grid,
+.assignment-studio-hero-metrics,
+.assignment-readiness-grid,
+.assignment-board-stats,
+.coach-session-metrics,
+.coach-portfolio-metrics,
+.learner-spotlight-grid,
+.dashboard-progress-preview-list,
+.program-studio-hero-metrics,
+.program-admin-kpis,
+.program-card-metrics,
+.agenda-hero-metrics,
+.library-intelligence-grid,
+.messaging-preview-stats,
+.notification-command-inline-stats {
+  gap: 10px;
+}
+
+.quiz-studio-hero-metrics article,
+.quiz-player-hero-metrics article,
+.quiz-studio-checklist div,
+.quiz-player-chip,
+.content-studio-hero-metrics article,
+.content-readiness-grid div,
+.library-search-stats,
+.assignment-studio-hero-metrics article,
+.assignment-readiness-grid div,
+.assignment-board-stats article,
+.coach-session-metrics article,
+.coach-portfolio-metrics article,
+.coach-roster-kpis div,
+.learner-spotlight-card,
+.program-studio-hero-metrics article,
+.program-admin-kpis article,
+.program-card-metrics article,
+.agenda-hero-metrics article,
+.notification-command-inline-stats article,
+.messaging-preview-stats article {
+  gap: 5px;
+  padding: 13px 14px;
+  border-radius: 16px;
+}
+
+.quiz-studio-hero-metrics strong,
+.quiz-player-hero-metrics strong,
+.quiz-studio-checklist strong,
+.quiz-player-chip strong,
+.content-studio-hero-metrics strong,
+.content-readiness-grid strong,
+.library-search-stats strong,
+.assignment-studio-hero-metrics strong,
+.assignment-readiness-grid strong,
+.assignment-board-stats strong,
+.coach-session-metrics strong,
+.coach-portfolio-metrics strong,
+.coach-roster-kpis strong,
+.learner-spotlight-card strong,
+.program-studio-hero-metrics strong,
+.program-admin-kpis strong,
+.program-card-metrics strong,
+.agenda-hero-metrics strong,
+.notification-command-inline-stats strong,
+.messaging-preview-stats strong {
+  font-size: 1.18rem;
+  line-height: 1.08;
+}
+
+.quiz-builder-card,
+.quiz-player-panel,
+.quiz-catalog-card,
+.quiz-preview-card,
+.quiz-review-card,
+.content-briefing-card,
+.content-preview-card,
+.content-pdf-uploader,
+.assignment-planner-card,
+.assignment-preview-card,
+.coach-session-preview,
+.coach-alert-card,
+.coach-roster-card,
+.coach-ops-card,
+.coach-follow-up-card,
+.community-playbook-card,
+.community-group-card,
+.community-member-card,
+.community-coach-card,
+.notification-feed-card,
+.notifications-playbook-card,
+.notifications-priority-card,
+.notifications-spotlight-item,
+.messages-playbook-card,
+.messages-priority-card,
+.messages-contact-item,
+.program-briefing-card,
+.program-module-draft,
+.program-admin-module,
+.program-module-card,
+.program-item-card,
+.agenda-lane-card,
+.agenda-summary article,
+.agenda-focus-metrics article,
+.agenda-playbook-card,
+.agenda-priority-card,
+.agenda-day-spotlight-item,
+.admin-studio-card,
+.admin-priority-card,
+.admin-command-org-card,
+.admin-users-hero-side article,
+.admin-user-card,
+.admin-learners-lane-card,
+.admin-learners-focus-metrics article,
+.admin-learners-priority-card,
+.admin-learner-card,
+.admin-learners-coach-card,
+.audit-event-card,
+.account-preference-card {
+  padding: 14px 16px;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(16, 24, 32, 0.055);
+}
+
+.dashboard-progress-preview-card,
+.dashboard-session-card,
+.dashboard-attempt-card,
+.dashboard-resource-card,
+.library-resource-card,
+.assignment-card,
+.assignment-history-card,
+.admin-studio-card,
+.admin-learner-card,
+.coach-roster-card,
+.community-group-card {
+  min-height: 0;
+}
+
+.dashboard-progress-preview-card {
+  padding: 14px 16px;
+}
+
+.library-filter-chip,
+.assignment-toggle,
+.assignment-preset,
+.assignment-filter-chip,
+.program-enrollment-chip,
+.notification-filter-tab {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 0.84rem;
+}
+
+.library-search-bar {
+  gap: 10px;
+}
+
+.library-coach-lane-card,
+.library-taxonomy-card {
+  min-height: 0;
+  padding: 13px 14px;
+  border-radius: 16px;
+}
+
+.library-subtheme-button,
+.library-topic-row .library-topic-pill,
+.collection-tags .library-topic-pill,
+.content-topic-chip {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 0.78rem;
+}
+
+.conversation-shell {
+  gap: 14px;
+}
+
+.conversation-sidebar,
+.conversation-panel {
+  gap: 12px;
+  padding: 14px;
+  border-radius: 20px;
+}
+
+.conversation-list {
+  gap: 9px;
+  max-height: 520px;
+}
+
+.conversation-list-item {
+  padding: 12px 13px;
+  border-radius: 14px;
+}
+
+.conversation-panel {
+  min-height: 500px;
+}
+
+.conversation-messages {
+  max-height: 390px;
+}
+
+.message-bubble {
+  padding: 12px 14px;
+  border-radius: 16px 16px 16px 6px;
+}
+
+.message-bubble.is-mine {
+  border-radius: 16px 16px 6px 16px;
+}
+
+.learner-progress-nudge {
+  right: 18px;
+  bottom: 18px;
+  width: min(380px, calc(100vw - 28px));
+  padding: 12px;
+  border-radius: 18px;
+}
+
+.learner-progress-sparkles {
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+}
+
+@media (min-width: 1280px) {
+  .platform-content {
+    padding-right: 28px;
+  }
+
+  .page-shell {
+    gap: 18px;
+  }
+}
+
+@media (max-width: 1080px) {
+  html[data-platform-sidebar-state="pinned"] .platform-content {
+    padding-left: 22px;
+  }
+
+  .platform-sidebar {
+    margin: 14px 14px 0;
+  }
+}
+
+@media (max-width: 760px) {
+  html {
+    font-size: 15px;
+  }
+
+  .marketing-page,
+  .platform-content {
+    padding: 12px;
+  }
+
+  html[data-platform-sidebar-state="pinned"] .platform-content {
+    padding-left: 12px;
+  }
+
+  .site-header,
+  .hero,
+  .platform-topbar,
+  .feature-card,
+  .roadmap-card,
+  .panel,
+  .collection-card,
+  .auth-card,
+  .auth-showcase,
+  .route-state-card,
+  [class$="-hero"] {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(1.9rem, 10vw, 2.45rem);
+  }
+
+  .platform-topbar h1,
+  [class$="-hero"] h2,
+  [class$="-hero"] h3,
+  .auth-showcase h1,
+  .auth-card h1 {
+    font-size: clamp(1.38rem, 7.5vw, 1.95rem);
+  }
+
+  .section {
+    margin-top: 42px;
+  }
+
+  .platform-sidebar {
+    margin: 12px 12px 0;
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .account-chip {
+    align-items: stretch;
+  }
+
+  .account-chip-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .notification-bell,
+  .account-chip-actions .button,
+  .account-chip-actions form {
+    flex: 1 1 150px;
+  }
+
+  .auth-page-split,
+  .onboarding-page {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .auth-card-premium {
+    padding: 18px;
+  }
+
+  .button {
+    min-height: 38px;
+  }
+
+  .conversation-sidebar,
+  .conversation-panel {
+    border-radius: 18px;
+  }
+}
