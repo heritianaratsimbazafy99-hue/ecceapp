@@ -17,16 +17,18 @@ export default async function SignInPage() {
   const branding = await getDefaultOrganizationBranding();
   const { user, role, roles, profile } = await getCurrentUserContext();
 
-  if (user) {
-    if (!isSuspendedStatus(profile?.status)) {
+  if (user && profile && role) {
+    if (!isSuspendedStatus(profile.status)) {
       redirect(
         getAuthenticatedRedirectTarget({
           role,
-          status: profile?.status ?? null
+          status: profile.status
         })
       );
     }
   }
+
+  const hasIncompleteAccount = Boolean(user && (!profile || !role));
 
   return (
     <main className="auth-page auth-page-split">
@@ -104,6 +106,31 @@ export default async function SignInPage() {
               <p>
                 Cette protection évite d&apos;afficher la plateforme tant que le compte n&apos;est pas
                 remis en état côté admin.
+              </p>
+
+              <form action={signOutAction}>
+                <button className="button button-block" type="submit">
+                  Me déconnecter
+                </button>
+              </form>
+            </div>
+          </>
+        ) : hasIncompleteAccount ? (
+          <>
+            <div className="auth-card-copy">
+              <Badge tone="warning">Compte incomplet</Badge>
+              <h1>Ton accès ECCE est connecté, mais pas encore utilisable.</h1>
+              <p>
+                Le compte <strong>{user?.email ?? "utilisateur"}</strong> n&apos;a pas encore
+                {profile ? " de rôle ECCE actif" : " de profil ECCE rattaché"}. Ajoute le profil
+                et le rôle côté admin, puis reconnecte-toi.
+              </p>
+            </div>
+
+            <div className="auth-suspended-card">
+              <p>
+                Cette page évite la boucle entre la connexion et le dashboard tant que le compte
+                n&apos;est pas complet.
               </p>
 
               <form action={signOutAction}>

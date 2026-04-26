@@ -61,7 +61,15 @@ export async function signInAction(
     .eq("id", user.id)
     .maybeSingle<{ status: MembershipStatus; user_roles: Array<{ role: AppRole }> }>();
 
-  if (isSuspendedStatus(profile?.status)) {
+  if (!profile) {
+    await supabase.auth.signOut();
+
+    return {
+      error: "Connexion réussie, mais aucun profil ECCE n'est rattaché à ce compte. Crée le profil puis réessaie."
+    };
+  }
+
+  if (isSuspendedStatus(profile.status)) {
     await supabase.auth.signOut();
 
     return {
@@ -69,13 +77,21 @@ export async function signInAction(
     };
   }
 
-  const roles = Array.from(new Set((profile?.user_roles ?? []).map((item) => item.role)));
+  const roles = Array.from(new Set((profile.user_roles ?? []).map((item) => item.role)));
   const primaryRole = getPrimaryRole(roles);
+
+  if (!primaryRole) {
+    await supabase.auth.signOut();
+
+    return {
+      error: "Connexion réussie, mais aucun rôle ECCE n'est attribué à ce compte. Ajoute un rôle puis réessaie."
+    };
+  }
 
   redirect(
     getAuthenticatedRedirectTarget({
       role: primaryRole,
-      status: profile?.status ?? null
+      status: profile.status
     })
   );
 }

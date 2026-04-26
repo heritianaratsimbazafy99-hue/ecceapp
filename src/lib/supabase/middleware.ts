@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-export function updateSession(request: NextRequest) {
+export async function updateSession(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -33,7 +33,7 @@ export function updateSession(request: NextRequest) {
     }
   });
 
-  void supabase.auth.getUser();
+  await supabase.auth.getUser();
 
   return response;
 }
