@@ -46,7 +46,8 @@ export function getNotificationOpsCategory(item: NotificationOpsItem): Notificat
   if (
     route.startsWith("/quiz") ||
     route.startsWith("/assignments") ||
-    includesAny(text, ["quiz", "soumission", "feedback", "deadline", "review", "assignation"])
+    route.startsWith("/library") ||
+    includesAny(text, ["quiz", "soumission", "feedback", "deadline", "review", "assignation", "contenu", "bibliotheque", "bibliothèque"])
   ) {
     return "learning";
   }

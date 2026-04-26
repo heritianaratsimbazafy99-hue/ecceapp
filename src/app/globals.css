@@ -1672,6 +1672,41 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   white-space: nowrap;
 }
 
+.studio-feedback-toast {
+  position: sticky;
+  top: 14px;
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(16, 24, 32, 0.14);
+}
+
+.studio-feedback-toast span {
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.studio-feedback-toast strong {
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.studio-feedback-toast.is-success {
+  border: 1px solid rgba(47, 104, 85, 0.22);
+  background: rgba(236, 248, 240, 0.98);
+  color: var(--sage);
+}
+
+.studio-feedback-toast.is-error {
+  border: 1px solid rgba(193, 80, 22, 0.22);
+  background: rgba(255, 244, 238, 0.98);
+  color: #9d3f18;
+}
+
 .quiz-studio-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

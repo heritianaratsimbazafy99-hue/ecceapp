@@ -253,6 +253,7 @@ export function ContentStudioComposer({
       state: status === "published" ? "Visible" : status
     }
   ];
+  const feedbackMessage = state.error || pdfUploadError;
 
   useEffect(() => {
     if ((state.error || state.success) && uploadedPdfPath) {
@@ -361,6 +362,29 @@ export function ContentStudioComposer({
       <input name="uploaded_storage_path" type="hidden" value={uploadedPdfPath} />
 
       <div className="content-studio-main">
+        {state.success || feedbackMessage ? (
+          <div
+            aria-live="polite"
+            className={`studio-feedback-toast ${feedbackMessage ? "is-error" : "is-success"}`}
+            role={feedbackMessage ? "alert" : "status"}
+          >
+            <span>{feedbackMessage ? "Création à corriger" : "Contenu enregistré"}</span>
+            <strong>{feedbackMessage || state.success}</strong>
+            {state.success ? (
+              <div className="table-actions">
+                {state.contentHref ? (
+                  <Link className="button button-secondary button-small" href={state.contentHref}>
+                    {state.contentCtaLabel ?? "Ouvrir le contenu"}
+                  </Link>
+                ) : null}
+                <Link className="button button-ghost button-small" href="/library">
+                  Bibliothèque
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <section className="panel panel-highlight content-studio-hero studio-command-panel">
           <div className="content-studio-hero-copy">
             <span className="eyebrow">Content Studio</span>

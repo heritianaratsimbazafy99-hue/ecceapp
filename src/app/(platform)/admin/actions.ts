@@ -223,6 +223,42 @@ function validateContentUrls({ externalUrl, youtubeUrl }: { externalUrl: string;
   return null;
 }
 
+async function getUniqueContentSlug({
+  admin,
+  organizationId,
+  title
+}: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  organizationId: string;
+  title: string;
+}) {
+  const baseSlug = slugify(title) || `contenu-${Date.now()}`;
+  const existingResult = await admin
+    .from("content_items")
+    .select("slug")
+    .eq("organization_id", organizationId)
+    .ilike("slug", `${baseSlug}%`);
+
+  if (existingResult.error) {
+    return baseSlug;
+  }
+
+  const existingSlugs = new Set(
+    ((existingResult.data ?? []) as Array<{ slug: string }>).map((item) => item.slug.toLowerCase())
+  );
+
+  if (!existingSlugs.has(baseSlug.toLowerCase())) {
+    return baseSlug;
+  }
+
+  let suffix = 2;
+  while (existingSlugs.has(`${baseSlug}-${suffix}`.toLowerCase())) {
+    suffix += 1;
+  }
+
+  return `${baseSlug}-${suffix}`;
+}
+
 function validatePublishedContentSource({
   contentType,
   externalUrl,
@@ -1133,7 +1169,11 @@ export async function createContentAction(
     }
   }
 
-  const slug = slugify(title);
+  const slug = await getUniqueContentSlug({
+    admin,
+    organizationId,
+    title
+  });
   const tags = tagsInput ? parseTagList(tagsInput) : [];
   const resolvedContentType = fileUpload.storagePath ? "document" : contentType;
   const urlValidationError = validateContentUrls({ externalUrl, youtubeUrl });
@@ -1202,17 +1242,38 @@ export async function createContentAction(
     ]
   });
 
+  const contentHref =
+    createdContent.status === "published" ? `/library/${createdContent.slug}` : `/admin/content/${createdContent.id}`;
+  const contentCtaLabel =
+    createdContent.status === "published" ? "Voir dans la bibliothèque" : "Ouvrir la fiche contenu";
+
+  await createNotifications([
+    {
+      organizationId,
+      recipientId: context.user.id,
+      actorId: context.user.id,
+      kind: "learning" as const,
+      title: createdContent.status === "published" ? "Contenu publié dans la bibliothèque" : "Contenu créé dans le studio",
+      body:
+        createdContent.status === "published"
+          ? `"${title}" est maintenant visible dans la bibliothèque ECCE.`
+          : `"${title}" est enregistré et reste à finaliser avant publication.`,
+      deeplink: contentHref
+    }
+  ]);
+
   revalidatePath("/admin");
   revalidatePath("/admin/content");
   revalidateAdminAudit();
   revalidatePath("/library");
   revalidatePath(`/library/${createdContent.slug}`);
   revalidatePath("/dashboard");
+  revalidatePath("/notifications");
   revalidateContentStudioCaches({ storage: Boolean(fileUpload.storagePath) });
 
   return {
-    contentCtaLabel: createdContent.status === "published" ? "Voir dans la bibliothèque" : "Ouvrir la fiche contenu",
-    contentHref: createdContent.status === "published" ? `/library/${createdContent.slug}` : `/admin/content/${createdContent.id}`,
+    contentCtaLabel,
+    contentHref,
     contentStatus: createdContent.status,
     success: `Contenu "${title}" créé.`
   };
