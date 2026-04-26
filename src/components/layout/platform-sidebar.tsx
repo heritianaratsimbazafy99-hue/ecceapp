@@ -9,27 +9,27 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", shortLabel: "DB", match: "exact", roles: ["admin", "coachee"] },
+  { href: "/coach", label: "Cockpit coach", shortLabel: "CO", match: "exact", roles: ["admin", "coach"] },
+  { href: "/coach/reviews", label: "Corrections", shortLabel: "CR", match: "prefix", roles: ["admin", "coach"] },
+  { href: "/messages", label: "Messages", shortLabel: "MS", match: "exact", roles: ["coach", "coachee"] },
   { href: "/agenda", label: "Agenda", shortLabel: "AG", match: "exact", roles: ["admin", "coach", "coachee"] },
+  { href: "/admin/content", label: "Créer contenus", shortLabel: "CC", match: "prefix", roles: ["admin", "professor", "coach"] },
+  { href: "/admin/quizzes", label: "Créer quiz", shortLabel: "CQ", match: "prefix", roles: ["admin", "professor", "coach"] },
+  { href: "/admin/assignments", label: "Diffusions", shortLabel: "DF", match: "prefix", roles: ["admin", "professor", "coach"] },
   { href: "/programs", label: "Parcours", shortLabel: "PA", match: "exact", roles: ["coachee"] },
   { href: "/progress", label: "Progression", shortLabel: "PG", match: "exact", roles: ["coachee"] },
   { href: "/library", label: "Bibliothèque", shortLabel: "BI", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/community", label: "Communauté", shortLabel: "CM", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/professor", label: "Insights prof", shortLabel: "PR", match: "exact", roles: ["admin", "professor"] },
   { href: "/professor/coaching", label: "Pilotage coaching", shortLabel: "CG", match: "prefix", roles: ["admin", "professor"] },
-  { href: "/messages", label: "Messages", shortLabel: "MS", match: "exact", roles: ["coach", "coachee"] },
   { href: "/notifications", label: "Notifications", shortLabel: "NT", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
   { href: "/account", label: "Mon compte", shortLabel: "MC", match: "exact", roles: ["admin", "professor", "coach", "coachee"] },
-  { href: "/coach", label: "Espace coach", shortLabel: "CO", match: "exact", roles: ["admin", "coach"] },
-  { href: "/coach/reviews", label: "Corrections", shortLabel: "CR", match: "prefix", roles: ["admin", "coach"] },
   { href: "/admin", label: "Hub admin", shortLabel: "AD", match: "exact", roles: ["admin"] },
   { href: "/admin/audit", label: "Audit", shortLabel: "AU", match: "prefix", roles: ["admin"] },
   { href: "/admin/users", label: "Utilisateurs", shortLabel: "US", match: "prefix", roles: ["admin"] },
   { href: "/admin/learners", label: "Parcours coachés", shortLabel: "PC", match: "prefix", roles: ["admin"] },
   { href: "/admin/settings", label: "Réglages", shortLabel: "RG", match: "prefix", roles: ["admin"] },
-  { href: "/admin/programs", label: "Studio parcours", shortLabel: "SP", match: "prefix", roles: ["admin"] },
-  { href: "/admin/content", label: "Studio contenus", shortLabel: "SC", match: "prefix", roles: ["admin", "professor", "coach"] },
-  { href: "/admin/quizzes", label: "Studio quiz", shortLabel: "SQ", match: "prefix", roles: ["admin", "professor", "coach"] },
-  { href: "/admin/assignments", label: "Assignations", shortLabel: "AS", match: "prefix", roles: ["admin", "professor", "coach"] }
+  { href: "/admin/programs", label: "Studio parcours", shortLabel: "SP", match: "prefix", roles: ["admin"] }
 ] as Array<{ href: string; label: string; shortLabel: string; match: "exact" | "prefix"; roles: AppRole[] }>;
 
 type PlatformSidebarProps = {

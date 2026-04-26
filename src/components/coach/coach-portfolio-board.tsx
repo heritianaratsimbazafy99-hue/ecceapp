@@ -63,9 +63,9 @@ export function CoachPortfolioBoard({
     <section className="coach-portfolio-shell">
       <div className="panel panel-accent coach-portfolio-hero">
         <div className="coach-portfolio-copy">
-          <span className="eyebrow">Coach Portfolio</span>
-          <h3>Un cockpit plus lisible pour piloter relances, progression et séances sans se noyer</h3>
-          <p>Filtre rapidement ton portefeuille, identifie les signaux faibles et garde la prochaine action visible.</p>
+          <span className="eyebrow">Portefeuille</span>
+          <h3>Une lecture courte des coachés, orientée action</h3>
+          <p>Les détails restent disponibles, mais la carte commence par le statut et la prochaine décision coach.</p>
         </div>
 
         <div className="coach-portfolio-metrics">
@@ -88,10 +88,15 @@ export function CoachPortfolioBoard({
         </div>
       </div>
 
-      <section className="panel coach-alert-strip">
-        <div className="panel-header">
-          <h3>Alertes immédiates</h3>
-          <p>Les signaux qui méritent une intervention coach sans attendre.</p>
+      <section className="panel coach-alert-strip coach-alert-strip-compact">
+        <div className="panel-header-rich">
+          <div>
+            <h3>Alertes immédiates</h3>
+            <p>Les signaux qui méritent une intervention coach sans attendre.</p>
+          </div>
+          <Badge tone={attentionLearners.length ? "warning" : "success"}>
+            {attentionLearners.length ? `${attentionLearners.length} à voir` : "clair"}
+          </Badge>
         </div>
 
         {attentionLearners.length ? (
@@ -120,7 +125,7 @@ export function CoachPortfolioBoard({
         <div className="coach-roster-head">
           <div>
             <h3>Portefeuille coachés</h3>
-            <p>Une lecture plus opérationnelle du suivi individuel : rythme, sessions et prochaine action.</p>
+            <p>Une ligne de conduite par coaché ; les métriques avancées se déplient au besoin.</p>
           </div>
 
           <div className="tag-row">
@@ -158,16 +163,19 @@ export function CoachPortfolioBoard({
         {visibleRoster.length ? (
           <div className="coach-roster-grid">
             {visibleRoster.map((item) => (
-              <article className="collection-card coach-roster-card" key={item.id}>
-                <div className="tag-row">
-                  <Badge tone={item.status === "active" ? "success" : item.status === "invited" ? "accent" : "warning"}>
-                    {item.status}
-                  </Badge>
-                  {item.engagement ? (
-                    <Badge tone={item.engagement.band === "strong" ? "success" : item.engagement.band === "risk" ? "warning" : "accent"}>
-                      {item.engagement.bandLabel}
+              <article className="collection-card coach-roster-card coach-roster-card-compact" key={item.id}>
+                <div className="coach-roster-card-topline">
+                  <div className="tag-row">
+                    <Badge tone={item.status === "active" ? "success" : item.status === "invited" ? "accent" : "warning"}>
+                      {item.status}
                     </Badge>
-                  ) : null}
+                    {item.engagement ? (
+                      <Badge tone={item.engagement.band === "strong" ? "success" : item.engagement.band === "risk" ? "warning" : "accent"}>
+                        {item.engagement.bandLabel}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <span>{item.engagementScore !== null ? `${item.engagementScore}%` : "n/a"}</span>
                 </div>
 
                 <div className="coach-roster-copy">
@@ -175,34 +183,26 @@ export function CoachPortfolioBoard({
                   <p>{item.cohorts.length ? item.cohorts.join(", ") : "Sans cohorte active"}</p>
                 </div>
 
-                <div className="coach-roster-meta">
-                  <span>{item.engagementScore !== null ? `${item.engagementScore}% d'engagement` : "signal indisponible"}</span>
-                  <span>{item.upcomingSession ? `Séance ${item.upcomingSession}` : "Aucune séance planifiée"}</span>
-                </div>
-
-                <div className="coach-roster-kpis">
-                  <div>
-                    <strong>{item.completedCount}</strong>
-                    <span>actions traitées</span>
-                  </div>
-                  <div>
-                    <strong>{item.dueSoonCount}</strong>
-                    <span>deadline(s) proches</span>
-                  </div>
-                  <div>
-                    <strong>{item.overdueCount}</strong>
-                    <span>en retard</span>
-                  </div>
-                </div>
-
                 <div className="coach-roster-next">
                   <small>Prochaine action</small>
                   <p>{item.nextFocus ?? "Aucune action spécifique remontée pour l’instant."}</p>
                 </div>
 
-                <Link className="button button-secondary button-small" href={`/coach/learners/${item.id}`}>
-                  Ouvrir la fiche
-                </Link>
+                <details className="coach-roster-details">
+                  <summary>Contexte rapide</summary>
+                  <div className="coach-roster-meta">
+                    <span>{item.upcomingSession ? `Séance ${item.upcomingSession}` : "Aucune séance planifiée"}</span>
+                    <span>{item.dueSoonCount} deadline(s) proches</span>
+                    <span>{item.overdueCount} en retard</span>
+                    <span>{item.completedCount} action(s) traitée(s)</span>
+                  </div>
+                </details>
+
+                <div className="coach-roster-actions">
+                  <Link className="button button-secondary button-small" href={`/coach/learners/${item.id}`}>
+                    Ouvrir la fiche
+                  </Link>
+                </div>
               </article>
             ))}
           </div>

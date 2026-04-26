@@ -84,9 +84,23 @@ export default async function AdminContentPage({
   return (
     <div className="page-shell">
       <PlatformTopbar
-        title="Studio contenus"
-        description="Cockpit pédagogique premium pour piloter la bibliothèque, la qualité éditoriale et la diffusion réelle des ressources ECCE."
+        title="Créer contenus"
+        description="Création de cours, PDF, liens et templates, avec les indicateurs éditoriaux disponibles plus bas."
+        actions={
+          <>
+            <Link className="button button-secondary" href="/library">
+              Bibliothèque
+            </Link>
+            <Link className="button" href="/admin/quizzes">
+              Créer un quiz
+            </Link>
+          </>
+        }
       />
+
+      <div className="studio-priority-anchor" id="content-studio">
+        <ContentStudioComposer moduleOptions={moduleOptions} taxonomyPresets={taxonomyPresets} />
+      </div>
 
       <section className="metric-grid metric-grid-compact">
         {metrics.map((metric) => (
@@ -541,10 +555,6 @@ export default async function AdminContentPage({
       </section>
 
       <ContentTaxonomyManager taxonomyPresets={taxonomyPresets} />
-
-      <div id="content-studio">
-        <ContentStudioComposer moduleOptions={moduleOptions} taxonomyPresets={taxonomyPresets} />
-      </div>
     </div>
   );
 }

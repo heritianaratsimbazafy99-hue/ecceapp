@@ -123,6 +123,40 @@ function ctaLabel(contentType: string) {
   }
 }
 
+type ContentCreationMode = "pdf" | "link" | "youtube" | "template";
+
+const CONTENT_CREATION_MODES: Array<{
+  id: ContentCreationMode;
+  title: string;
+  description: string;
+  contentType: string;
+}> = [
+  {
+    id: "pdf",
+    title: "Cours PDF",
+    description: "Déposer un support et le publier dans le lecteur ECCE.",
+    contentType: "document"
+  },
+  {
+    id: "link",
+    title: "Lien",
+    description: "Partager une ressource externe sans upload.",
+    contentType: "link"
+  },
+  {
+    id: "youtube",
+    title: "YouTube",
+    description: "Créer une ressource vidéo depuis une URL YouTube.",
+    contentType: "youtube"
+  },
+  {
+    id: "template",
+    title: "Template",
+    description: "Publier une trame ou un exercice réutilisable.",
+    contentType: "template"
+  }
+];
+
 export function ContentStudioComposer({
   moduleOptions,
   taxonomyPresets = CONTENT_TAXONOMY_PRESETS
@@ -142,6 +176,7 @@ export function ContentStudioComposer({
   const [tags, setTags] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [creationMode, setCreationMode] = useState<ContentCreationMode>("pdf");
   const [estimatedMinutes, setEstimatedMinutes] = useState("30");
   const [isRequired, setIsRequired] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -206,6 +241,21 @@ export function ContentStudioComposer({
   function applySubtheme(subtheme: ContentTaxonomyPreset["subthemes"][number]) {
     setSubcategory(subtheme.label);
     setTags((currentTags) => mergeTags(currentTags, subtheme.topics));
+  }
+
+  function applyCreationMode(mode: ContentCreationMode) {
+    const nextMode = CONTENT_CREATION_MODES.find((item) => item.id === mode);
+
+    if (!nextMode) {
+      return;
+    }
+
+    setCreationMode(mode);
+    setContentType(nextMode.contentType);
+
+    if (mode === "template" && !estimatedMinutes) {
+      setEstimatedMinutes("20");
+    }
   }
 
   function clearSelectedPdf() {
@@ -277,10 +327,9 @@ export function ContentStudioComposer({
         <section className="panel panel-highlight content-studio-hero">
           <div className="content-studio-hero-copy">
             <span className="eyebrow">Content Studio</span>
-            <h3>Créer un contenu comme une ressource éditoriale prête à être consommée</h3>
+            <h3>Créer une ressource sans traverser tout le studio</h3>
             <p>
-              Structure la promesse pédagogique, prépare le bon format et visualise
-              immédiatement le rendu dans la bibliothèque ECCE.
+              Choisis d’abord le format réel, puis complète seulement les champs utiles avant publication.
             </p>
           </div>
 
@@ -297,6 +346,31 @@ export function ContentStudioComposer({
               <strong>{readinessScore}/6</strong>
               <span>niveau de préparation</span>
             </article>
+          </div>
+        </section>
+
+        <section className="panel content-quick-flow-panel">
+          <div className="panel-header-rich">
+            <div>
+              <span className="eyebrow">Chemin rapide</span>
+              <h3>Quel type de ressource veux-tu créer ?</h3>
+              <p>Le studio ajuste le type et laisse les options avancées repliées tant qu’elles ne sont pas nécessaires.</p>
+            </div>
+            <Badge tone="accent">{CONTENT_CREATION_MODES.find((mode) => mode.id === creationMode)?.title}</Badge>
+          </div>
+
+          <div className="studio-mode-grid">
+            {CONTENT_CREATION_MODES.map((mode) => (
+              <button
+                className={`studio-mode-card${creationMode === mode.id ? " is-active" : ""}`}
+                key={mode.id}
+                onClick={() => applyCreationMode(mode.id)}
+                type="button"
+              >
+                <strong>{mode.title}</strong>
+                <span>{mode.description}</span>
+              </button>
+            ))}
           </div>
         </section>
 
@@ -338,133 +412,161 @@ export function ContentStudioComposer({
             </article>
 
             <div className="content-briefing-stack">
-              <article className="content-briefing-card">
-                <div className="content-briefing-card-head">
-                  <span className="eyebrow">Taxonomie</span>
-                  <strong>Organisation éditoriale</strong>
-                  <p>Classe chaque ressource par thème, sous-thème et sujets abordés pour une bibliothèque vraiment pilotable.</p>
-                </div>
+              <details className="ux-disclosure content-taxonomy-disclosure">
+                <summary>
+                  <span>Taxonomie avancée</span>
+                  <small>
+                    {category}
+                    {subcategory ? ` · ${subcategory}` : ""} · {tagList.length} tag(s)
+                  </small>
+                </summary>
 
-                <div className="content-taxonomy-presets">
-                  <div className="content-taxonomy-theme-grid">
-                    {availableTaxonomyPresets.map((preset) => (
-                      <button
-                        className={`content-taxonomy-theme-button${selectedThemeId === preset.id ? " is-active" : ""}`}
-                        key={preset.id}
-                        onClick={() => applyTheme(preset)}
-                        type="button"
-                      >
-                        <strong>{preset.theme}</strong>
-                        <span>{preset.description}</span>
-                      </button>
-                    ))}
+                <div className="ux-disclosure-body">
+                  <div className="content-briefing-card-head">
+                    <span className="eyebrow">Taxonomie</span>
+                    <strong>Organisation éditoriale</strong>
+                    <p>Classe la ressource par thème, sous-thème et sujets quand tu veux améliorer la recherche.</p>
                   </div>
 
-                  {selectedTheme?.subthemes.length ? (
-                    <div className="content-taxonomy-subtheme-grid">
-                      {selectedTheme.subthemes.map((subtheme) => (
+                  <div className="content-taxonomy-presets">
+                    <div className="content-taxonomy-theme-grid">
+                      {availableTaxonomyPresets.map((preset) => (
                         <button
-                          className={`content-taxonomy-subtheme-button${subcategory === subtheme.label ? " is-active" : ""}`}
-                          key={subtheme.label}
-                          onClick={() => applySubtheme(subtheme)}
+                          className={`content-taxonomy-theme-button${selectedThemeId === preset.id ? " is-active" : ""}`}
+                          key={preset.id}
+                          onClick={() => applyTheme(preset)}
                           type="button"
                         >
-                          <strong>{subtheme.label}</strong>
-                          <span>{subtheme.topics.slice(0, 3).join(" · ")}</span>
+                          <strong>{preset.theme}</strong>
+                          <span>{preset.description}</span>
                         </button>
                       ))}
                     </div>
-                  ) : null}
 
-                  <div className="content-topic-strip">
-                    <span>Suggestions</span>
-                    {(selectedSubtheme?.topics ?? []).map((topic) => (
-                      <button
-                        className="content-topic-chip"
-                        key={topic}
-                        onClick={() => setTags((currentTags) => mergeTags(currentTags, [topic]))}
-                        type="button"
-                      >
-                        {topic}
-                      </button>
-                    ))}
+                    {selectedTheme?.subthemes.length ? (
+                      <div className="content-taxonomy-subtheme-grid">
+                        {selectedTheme.subthemes.map((subtheme) => (
+                          <button
+                            className={`content-taxonomy-subtheme-button${subcategory === subtheme.label ? " is-active" : ""}`}
+                            key={subtheme.label}
+                            onClick={() => applySubtheme(subtheme)}
+                            type="button"
+                          >
+                            <strong>{subtheme.label}</strong>
+                            <span>{subtheme.topics.slice(0, 3).join(" · ")}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="content-topic-strip">
+                      <span>Suggestions</span>
+                      {(selectedSubtheme?.topics ?? []).map((topic) => (
+                        <button
+                          className="content-topic-chip"
+                          key={topic}
+                          onClick={() => setTags((currentTags) => mergeTags(currentTags, [topic]))}
+                          type="button"
+                        >
+                          {topic}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="content-studio-grid">
+                    <label>
+                      Catégorie
+                      <input onChange={(event) => setCategory(event.target.value)} placeholder="Fondamentaux" type="text" value={category} />
+                    </label>
+                    <label>
+                      Sous-catégorie
+                      <input onChange={(event) => setSubcategory(event.target.value)} placeholder="Cadre de séance" type="text" value={subcategory} />
+                    </label>
+                    <label className="form-grid-span">
+                      Contenus abordés
+                      <input
+                        onChange={(event) => setTags(event.target.value)}
+                        placeholder="contrat, objectif, alliance, cadre"
+                        type="text"
+                        value={tags}
+                      />
+                      <small>Ces sujets deviennent les tags utilisés par les coachs pour retrouver les ressources.</small>
+                    </label>
+                    <label className="form-grid-span">
+                      Module de parcours
+                      <select onChange={(event) => setModuleId(event.target.value)} value={moduleId}>
+                        <option value="">Aucun module rattaché</option>
+                        {moduleOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                 </div>
+              </details>
 
-                <div className="content-studio-grid">
-                  <label>
-                    Catégorie
-                    <input onChange={(event) => setCategory(event.target.value)} placeholder="Fondamentaux" type="text" value={category} />
-                  </label>
-                  <label>
-                    Sous-catégorie
-                    <input onChange={(event) => setSubcategory(event.target.value)} placeholder="Cadre de séance" type="text" value={subcategory} />
-                  </label>
-                  <label className="form-grid-span">
-                    Contenus abordés
-                    <input
-                      onChange={(event) => setTags(event.target.value)}
-                      placeholder="contrat, objectif, alliance, cadre"
-                      type="text"
-                      value={tags}
-                    />
-                    <small>Ces sujets deviennent les tags utilisés par les coachs pour retrouver les ressources.</small>
-                  </label>
-                  <label className="form-grid-span">
-                    Module de parcours
-                    <select onChange={(event) => setModuleId(event.target.value)} value={moduleId}>
-                      <option value="">Aucun module rattaché</option>
-                      {moduleOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </article>
+              <details className="ux-disclosure content-settings-disclosure">
+                <summary>
+                  <span>Réglages de diffusion</span>
+                  <small>
+                    {status} · {estimatedMinutes || "0"} min{isRequired ? " · obligatoire" : ""}
+                  </small>
+                </summary>
 
-              <article className="content-briefing-card content-briefing-card-soft">
-                <div className="content-briefing-card-head">
-                  <span className="eyebrow">Diffusion</span>
-                  <strong>Statut et priorité</strong>
-                </div>
+                <div className="ux-disclosure-body">
+                  <div className="content-briefing-card-head">
+                    <span className="eyebrow">Diffusion</span>
+                    <strong>Statut et priorité</strong>
+                  </div>
 
-                <div className="content-studio-grid">
-                  <label>
-                    Type
-                    <select onChange={(event) => setContentType(event.target.value)} value={contentType}>
-                      <option value="document">document</option>
-                      <option value="video">video</option>
-                      <option value="youtube">youtube</option>
-                      <option value="audio">audio</option>
-                      <option value="link">link</option>
-                      <option value="replay">replay</option>
-                      <option value="template">template</option>
-                    </select>
-                  </label>
-                  <label>
-                    Statut
-                    <select onChange={(event) => setStatus(event.target.value)} value={status}>
-                      <option value="draft">draft</option>
-                      <option value="scheduled">scheduled</option>
-                      <option value="published">published</option>
-                      <option value="archived">archived</option>
-                    </select>
-                  </label>
-                  <label>
-                    Durée estimée (minutes)
-                    <input min="0" onChange={(event) => setEstimatedMinutes(event.target.value)} type="number" value={estimatedMinutes} />
-                  </label>
-                  <label className="content-required-toggle">
-                    <input checked={isRequired} onChange={(event) => setIsRequired(event.target.checked)} type="checkbox" />
-                    <span>
-                      Contenu obligatoire
-                      <small>Met en avant la ressource dans les parcours prioritaires.</small>
-                    </span>
-                  </label>
+                  <div className="content-studio-grid">
+                    <label>
+                      Type
+                      <select
+                        onChange={(event) => {
+                          setContentType(event.target.value);
+                          const matchedMode = CONTENT_CREATION_MODES.find((mode) => mode.contentType === event.target.value);
+                          if (matchedMode) {
+                            setCreationMode(matchedMode.id);
+                          }
+                        }}
+                        value={contentType}
+                      >
+                        <option value="document">document</option>
+                        <option value="video">video</option>
+                        <option value="youtube">youtube</option>
+                        <option value="audio">audio</option>
+                        <option value="link">link</option>
+                        <option value="replay">replay</option>
+                        <option value="template">template</option>
+                      </select>
+                    </label>
+                    <label>
+                      Statut
+                      <select onChange={(event) => setStatus(event.target.value)} value={status}>
+                        <option value="draft">draft</option>
+                        <option value="scheduled">scheduled</option>
+                        <option value="published">published</option>
+                        <option value="archived">archived</option>
+                      </select>
+                    </label>
+                    <label>
+                      Durée estimée (minutes)
+                      <input min="0" onChange={(event) => setEstimatedMinutes(event.target.value)} type="number" value={estimatedMinutes} />
+                    </label>
+                    <label className="content-required-toggle">
+                      <input checked={isRequired} onChange={(event) => setIsRequired(event.target.checked)} type="checkbox" />
+                      <span>
+                        Contenu obligatoire
+                        <small>Met en avant la ressource dans les parcours prioritaires.</small>
+                      </span>
+                    </label>
+                  </div>
                 </div>
-              </article>
+              </details>
             </div>
           </div>
         </section>
@@ -501,6 +603,7 @@ export function ContentStudioComposer({
 
                     if (file) {
                       setContentType("document");
+                      setCreationMode("pdf");
                     }
                   }}
                   type="file"

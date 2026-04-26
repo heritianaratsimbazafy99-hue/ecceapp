@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 
 import { createQuizAction, type AdminActionState } from "@/app/(platform)/admin/actions";
 import { CelebrationBurst } from "@/components/feedback/celebration-burst";
+import { Badge } from "@/components/ui/badge";
 
 type ContentOption = {
   id: string;
@@ -84,6 +85,54 @@ function isQuestionReady(question: DraftQuestion) {
   return validChoices.length >= 2 && validChoices.some((choice) => choice.id === question.correctChoiceId);
 }
 
+type QuizPreset = {
+  id: "quick" | "assessment" | "reflection";
+  title: string;
+  description: string;
+  kind: string;
+  attemptsAllowed: string;
+  timeLimitMinutes: string;
+  passingScore: string;
+  randomizeQuestions: boolean;
+  starterQuestionType: QuestionType;
+};
+
+const QUIZ_PRESETS: QuizPreset[] = [
+  {
+    id: "quick",
+    title: "Quiz rapide",
+    description: "Quelques QCM courts après un cours ou un PDF.",
+    kind: "quiz",
+    attemptsAllowed: "1",
+    timeLimitMinutes: "8",
+    passingScore: "70",
+    randomizeQuestions: false,
+    starterQuestionType: "single_choice"
+  },
+  {
+    id: "assessment",
+    title: "Évaluation",
+    description: "Passage plus cadré avec mélange et score cible.",
+    kind: "assessment",
+    attemptsAllowed: "2",
+    timeLimitMinutes: "18",
+    passingScore: "75",
+    randomizeQuestions: true,
+    starterQuestionType: "single_choice"
+  },
+  {
+    id: "reflection",
+    title: "Réflexion coach",
+    description: "Question ouverte à corriger manuellement.",
+    kind: "quiz",
+    attemptsAllowed: "1",
+    timeLimitMinutes: "0",
+    passingScore: "0",
+    randomizeQuestions: false,
+    starterQuestionType: "text"
+  }
+];
+
 export function QuizStudioComposer({
   contentOptions,
   moduleOptions
@@ -104,6 +153,7 @@ export function QuizStudioComposer({
   const [randomizeQuestions, setRandomizeQuestions] = useState(false);
   const [questions, setQuestions] = useState<DraftQuestion[]>(() => [createDraftQuestion("single_choice")]);
   const [activeQuestionId, setActiveQuestionId] = useState<string>("");
+  const [activePresetId, setActivePresetId] = useState<string>("quick");
 
   useEffect(() => {
     if (!activeQuestionId && questions[0]) {
@@ -258,6 +308,27 @@ export function QuizStudioComposer({
     });
   };
 
+  const applyQuizPreset = (preset: QuizPreset) => {
+    setActivePresetId(preset.id);
+    setKind(preset.kind);
+    setAttemptsAllowed(preset.attemptsAllowed);
+    setTimeLimitMinutes(preset.timeLimitMinutes);
+    setPassingScore(preset.passingScore);
+    setRandomizeQuestions(preset.randomizeQuestions);
+
+    const hasOnlyEmptyStarter =
+      questions.length === 1 &&
+      !questions[0].prompt.trim() &&
+      !questions[0].helperText.trim() &&
+      questions[0].choices.every((choice) => /^Réponse \d+$/.test(choice.label));
+
+    if (hasOnlyEmptyStarter && questions[0].questionType !== preset.starterQuestionType) {
+      const nextQuestion = createDraftQuestion(preset.starterQuestionType);
+      setQuestions([nextQuestion]);
+      setActiveQuestionId(nextQuestion.id);
+    }
+  };
+
   const questionPayload = JSON.stringify(readyQuestions);
 
   return (
@@ -285,10 +356,9 @@ export function QuizStudioComposer({
         <section className="panel panel-highlight quiz-studio-hero">
           <div className="quiz-studio-hero-copy">
             <span className="eyebrow">Quiz Studio</span>
-            <h3>Construire un quiz comme une expérience, pas comme un simple formulaire</h3>
+            <h3>Créer un quiz en partant d’un usage coach clair</h3>
             <p>
-              Cadre le quiz, compose les questions, affine le rythme et laisse le preview
-              t&apos;aider à sentir le rendu final côté coaché.
+              Choisis un modèle, rattache une ressource si besoin, puis concentre-toi sur les questions.
             </p>
           </div>
 
@@ -305,6 +375,33 @@ export function QuizStudioComposer({
               <strong>{totalPoints}</strong>
               <span>points au total</span>
             </article>
+          </div>
+        </section>
+
+        <section className="panel quiz-quick-flow-panel">
+          <div className="panel-header-rich">
+            <div>
+              <span className="eyebrow">Chemin rapide</span>
+              <h3>Choisir le bon format de quiz</h3>
+              <p>Les réglages de temps, tentatives et correction sont préconfigurés, puis restent ajustables.</p>
+            </div>
+            <Badge tone="accent">
+              {QUIZ_PRESETS.find((preset) => preset.id === activePresetId)?.title ?? "Personnalisé"}
+            </Badge>
+          </div>
+
+          <div className="studio-mode-grid">
+            {QUIZ_PRESETS.map((preset) => (
+              <button
+                className={`studio-mode-card${activePresetId === preset.id ? " is-active" : ""}`}
+                key={preset.id}
+                onClick={() => applyQuizPreset(preset)}
+                type="button"
+              >
+                <strong>{preset.title}</strong>
+                <span>{preset.description}</span>
+              </button>
+            ))}
           </div>
         </section>
 
@@ -367,63 +464,79 @@ export function QuizStudioComposer({
             </article>
 
             <div className="quiz-briefing-stack">
-              <article className="quiz-briefing-card">
-                <div className="quiz-briefing-card-head">
-                  <span className="eyebrow">Règles</span>
-                  <strong>Cadre de jeu</strong>
-                </div>
+              <details className="ux-disclosure quiz-settings-disclosure">
+                <summary>
+                  <span>Règles du quiz</span>
+                  <small>
+                    {attemptsAllowed} tentative(s) · {timeLimitMinutes === "0" ? "sans limite" : `${timeLimitMinutes} min`} · cible {passingScore}%
+                  </small>
+                </summary>
 
-                <div className="quiz-studio-grid">
-                  <label>
-                    Type
-                    <select onChange={(event) => setKind(event.target.value)} value={kind}>
-                      <option value="qcm">qcm</option>
-                      <option value="quiz">quiz</option>
-                      <option value="assessment">assessment</option>
-                    </select>
-                  </label>
-                  <label>
-                    Statut
-                    <select onChange={(event) => setStatus(event.target.value)} value={status}>
-                      <option value="draft">draft</option>
-                      <option value="scheduled">scheduled</option>
-                      <option value="published">published</option>
-                      <option value="archived">archived</option>
-                    </select>
-                  </label>
-                  <label>
-                    Tentatives autorisées
-                    <input min="1" onChange={(event) => setAttemptsAllowed(event.target.value)} type="number" value={attemptsAllowed} />
-                  </label>
-                  <label>
-                    Temps limite (minutes)
-                    <input min="0" onChange={(event) => setTimeLimitMinutes(event.target.value)} type="number" value={timeLimitMinutes} />
-                  </label>
-                  <label className="form-grid-span">
-                    Score cible
-                    <input min="0" onChange={(event) => setPassingScore(event.target.value)} step="0.01" type="number" value={passingScore} />
+                <div className="ux-disclosure-body">
+                  <div className="quiz-briefing-card-head">
+                    <span className="eyebrow">Règles</span>
+                    <strong>Cadre de jeu</strong>
+                  </div>
+
+                  <div className="quiz-studio-grid">
+                    <label>
+                      Type
+                      <select onChange={(event) => setKind(event.target.value)} value={kind}>
+                        <option value="qcm">qcm</option>
+                        <option value="quiz">quiz</option>
+                        <option value="assessment">assessment</option>
+                      </select>
+                    </label>
+                    <label>
+                      Statut
+                      <select onChange={(event) => setStatus(event.target.value)} value={status}>
+                        <option value="draft">draft</option>
+                        <option value="scheduled">scheduled</option>
+                        <option value="published">published</option>
+                        <option value="archived">archived</option>
+                      </select>
+                    </label>
+                    <label>
+                      Tentatives autorisées
+                      <input min="1" onChange={(event) => setAttemptsAllowed(event.target.value)} type="number" value={attemptsAllowed} />
+                    </label>
+                    <label>
+                      Temps limite (minutes)
+                      <input min="0" onChange={(event) => setTimeLimitMinutes(event.target.value)} type="number" value={timeLimitMinutes} />
+                    </label>
+                    <label className="form-grid-span">
+                      Score cible
+                      <input min="0" onChange={(event) => setPassingScore(event.target.value)} step="0.01" type="number" value={passingScore} />
+                    </label>
+                  </div>
+                </div>
+              </details>
+
+              <details className="ux-disclosure quiz-settings-disclosure">
+                <summary>
+                  <span>Expérience de passage</span>
+                  <small>{randomizeQuestions ? "questions mélangées" : "ordre fixe"}</small>
+                </summary>
+
+                <div className="ux-disclosure-body">
+                  <div className="quiz-briefing-card-head">
+                    <span className="eyebrow">Expérience</span>
+                    <strong>Rythme du passage</strong>
+                  </div>
+
+                  <label className="quiz-studio-toggle">
+                    <input
+                      checked={randomizeQuestions}
+                      onChange={(event) => setRandomizeQuestions(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>
+                      Mélanger les questions pendant le passage
+                      <small>Pratique pour les évaluations ou les tentatives répétées.</small>
+                    </span>
                   </label>
                 </div>
-              </article>
-
-              <article className="quiz-briefing-card quiz-briefing-card-soft">
-                <div className="quiz-briefing-card-head">
-                  <span className="eyebrow">Expérience</span>
-                  <strong>Rythme du passage</strong>
-                </div>
-
-                <label className="quiz-studio-toggle">
-                  <input
-                    checked={randomizeQuestions}
-                    onChange={(event) => setRandomizeQuestions(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>
-                    Mélanger les questions pendant le passage
-                    <small>Pratique pour les évaluations ou les tentatives répétées.</small>
-                  </span>
-                </label>
-              </article>
+              </details>
             </div>
           </div>
         </section>

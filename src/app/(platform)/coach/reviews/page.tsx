@@ -293,7 +293,16 @@ export default async function CoachReviewsPage({
                       </Link>
                     </div>
 
-                    <GradeQuizTextAttemptForm answers={attempt.answers} attemptId={attempt.id} />
+                    <details className="ux-disclosure review-form-disclosure">
+                      <summary>
+                        <span>Ouvrir la correction</span>
+                        <small>{attempt.answers.length} réponse(s) ouverte(s)</small>
+                      </summary>
+
+                      <div className="ux-disclosure-body">
+                        <GradeQuizTextAttemptForm answers={attempt.answers} attemptId={attempt.id} />
+                      </div>
+                    </details>
                   </article>
                 ))}
               </div>
@@ -358,7 +367,16 @@ export default async function CoachReviewsPage({
                         </div>
                       ) : null}
 
-                      <ReviewSubmissionForm submissionId={submission.id} />
+                      <details className="ux-disclosure review-form-disclosure">
+                        <summary>
+                          <span>{submission.review ? "Modifier le feedback" : "Envoyer un feedback"}</span>
+                          <small>{getSubmissionStatusLabel(submission.status)}</small>
+                        </summary>
+
+                        <div className="ux-disclosure-body">
+                          <ReviewSubmissionForm submissionId={submission.id} />
+                        </div>
+                      </details>
                     </div>
                   </article>
                 ))}

@@ -84,9 +84,23 @@ export default async function AdminQuizzesPage({
   return (
     <div className="page-shell">
       <PlatformTopbar
-        title="Studio quiz"
-        description="Cockpit pédagogique premium pour piloter la calibration, la diffusion et la maintenance des quiz ECCE sans repasser par un simple catalogue."
+        title="Créer quiz"
+        description="Création rapide de quiz, QCM et questions ouvertes, avec la calibration disponible plus bas."
+        actions={
+          <>
+            <Link className="button button-secondary" href="/admin/content">
+              Créer contenus
+            </Link>
+            <Link className="button" href="/coach/reviews">
+              Corrections
+            </Link>
+          </>
+        }
       />
+
+      <div className="studio-priority-anchor" id="quiz-studio">
+        <QuizStudioComposer contentOptions={contentOptions} moduleOptions={moduleOptions} />
+      </div>
 
       <section className="metric-grid metric-grid-compact">
         {metrics.map((metric) => (
@@ -509,10 +523,6 @@ export default async function AdminQuizzesPage({
           )}
         </section>
       </section>
-
-      <div id="quiz-studio">
-        <QuizStudioComposer contentOptions={contentOptions} moduleOptions={moduleOptions} />
-      </div>
     </div>
   );
 }
