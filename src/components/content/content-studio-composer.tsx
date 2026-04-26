@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { createContentAction, type AdminActionState } from "@/app/(platform)/admin/actions";
@@ -665,7 +666,26 @@ export function ContentStudioComposer({
             <p className="form-error">Ajoute un PDF ou un lien avant de publier cette ressource.</p>
           ) : null}
           {state.error || pdfUploadError ? <p className="form-error">{state.error ?? pdfUploadError}</p> : null}
-          {state.success ? <p className="form-success">{state.success}</p> : null}
+          {state.success ? (
+            <div className="form-success content-success-actions">
+              <span className="content-success-copy">
+                <span>{state.success}</span>
+                {state.contentStatus && state.contentStatus !== "published" ? (
+                  <small>Ce contenu n&apos;est pas publié : il reste accessible dans le studio, pas dans la bibliothèque.</small>
+                ) : null}
+              </span>
+              <div className="table-actions">
+                {state.contentHref ? (
+                  <Link className="button button-secondary button-small" href={state.contentHref}>
+                    {state.contentCtaLabel ?? "Ouvrir le contenu"}
+                  </Link>
+                ) : null}
+                <Link className="button button-ghost button-small" href="/library">
+                  Ouvrir la bibliothèque
+                </Link>
+              </div>
+            </div>
+          ) : null}
 
           <button className="button" disabled={isBusy || !title.trim() || hasBlockingPdfError || isPublishedWithoutSource} type="submit">
             {isUploadingPdf ? "Upload PDF..." : pending ? "Création..." : "Créer le contenu"}

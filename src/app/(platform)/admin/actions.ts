@@ -15,6 +15,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
 export type AdminActionState = {
+  contentCtaLabel?: string;
+  contentHref?: string;
+  contentStatus?: string;
   error?: string;
   success?: string;
 };
@@ -1148,27 +1151,35 @@ export async function createContentAction(
     return failAndCleanupContentPdf(sourceValidationError, fileUpload.storagePath, admin);
   }
 
-  const { error } = await admin.from("content_items").insert({
-    organization_id: organizationId,
-    title,
-    slug,
-    module_id: moduleId || null,
-    summary: summary || null,
-    category: category || null,
-    subcategory: subcategory || null,
-    tags,
-    content_type: resolvedContentType,
-    status,
-    external_url: externalUrl || null,
-    storage_path: fileUpload.storagePath,
-    youtube_url: youtubeUrl || null,
-    is_required: isRequired,
-    estimated_minutes: estimatedMinutes > 0 ? estimatedMinutes : null,
-    created_by: context.user.id
-  });
+  const { data: createdContent, error } = await admin
+    .from("content_items")
+    .insert({
+      organization_id: organizationId,
+      title,
+      slug,
+      module_id: moduleId || null,
+      summary: summary || null,
+      category: category || null,
+      subcategory: subcategory || null,
+      tags,
+      content_type: resolvedContentType,
+      status,
+      external_url: externalUrl || null,
+      storage_path: fileUpload.storagePath,
+      youtube_url: youtubeUrl || null,
+      is_required: isRequired,
+      estimated_minutes: estimatedMinutes > 0 ? estimatedMinutes : null,
+      created_by: context.user.id
+    })
+    .select("id, slug, status")
+    .single<{ id: string; slug: string; status: string }>();
 
-  if (error) {
-    return failAndCleanupContentPdf(error.message, fileUpload.storagePath, admin);
+  if (error || !createdContent) {
+    return failAndCleanupContentPdf(
+      error?.message ?? "Impossible de confirmer la création du contenu.",
+      fileUpload.storagePath,
+      admin
+    );
   }
 
   await createAuditEvent({
@@ -1178,6 +1189,7 @@ export async function createContentAction(
     action: "content.created",
     summary: `Contenu "${title}" créé.`,
     targetType: "content",
+    targetId: createdContent.id,
     targetLabel: title,
     highlights: [
       resolvedContentType,
@@ -1191,10 +1203,16 @@ export async function createContentAction(
   revalidatePath("/admin/content");
   revalidateAdminAudit();
   revalidatePath("/library");
+  revalidatePath(`/library/${createdContent.slug}`);
   revalidatePath("/dashboard");
   revalidateContentStudioCaches({ storage: Boolean(fileUpload.storagePath) });
 
-  return ok(`Contenu "${title}" créé.`);
+  return {
+    contentCtaLabel: createdContent.status === "published" ? "Voir dans la bibliothèque" : "Ouvrir la fiche contenu",
+    contentHref: createdContent.status === "published" ? `/library/${createdContent.slug}` : `/admin/content/${createdContent.id}`,
+    contentStatus: createdContent.status,
+    success: `Contenu "${title}" créé.`
+  };
 }
 
 export async function updateContentAction(

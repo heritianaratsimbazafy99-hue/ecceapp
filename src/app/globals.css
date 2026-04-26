@@ -3853,6 +3853,17 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   gap: 24px;
 }
 
+.library-recent-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.library-recent-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .library-showcase-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -3860,6 +3871,15 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .library-resource-card {
   min-height: 280px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 244, 238, 0.92));
+}
+
+.library-resource-card-compact {
+  min-height: 238px;
+  padding: 16px;
+}
+
+.library-resource-card-compact h3 {
+  font-size: 1.02rem;
 }
 
 .library-resource-actions {
@@ -6154,6 +6174,25 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   font-size: 0.95rem;
   font-weight: 700;
   line-height: 1.45;
+}
+
+.content-success-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.content-success-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.content-success-copy small {
+  color: rgba(47, 104, 85, 0.76);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .form-hint {
@@ -9663,6 +9702,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .quiz-answer-grid,
   .content-catalog-grid,
   .library-showcase-grid,
+  .library-recent-grid,
   .assignment-board-grid,
   .coach-alert-grid,
   .coach-roster-grid,
@@ -9853,6 +9893,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .professor-content-meta,
   .content-catalog-grid,
   .library-showcase-grid,
+  .library-recent-grid,
   .assignment-studio-shell,
   .assignment-board-grid,
   .coach-session-studio,

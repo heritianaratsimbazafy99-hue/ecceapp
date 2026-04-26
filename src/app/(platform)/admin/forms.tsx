@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -60,7 +61,21 @@ function ActionFeedback({ state }: { state: AdminActionState }) {
   }
 
   if (state.success) {
-    return <p className="form-success">{state.success}</p>;
+    return (
+      <div className="form-success content-success-actions">
+        <span className="content-success-copy">
+          <span>{state.success}</span>
+          {state.contentStatus && state.contentStatus !== "published" ? (
+            <small>Ce contenu n&apos;est pas publié : il reste accessible dans le studio, pas dans la bibliothèque.</small>
+          ) : null}
+        </span>
+        {state.contentHref ? (
+          <Link className="button button-secondary button-small" href={state.contentHref}>
+            {state.contentCtaLabel ?? "Ouvrir le contenu"}
+          </Link>
+        ) : null}
+      </div>
+    );
   }
 
   return null;

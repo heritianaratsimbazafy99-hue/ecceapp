@@ -13,6 +13,7 @@ type LibraryResource = {
   subcategory: string | null;
   tags: string[];
   badge: string;
+  createdAt: string;
   secondaryBadge: string | null;
   meta: string;
   href: string | null;
@@ -37,6 +38,11 @@ type LibraryThemeMap = {
   }>;
   topics: string[];
 };
+
+const publicationDateFormatter = new Intl.DateTimeFormat("fr-FR", {
+  day: "2-digit",
+  month: "short"
+});
 
 function contentTone(contentType: string) {
   switch (contentType) {
@@ -76,10 +82,83 @@ function buildLibraryHref({
   return value ? `/library?${value}` : "/library";
 }
 
+function formatPublicationDate(value: string) {
+  const timestamp = Date.parse(value);
+
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return publicationDateFormatter.format(new Date(timestamp));
+}
+
+function LibraryResourceCard({
+  compact = false,
+  item,
+  search
+}: {
+  compact?: boolean;
+  item: LibraryResource;
+  search: string;
+}) {
+  const publishedAt = formatPublicationDate(item.createdAt);
+
+  return (
+    <article className={`collection-card library-resource-card${compact ? " library-resource-card-compact" : ""}`}>
+      <div>
+        <div className="tag-row">
+          <Badge tone={contentTone(item.badge)}>{item.badge}</Badge>
+          {item.secondaryBadge ? <Badge tone="neutral">{item.secondaryBadge}</Badge> : null}
+        </div>
+
+        <h3>{item.title}</h3>
+        <p>{item.summary}</p>
+
+        <div className="library-resource-meta">
+          <Link href={buildLibraryHref({ filter: item.subcategory || "Sans sous-thème", query: search })}>
+            {item.subcategory || "Sans sous-thème"}
+          </Link>
+          <span>{item.meta}</span>
+          {publishedAt ? <span>{publishedAt}</span> : null}
+        </div>
+
+        {item.tags.length ? (
+          <div className="collection-tags">
+            {item.tags.map((tag) => (
+              <Link
+                className="collection-tag library-topic-pill"
+                href={buildLibraryHref({ filter: tag, query: search })}
+                key={tag}
+              >
+                {tag}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="library-resource-actions">
+        {item.href ? (
+          <Link
+            className="button"
+            href={item.href}
+            target={item.href.startsWith("http") ? "_blank" : undefined}
+          >
+            {item.hrefLabel}
+          </Link>
+        ) : (
+          <span className="form-hint">Aucun lien rattaché pour le moment.</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
 export function LibraryExplorer({
   groups,
   initialFilter,
   initialSearch,
+  recentResources,
   taxonomy,
   themeMap,
   totalResourceCount
@@ -87,6 +166,7 @@ export function LibraryExplorer({
   groups: LibraryGroup[];
   initialFilter?: string;
   initialSearch?: string;
+  recentResources: LibraryResource[];
   taxonomy: string[];
   themeMap: LibraryThemeMap[];
   totalResourceCount: number;
@@ -270,6 +350,27 @@ export function LibraryExplorer({
         </div>
       </section>
 
+      {recentResources.length ? (
+        <section className="panel library-recent-panel">
+          <div className="panel-header">
+            <div>
+              <span className="eyebrow">Nouveau</span>
+              <h3>Dernières publications</h3>
+              <p>Les contenus et quiz publiés remontent ici immédiatement après création.</p>
+            </div>
+            <Link className="button button-secondary button-small" href="/admin/content">
+              Créer un contenu
+            </Link>
+          </div>
+
+          <div className="library-recent-grid">
+            {recentResources.map((item) => (
+              <LibraryResourceCard compact item={item} key={`recent-${item.id}`} search={search} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {filteredGroups.length ? (
         <section className="library-section-stack">
           {filteredGroups.map((group) => {
@@ -299,52 +400,7 @@ export function LibraryExplorer({
 
                 <div className="library-showcase-grid">
                   {group.items.map((item) => (
-                    <article className="collection-card library-resource-card" key={item.id}>
-                      <div>
-                        <div className="tag-row">
-                          <Badge tone={contentTone(item.badge)}>{item.badge}</Badge>
-                          {item.secondaryBadge ? <Badge tone="neutral">{item.secondaryBadge}</Badge> : null}
-                        </div>
-
-                        <h3>{item.title}</h3>
-                        <p>{item.summary}</p>
-
-                        <div className="library-resource-meta">
-                          <Link href={buildLibraryHref({ filter: item.subcategory || "Sans sous-thème", query: search })}>
-                            {item.subcategory || "Sans sous-thème"}
-                          </Link>
-                          <span>{item.meta}</span>
-                        </div>
-
-                        {item.tags.length ? (
-                          <div className="collection-tags">
-                            {item.tags.map((tag) => (
-                              <Link
-                                className="collection-tag library-topic-pill"
-                                href={buildLibraryHref({ filter: tag, query: search })}
-                                key={tag}
-                              >
-                                {tag}
-                              </Link>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className="library-resource-actions">
-                        {item.href ? (
-                          <Link
-                            className="button"
-                            href={item.href}
-                            target={item.href.startsWith("http") ? "_blank" : undefined}
-                          >
-                            {item.hrefLabel}
-                          </Link>
-                        ) : (
-                          <span className="form-hint">Aucun lien rattaché pour le moment.</span>
-                        )}
-                      </div>
-                    </article>
+                    <LibraryResourceCard item={item} key={item.id} search={search} />
                   ))}
                 </div>
               </div>

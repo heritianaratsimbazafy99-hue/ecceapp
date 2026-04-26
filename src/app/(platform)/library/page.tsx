@@ -11,7 +11,7 @@ export default async function LibraryPage({
   }>;
 }) {
   const params = await searchParams;
-  const { resources, groups, taxonomy, themeMap, filters, totalResourceCount } = await getLibraryPageData({
+  const { resources, groups, recentResources, taxonomy, themeMap, filters, totalResourceCount } = await getLibraryPageData({
     query: params.query,
     filter: params.filter
   });
@@ -28,6 +28,7 @@ export default async function LibraryPage({
           groups={groups}
           initialFilter={filters.filter}
           initialSearch={filters.query}
+          recentResources={recentResources}
           taxonomy={taxonomy}
           themeMap={themeMap}
           totalResourceCount={totalResourceCount}

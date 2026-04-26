@@ -7462,6 +7462,7 @@ export async function getLibraryPageData(filters?: {
       subcategory: item.subcategory?.trim() || null,
       tags: normalizeTopics(item.tags),
       badge: item.content_type,
+      createdAt: item.created_at,
       secondaryBadge: item.is_required ? "obligatoire" : null,
       meta: item.estimated_minutes ? `${item.estimated_minutes} min` : "durée libre",
       href: `/library/${item.slug}`,
@@ -7480,6 +7481,7 @@ export async function getLibraryPageData(filters?: {
         subcategory: linkedContent?.subcategory?.trim() || quiz.kind || "quiz",
         tags: normalizeTopics(linkedContent?.tags),
         badge: quiz.kind ?? "quiz",
+        createdAt: quiz.created_at ?? "",
         secondaryBadge: `${questionCount} question(s)`,
         meta: quiz.time_limit_minutes ? `${quiz.time_limit_minutes} min` : `${quiz.attempts_allowed ?? 1} tentative(s)`,
         href: `/quiz/${quiz.id}`,
@@ -7488,6 +7490,14 @@ export async function getLibraryPageData(filters?: {
       };
     })
   ];
+
+  const getCreatedAtTimestamp = (value: string) => {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  };
+  const recentResources = [...resources]
+    .sort((left, right) => getCreatedAtTimestamp(right.createdAt) - getCreatedAtTimestamp(left.createdAt))
+    .slice(0, 4);
 
   const scopedResources = resources.filter((item) => {
     const subthemeLabel = item.subcategory || "Sans sous-thème";
@@ -7564,6 +7574,7 @@ export async function getLibraryPageData(filters?: {
     context,
     resources: scopedResources,
     groups,
+    recentResources,
     themeMap,
     totalResourceCount: resources.length,
     filters: {
