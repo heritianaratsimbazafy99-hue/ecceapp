@@ -12028,3 +12028,555 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
     font-size: 0.86rem;
   }
 }
+
+/* Platform beta density pass */
+.platform-layout {
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.page-shell {
+  width: min(100%, 1480px);
+  margin-inline: auto;
+}
+
+.platform-sidebar {
+  max-height: calc(100dvh - 28px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+html[data-platform-sidebar-state="visible"] .platform-sidebar-rail {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.platform-sidebar-toggle,
+.topbar-actions .button,
+.account-chip-actions .button {
+  white-space: nowrap;
+}
+
+.panel,
+.metric-card,
+.collection-card,
+.auth-card {
+  box-shadow: 0 16px 42px rgba(16, 24, 32, 0.08);
+}
+
+.library-search-panel {
+  overflow: hidden;
+}
+
+.library-search-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.library-search-head > div:first-child {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.library-search-head > .button,
+.admin-assignments-filter-head-actions {
+  flex: 0 0 auto;
+}
+
+.admin-content-layout,
+.admin-quizzes-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+}
+
+.admin-assignments-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+}
+
+.admin-content-side-stack,
+.admin-quizzes-side-stack,
+.admin-assignments-side-stack {
+  position: sticky;
+  top: 22px;
+  gap: 12px;
+}
+
+.admin-content-filter-form,
+.admin-quizzes-filter-form,
+.admin-assignments-filter-form {
+  grid-template-columns: minmax(220px, 1.3fr) repeat(3, minmax(132px, 0.74fr)) minmax(86px, auto);
+  align-items: end;
+  gap: 10px;
+}
+
+.admin-content-filter-form .conversation-search,
+.admin-content-filter-form .conversation-composer-field,
+.admin-quizzes-filter-form .conversation-search,
+.admin-quizzes-filter-form .conversation-composer-field,
+.admin-assignments-filter-form .conversation-search,
+.admin-assignments-filter-form .conversation-composer-field {
+  gap: 5px;
+  min-width: 0;
+}
+
+.admin-content-filter-form .conversation-search span,
+.admin-content-filter-form .conversation-composer-field span,
+.admin-quizzes-filter-form .conversation-search span,
+.admin-quizzes-filter-form .conversation-composer-field span,
+.admin-assignments-filter-form .conversation-search span,
+.admin-assignments-filter-form .conversation-composer-field span {
+  overflow: hidden;
+  color: rgba(15, 23, 42, 0.68);
+  font-size: 0.8rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-content-filter-form .conversation-search input,
+.admin-content-filter-form .conversation-composer-field select,
+.admin-quizzes-filter-form .conversation-search input,
+.admin-quizzes-filter-form .conversation-composer-field select,
+.admin-assignments-filter-form .conversation-search input,
+.admin-assignments-filter-form .conversation-composer-field select {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 13px;
+  font-size: 0.9rem;
+}
+
+.admin-content-filter-actions .button,
+.admin-quizzes-filter-actions .button,
+.admin-assignments-filter-actions .button {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 13px;
+}
+
+.admin-content-summary,
+.admin-quizzes-summary,
+.admin-assignments-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-content-summary article,
+.admin-quizzes-summary article,
+.admin-assignments-summary article {
+  min-height: 76px;
+  align-content: center;
+  padding: 12px 13px;
+  border-radius: 16px;
+}
+
+.admin-content-priority-list,
+.admin-quizzes-priority-list,
+.admin-assignments-priority-list {
+  gap: 10px;
+}
+
+.admin-content-priority-card,
+.admin-quizzes-priority-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.admin-content-priority-card .tag-row,
+.admin-content-priority-card p,
+.admin-quizzes-priority-card .tag-row,
+.admin-quizzes-priority-card p {
+  grid-column: 1;
+}
+
+.admin-content-priority-card .button,
+.admin-quizzes-priority-card .button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  min-height: 34px;
+  padding: 0 11px;
+  white-space: nowrap;
+}
+
+.admin-content-card,
+.admin-quizzes-card,
+.admin-assignments-card,
+.admin-content-category-card,
+.admin-quizzes-bridge-card,
+.admin-assignments-asset-card {
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+}
+
+.admin-content-card-meta span,
+.admin-quizzes-card-meta span,
+.admin-assignments-card-meta span {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+}
+
+.content-studio-shell,
+.quiz-studio-shell,
+.assignment-studio-shell {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+}
+
+.content-studio-main,
+.quiz-studio-main,
+.assignment-studio-main,
+.content-studio-preview,
+.quiz-studio-preview,
+.assignment-studio-side {
+  gap: 14px;
+}
+
+.content-studio-preview,
+.quiz-studio-preview,
+.assignment-studio-side {
+  position: sticky;
+  top: 22px;
+  max-height: calc(100dvh - 44px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.content-studio-shell .panel,
+.quiz-studio-shell .panel,
+.assignment-studio-shell .panel {
+  padding: 16px;
+}
+
+.studio-command-panel {
+  gap: 14px;
+}
+
+.studio-command-steps {
+  gap: 8px;
+}
+
+.studio-command-steps article {
+  min-height: 58px;
+  padding: 10px 11px;
+  border-radius: 14px;
+}
+
+.studio-mode-grid {
+  gap: 10px;
+}
+
+.studio-mode-card {
+  min-height: 78px;
+  padding: 11px 12px;
+  border-radius: 14px;
+}
+
+.content-focus-grid,
+.quiz-briefing-layout,
+.assignment-planner-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
+  gap: 12px;
+}
+
+.content-briefing-card,
+.content-source-card,
+.content-pdf-uploader,
+.quiz-briefing-card,
+.quiz-builder-card,
+.assignment-planner-card,
+.assignment-preview-card,
+.content-preview-card,
+.quiz-preview-card {
+  padding: 14px;
+  border-radius: 16px;
+}
+
+.content-pdf-uploader input[type="file"] {
+  min-height: auto;
+  padding: 8px;
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.content-pdf-uploader input[type="file"]::file-selector-button {
+  min-height: 34px;
+  margin-right: 10px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.content-studio-main > .panel-subtle,
+.quiz-studio-main > .panel-subtle,
+.assignment-planner-card-ready {
+  border: 1px solid rgba(255, 106, 61, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(255, 106, 61, 0.1), transparent 32%),
+    linear-gradient(180deg, rgba(255, 248, 242, 0.96), rgba(255, 255, 255, 0.92));
+  box-shadow: 0 14px 34px rgba(255, 106, 61, 0.08);
+}
+
+.content-readiness-grid,
+.quiz-studio-checklist,
+.assignment-readiness-grid {
+  gap: 8px;
+}
+
+.content-readiness-grid div,
+.quiz-studio-checklist div,
+.assignment-readiness-grid div {
+  min-height: 64px;
+  padding: 11px 12px;
+  border-radius: 14px;
+}
+
+.quiz-builder-workspace {
+  grid-template-columns: minmax(88px, 0.16fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.quiz-builder-workspace .quiz-question-rail {
+  top: 22px;
+}
+
+.quiz-question-rail {
+  gap: 8px;
+}
+
+.quiz-question-pill {
+  padding: 10px 11px;
+  border-radius: 13px;
+}
+
+.quiz-builder-card-head .table-actions,
+.quiz-choice-editor-head {
+  gap: 8px;
+}
+
+.quiz-builder-card-head .button,
+.quiz-choice-editor-head .button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+
+.quiz-choice-row {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.quiz-correct-toggle {
+  width: 40px;
+  min-height: 40px;
+  border-radius: 12px;
+}
+
+.quiz-choice-row input,
+.quiz-choice-row .button {
+  min-height: 40px;
+}
+
+.quiz-choice-row .button {
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+
+.quiz-preview-card h4 {
+  font-size: 1.18rem;
+  line-height: 1.18;
+}
+
+.quiz-preview-choice,
+.quiz-answer-card {
+  padding: 12px 13px;
+  border-radius: 14px;
+}
+
+.content-quality-list article,
+.quiz-quality-list article,
+.assignment-quality-list article {
+  padding: 12px 13px;
+  border-radius: 14px;
+}
+
+@media (max-width: 1180px) {
+  .admin-content-layout,
+  .admin-quizzes-layout,
+  .admin-assignments-layout,
+  .content-studio-shell,
+  .quiz-studio-shell,
+  .assignment-studio-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-assignments-layout {
+    grid-template-areas:
+      "filter"
+      "side"
+      "watch";
+  }
+
+  .admin-content-side-stack,
+  .admin-quizzes-side-stack,
+  .admin-assignments-side-stack,
+  .content-studio-preview,
+  .quiz-studio-preview,
+  .assignment-studio-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .admin-content-filter-form,
+  .admin-quizzes-filter-form,
+  .admin-assignments-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-content-filter-actions,
+  .admin-quizzes-filter-actions,
+  .admin-assignments-filter-actions {
+    align-self: end;
+  }
+
+  .admin-content-summary,
+  .admin-quizzes-summary,
+  .admin-assignments-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .platform-sidebar {
+    margin: 8px;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .platform-sidebar .brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+  }
+
+  .platform-sidebar-toggle {
+    min-height: 30px;
+    padding: 0 10px;
+  }
+
+  .platform-nav {
+    gap: 6px;
+  }
+
+  .platform-nav-link {
+    gap: 6px;
+    padding: 7px 8px;
+    border-radius: 12px;
+  }
+
+  .platform-nav-link-mark {
+    min-width: 28px;
+    height: 28px;
+    border-radius: 9px;
+  }
+
+  .platform-nav-link-label {
+    font-size: 0.8rem;
+  }
+
+  .account-chip {
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px;
+  }
+
+  .account-chip p {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account-chip-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .account-chip-actions form {
+    grid-column: 1 / -1;
+  }
+
+  .notification-bell,
+  .account-chip-actions .button {
+    width: 100%;
+    min-height: 34px;
+  }
+
+  .library-search-head > div:first-child {
+    flex-basis: 100%;
+  }
+
+  .library-search-head > .button,
+  .admin-assignments-filter-head-actions,
+  .admin-assignments-filter-head-actions .button {
+    width: 100%;
+  }
+
+  .admin-content-filter-form,
+  .admin-quizzes-filter-form,
+  .admin-assignments-filter-form,
+  .admin-content-summary,
+  .admin-quizzes-summary,
+  .admin-assignments-summary,
+  .content-focus-grid,
+  .quiz-briefing-layout,
+  .assignment-planner-layout,
+  .quiz-builder-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-content-priority-card,
+  .admin-quizzes-priority-card {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-content-priority-card .tag-row,
+  .admin-content-priority-card p,
+  .admin-content-priority-card .button,
+  .admin-quizzes-priority-card .tag-row,
+  .admin-quizzes-priority-card p,
+  .admin-quizzes-priority-card .button {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: flex-start;
+  }
+
+  .quiz-choice-row {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .quiz-choice-row .button {
+    grid-column: 2;
+    justify-self: flex-start;
+  }
+}

@@ -54,6 +54,7 @@ export function PlatformSidebar({
 }: PlatformSidebarProps) {
   const pathname = usePathname();
   const hideTimeoutRef = useRef<number | null>(null);
+  const wasPinnedRef = useRef(false);
   const [isPinned, setIsPinned] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
@@ -112,9 +113,11 @@ export function PlatformSidebar({
     window.localStorage.setItem(SIDEBAR_PINNED_STORAGE_KEY, String(isPinned));
 
     if (isPinned) {
+      wasPinnedRef.current = true;
       setIsVisible(true);
     } else if (isDesktop) {
-      setIsVisible(false);
+      setIsVisible(wasPinnedRef.current);
+      wasPinnedRef.current = false;
     }
   }, [isDesktop, isPinned]);
 
