@@ -105,10 +105,10 @@ export default async function AdminAssignmentsPage({
 
           <div className="admin-assignments-actions">
             <Link className="button" href="#assignment-studio">
-              Programmer une mission
+              Créer une assignation
             </Link>
             <Link className="button button-secondary" href="#assignment-board">
-              Ouvrir le board
+              Relire le board
             </Link>
             <Link className="button button-secondary" href="/agenda">
               Ouvrir l&apos;agenda
@@ -147,17 +147,22 @@ export default async function AdminAssignmentsPage({
       </section>
 
       <section className="admin-assignments-layout">
-        <section className="panel library-search-panel">
-          <div className="library-search-head">
+        <section className="panel library-search-panel admin-assignments-filter-panel">
+          <div className="library-search-head admin-assignments-filter-head">
             <div>
               <span className="eyebrow">Filtrer le studio</span>
               <h3>Recherche, cible, type d&apos;asset et lane d&apos;exécution</h3>
               <p>Réduis la vue à la bonne tension opérationnelle avant de décider quoi relancer, reprogrammer ou amplifier.</p>
             </div>
 
-            <Link className="button button-secondary" href="/admin/assignments">
-              Réinitialiser
-            </Link>
+            <div className="admin-assignments-filter-head-actions">
+              <Link className="button" href="#assignment-studio">
+                Créer une assignation
+              </Link>
+              <Link className="button button-secondary" href="/admin/assignments">
+                Réinitialiser
+              </Link>
+            </div>
           </div>
 
           <form className="admin-assignments-filter-form" method="get">
@@ -197,7 +202,7 @@ export default async function AdminAssignmentsPage({
 
             <div className="admin-assignments-filter-actions">
               <button className="button" type="submit">
-                Appliquer
+                Filtrer
               </button>
             </div>
           </form>
@@ -223,7 +228,7 @@ export default async function AdminAssignmentsPage({
         </section>
 
         <aside className="admin-assignments-side-stack">
-          <section className="panel">
+          <section className="panel admin-assignments-focus-panel">
             <div className="panel-header">
               <h3>Mission focus</h3>
               <p>La mission qui concentre le plus de tension utile à lire maintenant.</p>
@@ -273,14 +278,17 @@ export default async function AdminAssignmentsPage({
                 ) : null}
               </>
             ) : (
-              <div className="empty-state empty-state-compact">
+              <div className="empty-state empty-state-compact admin-assignments-empty-state">
                 <strong>Aucune mission focus.</strong>
                 <p>Crée une assignation ou élargis les filtres pour faire remonter un point d&apos;attention réel.</p>
+                <Link className="button button-secondary button-small" href="#assignment-studio">
+                  Créer une assignation
+                </Link>
               </div>
             )}
           </section>
 
-          <section className="panel">
+          <section className="panel admin-assignments-priority-panel">
             <div className="panel-header">
               <h3>Priorités ops</h3>
               <p>Les arbitrages les plus utiles sur la vue active du studio.</p>
@@ -380,7 +388,7 @@ export default async function AdminAssignmentsPage({
             ))}
           </div>
         ) : (
-          <div className="empty-state">
+          <div className="empty-state empty-state-compact admin-assignments-empty-state">
             <strong>Aucune mission dans la watchlist.</strong>
             <p>La vue active n&apos;a pas encore assez de missions visibles, ou les filtres sont trop restrictifs.</p>
           </div>
@@ -468,7 +476,7 @@ export default async function AdminAssignmentsPage({
         </section>
       </section>
 
-      <div id="assignment-studio">
+      <div className="admin-assignments-anchor" id="assignment-studio">
         <AssignmentStudioComposer
           cohortOptions={cohortOptions}
           contentOptions={contentOptions}
@@ -477,7 +485,7 @@ export default async function AdminAssignmentsPage({
         />
       </div>
 
-      <div id="assignment-board">
+      <div className="admin-assignments-anchor" id="assignment-board">
         <AssignmentCommandBoard
           description="Board d’exécution des missions visibles, avec filtres rapides et lecture directe des deadlines, des cibles et des assets."
           emptyBody="Crée une première assignation pour alimenter le cockpit, les notifications et les dashboards ECCE."

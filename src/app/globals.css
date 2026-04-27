@@ -5215,6 +5215,7 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 .admin-assignments-lane-grid,
 .admin-assignments-layout,
 .admin-assignments-side-stack,
+.admin-assignments-filter-head-actions,
 .admin-assignments-filter-form,
 .admin-assignments-summary,
 .admin-assignments-focus-metrics,
@@ -5325,17 +5326,87 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 }
 
 .admin-assignments-layout {
-  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  grid-template-columns: minmax(0, 1.12fr) minmax(340px, 0.88fr);
   align-items: start;
+  gap: 18px;
+}
+
+.admin-assignments-filter-panel,
+.admin-assignments-focus-panel,
+.admin-assignments-priority-panel {
+  padding: 20px 22px;
+}
+
+.admin-assignments-filter-panel {
+  gap: 14px;
+}
+
+.admin-assignments-filter-head {
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-assignments-filter-head > div:first-child {
+  min-width: min(100%, 520px);
+}
+
+.admin-assignments-filter-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.admin-assignments-filter-head-actions .button,
+.admin-assignments-priority-card .button,
+.admin-assignments-empty-state .button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.84rem;
 }
 
 .admin-assignments-filter-form {
-  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr) auto;
+  grid-template-columns: minmax(170px, 1.15fr) repeat(3, minmax(128px, 0.72fr)) minmax(72px, auto);
   align-items: end;
+  gap: 10px;
+}
+
+.admin-assignments-filter-form .conversation-search,
+.admin-assignments-filter-form .conversation-composer-field {
+  gap: 5px;
+  min-width: 0;
+}
+
+.admin-assignments-filter-form .conversation-search span,
+.admin-assignments-filter-form .conversation-composer-field span {
+  overflow: hidden;
+  color: rgba(15, 23, 42, 0.68);
+  font-size: 0.82rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-assignments-filter-form .conversation-search input,
+.admin-assignments-filter-form .conversation-composer-field select {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 13px;
+  font-size: 0.92rem;
+}
+
+.admin-assignments-filter-form .conversation-search input {
+  appearance: none;
 }
 
 .admin-assignments-filter-actions {
   align-self: end;
+}
+
+.admin-assignments-filter-actions .button {
+  min-height: 40px;
+  padding: 0 14px;
 }
 
 .admin-assignments-summary,
@@ -5345,8 +5416,60 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   gap: 16px;
 }
 
+.admin-assignments-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-assignments-summary article,
+.admin-assignments-focus-metrics article {
+  padding: 12px 14px;
+  border-radius: 16px;
+}
+
+.admin-assignments-summary article {
+  align-content: center;
+  min-height: 82px;
+}
+
+.admin-assignments-side-stack {
+  gap: 14px;
+}
+
+.admin-assignments-focus-panel .panel-header,
+.admin-assignments-priority-panel .panel-header {
+  margin-bottom: 12px;
+}
+
 .admin-assignments-priority-list {
-  gap: 16px;
+  gap: 10px;
+}
+
+.admin-assignments-priority-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.admin-assignments-priority-card .tag-row,
+.admin-assignments-priority-card p {
+  grid-column: 1;
+}
+
+.admin-assignments-priority-card .button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.admin-assignments-empty-state {
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
 }
 
 .admin-assignments-card {
@@ -5372,6 +5495,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   background: rgba(16, 24, 32, 0.05);
 }
 
+.admin-assignments-anchor {
+  scroll-margin-top: 28px;
+}
+
 @media (max-width: 1080px) {
   .admin-assignments-hero,
   .admin-assignments-layout,
@@ -5386,6 +5513,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   }
 
   .admin-assignments-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-assignments-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -5407,6 +5538,27 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-assignments-actions {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .admin-assignments-filter-head {
+    align-items: flex-start;
+  }
+
+  .admin-assignments-filter-head-actions {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .admin-assignments-priority-card {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-assignments-priority-card .tag-row,
+  .admin-assignments-priority-card p,
+  .admin-assignments-priority-card .button {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: flex-start;
   }
 }
 

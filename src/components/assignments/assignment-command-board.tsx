@@ -158,7 +158,7 @@ export function AssignmentCommandBoard({
           ))}
         </div>
       ) : (
-        <div className="empty-state">
+        <div className="empty-state empty-state-compact">
           <strong>{emptyTitle}</strong>
           <p>{emptyBody}</p>
         </div>
