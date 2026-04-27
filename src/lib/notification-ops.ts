@@ -108,9 +108,9 @@ export function getNotificationOpsLane(item: NotificationOpsItem, now = Date.now
 export function getNotificationOpsLaneLabel(lane: NotificationOpsLane) {
   switch (lane) {
     case "action":
-      return "Action immediate";
+      return "Action immédiate";
     case "review":
-      return "A suivre";
+      return "À suivre";
     default:
       return "Archive utile";
   }

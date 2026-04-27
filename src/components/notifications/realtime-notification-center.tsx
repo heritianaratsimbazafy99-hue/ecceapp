@@ -252,7 +252,7 @@ function NotificationStreamList({
   }
 
   return (
-    <div className={cn("notification-feed-list", variant === "page" && "is-page")}>
+    <div className={cn("notification-feed-list", variant === "page" ? "is-page" : "is-compact")}>
       {items.map((item) => {
         const summary = summarizeNotificationOps(item);
 
@@ -260,6 +260,7 @@ function NotificationStreamList({
           <article
             className={cn(
               "notification-feed-card",
+              variant === "page" ? "is-page-card" : "is-compact-card",
               !item.read_at && "is-unread",
               item.deeplink && "is-actionable"
             )}
@@ -278,8 +279,8 @@ function NotificationStreamList({
               </div>
               <strong>{item.title}</strong>
               <p>{item.body || "Notification système ECCE"}</p>
-              <small>
-                {summary.nextAction} · {formatDate(item.created_at)}
+              <small className="notification-feed-card-detail">
+                {variant === "page" ? `${summary.nextAction} · ${formatDate(item.created_at)}` : formatDate(item.created_at)}
               </small>
             </div>
             <div className="notification-feed-card-actions">
