@@ -5068,10 +5068,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .assignment-planner-card {
   display: grid;
-  gap: 16px;
-  padding: 20px;
+  gap: 14px;
+  padding: 16px;
   border: 1px solid rgba(16, 24, 32, 0.08);
-  border-radius: 24px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.86);
   box-shadow: 0 18px 44px rgba(16, 24, 32, 0.05);
 }
@@ -5084,6 +5084,19 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .assignment-planner-card-soft {
   background: linear-gradient(180deg, rgba(242, 248, 244, 0.98), rgba(255, 255, 255, 0.94));
+}
+
+.assignment-planner-card-deadline {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 248, 255, 0.9));
+}
+
+.assignment-planner-card-ready {
+  background: rgba(16, 24, 32, 0.035);
+  box-shadow: none;
+}
+
+.assignment-planner-layout-balanced > .assignment-planner-stack {
+  align-content: start;
 }
 
 .assignment-planner-head strong {
@@ -5123,8 +5136,16 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .assignment-preset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.assignment-planner-card-ready .button {
+  justify-self: start;
+}
+
+.assignment-planner-card-ready .assignment-readiness-grid {
+  gap: 8px;
 }
 
 .assignment-preview-card {
@@ -5327,13 +5348,29 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
 
 .admin-assignments-layout {
   grid-template-columns: minmax(0, 1.12fr) minmax(340px, 0.88fr);
+  grid-template-areas:
+    "filter side"
+    "watch side";
   align-items: start;
   gap: 18px;
 }
 
+.admin-assignments-filter-panel {
+  grid-area: filter;
+}
+
+.admin-assignments-side-stack {
+  grid-area: side;
+}
+
+.admin-assignments-watch-panel {
+  grid-area: watch;
+}
+
 .admin-assignments-filter-panel,
 .admin-assignments-focus-panel,
-.admin-assignments-priority-panel {
+.admin-assignments-priority-panel,
+.admin-assignments-watch-panel {
   padding: 20px 22px;
 }
 
@@ -5441,6 +5478,26 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   margin-bottom: 12px;
 }
 
+.admin-assignments-watch-panel .panel-header-rich {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-assignments-watch-panel .messaging-inline-stats {
+  gap: 8px;
+}
+
+.admin-assignments-watch-panel .messaging-inline-stats article {
+  min-width: 118px;
+  padding: 12px 13px;
+}
+
+.admin-assignments-watch-panel .admin-assignments-watchlist {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
 .admin-assignments-priority-list {
   gap: 10px;
 }
@@ -5533,6 +5590,13 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   .admin-assignments-card-meta,
   .admin-assignments-filter-form {
     grid-template-columns: 1fr;
+  }
+
+  .admin-assignments-layout {
+    grid-template-areas:
+      "filter"
+      "side"
+      "watch";
   }
 
   .admin-assignments-actions {

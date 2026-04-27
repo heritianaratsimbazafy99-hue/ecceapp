@@ -118,25 +118,88 @@ export function AssignmentStudioComposer({
             <p>Le message doit être simple à comprendre avant même que le coaché n’ouvre la ressource.</p>
           </div>
 
-          <div className="assignment-planner-layout">
-            <article className="assignment-planner-card assignment-planner-card-primary">
-              <div className="assignment-planner-head">
-                <span className="eyebrow">Mission</span>
-                <strong>Nommer l’action</strong>
-                <p>Utilise un titre autonome, clair et orienté résultat.</p>
-              </div>
+          <div className="assignment-planner-layout assignment-planner-layout-balanced">
+            <div className="assignment-planner-stack">
+              <article className="assignment-planner-card assignment-planner-card-primary">
+                <div className="assignment-planner-head">
+                  <span className="eyebrow">Mission</span>
+                  <strong>Nommer l’action</strong>
+                  <p>Utilise un titre autonome, clair et orienté résultat.</p>
+                </div>
 
-              <label className="form-grid-span">
-                Titre de l&apos;assignation
-                <input
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Quiz semaine 1 - Posture du coach"
-                  required
-                  type="text"
-                  value={title}
-                />
-              </label>
-            </article>
+                <label className="form-grid-span">
+                  Titre de l&apos;assignation
+                  <input
+                    onChange={(event) => setTitle(event.target.value)}
+                    placeholder="Quiz semaine 1 - Posture du coach"
+                    required
+                    type="text"
+                    value={title}
+                  />
+                </label>
+              </article>
+
+              <article className="assignment-planner-card assignment-planner-card-deadline">
+                <div className="assignment-planner-head">
+                  <span className="eyebrow">Cadence</span>
+                  <strong>Deadline utile</strong>
+                  <p>Ajoute une échéance seulement si elle soutient le rythme pédagogique.</p>
+                </div>
+
+                <label className="form-grid-span">
+                  Date et heure
+                  <input onChange={(event) => setDueAt(event.target.value)} type="datetime-local" value={dueAt} />
+                </label>
+
+                <div className="assignment-preset-grid">
+                  <button className="assignment-preset" onClick={() => setDueAt(buildPreset(0, 18))} type="button">
+                    Aujourd&apos;hui 18h
+                  </button>
+                  <button className="assignment-preset" onClick={() => setDueAt(buildPreset(1, 10))} type="button">
+                    Demain 10h
+                  </button>
+                  <button className="assignment-preset" onClick={() => setDueAt(buildPreset(3, 18))} type="button">
+                    Dans 3 jours
+                  </button>
+                  <button className="assignment-preset" onClick={() => setDueAt(buildPreset(7, 18))} type="button">
+                    Dans 7 jours
+                  </button>
+                  <button className="assignment-preset" onClick={() => setDueAt("")} type="button">
+                    Sans deadline
+                  </button>
+                </div>
+              </article>
+
+              <article className="assignment-planner-card assignment-planner-card-ready">
+                <div className="assignment-planner-head">
+                  <span className="eyebrow">Validation</span>
+                  <strong>Prête à partir</strong>
+                  <p>Vérifie les derniers éléments avant d’envoyer la consigne.</p>
+                </div>
+
+                <div className="assignment-readiness-grid">
+                  <div>
+                    <strong>{targetReady ? "OK" : "..."}</strong>
+                    <span>cible choisie</span>
+                  </div>
+                  <div>
+                    <strong>{assetReady ? "OK" : "..."}</strong>
+                    <span>asset choisi</span>
+                  </div>
+                  <div>
+                    <strong>{dueAt ? "Oui" : "Libre"}</strong>
+                    <span>rythme défini</span>
+                  </div>
+                </div>
+
+                {state.error ? <p className="form-error">{state.error}</p> : null}
+                {state.success ? <p className="form-success">{state.success}</p> : null}
+
+                <button className="button" disabled={pending || !title.trim() || !targetReady || !assetReady} type="submit">
+                  {pending ? "Programmation..." : "Créer l'assignation"}
+                </button>
+              </article>
+            </div>
 
             <div className="assignment-planner-stack">
               <article className="assignment-planner-card">
@@ -263,67 +326,6 @@ export function AssignmentStudioComposer({
               </article>
             </div>
           </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <h3>Cadence et deadline</h3>
-            <p>Ajoute une échéance seulement quand elle soutient vraiment le rythme pédagogique.</p>
-          </div>
-
-          <div className="assignment-planner-stack">
-            <label className="form-grid-span">
-              Date et heure
-              <input onChange={(event) => setDueAt(event.target.value)} type="datetime-local" value={dueAt} />
-            </label>
-
-            <div className="assignment-preset-grid">
-              <button className="assignment-preset" onClick={() => setDueAt(buildPreset(0, 18))} type="button">
-                Aujourd&apos;hui 18h
-              </button>
-              <button className="assignment-preset" onClick={() => setDueAt(buildPreset(1, 10))} type="button">
-                Demain 10h
-              </button>
-              <button className="assignment-preset" onClick={() => setDueAt(buildPreset(3, 18))} type="button">
-                Dans 3 jours
-              </button>
-              <button className="assignment-preset" onClick={() => setDueAt(buildPreset(7, 18))} type="button">
-                Dans 7 jours
-              </button>
-              <button className="assignment-preset" onClick={() => setDueAt("")} type="button">
-                Sans deadline
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel panel-subtle">
-          <div className="panel-header">
-            <h3>Prête à partir</h3>
-            <p>Vérifie les derniers éléments avant d’envoyer la consigne dans les dashboards ECCE.</p>
-          </div>
-
-          <div className="assignment-readiness-grid">
-            <div>
-              <strong>{targetReady ? "OK" : "..."}</strong>
-              <span>cible choisie</span>
-            </div>
-            <div>
-              <strong>{assetReady ? "OK" : "..."}</strong>
-              <span>asset choisi</span>
-            </div>
-            <div>
-              <strong>{dueAt ? "Oui" : "Libre"}</strong>
-              <span>rythme défini</span>
-            </div>
-          </div>
-
-          {state.error ? <p className="form-error">{state.error}</p> : null}
-          {state.success ? <p className="form-success">{state.success}</p> : null}
-
-          <button className="button" disabled={pending || !title.trim() || !targetReady || !assetReady} type="submit">
-            {pending ? "Programmation..." : "Créer l'assignation"}
-          </button>
         </section>
       </div>
 

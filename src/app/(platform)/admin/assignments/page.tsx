@@ -309,90 +309,90 @@ export default async function AdminAssignmentsPage({
             </div>
           </section>
         </aside>
-      </section>
 
-      <section className="panel">
-        <div className="panel-header-rich">
-          <div>
-            <h3>Watchlist assignations</h3>
-            <p>Les missions les plus utiles à relire maintenant, triées par tension d&apos;exécution et par impact visible.</p>
-          </div>
+        <section className="panel admin-assignments-watch-panel">
+          <div className="panel-header-rich">
+            <div>
+              <h3>Watchlist assignations</h3>
+              <p>Les missions les plus utiles à relire maintenant, triées par tension d&apos;exécution et par impact visible.</p>
+            </div>
 
-          <div className="messaging-inline-stats">
-            <article>
-              <strong>{assignmentWatchlist.length}</strong>
-              <span>missions en watchlist</span>
-            </article>
-            <article>
-              <strong>{laneBreakdown.find((lane) => lane.id === "critical")?.count ?? 0}</strong>
-              <span>critiques</span>
-            </article>
-            <article>
-              <strong>{laneBreakdown.find((lane) => lane.id === "watch")?.count ?? 0}</strong>
-              <span>à surveiller</span>
-            </article>
-            <article>
-              <strong>{laneBreakdown.find((lane) => lane.id === "aligned")?.count ?? 0}</strong>
-              <span>alignées</span>
-            </article>
-          </div>
-        </div>
-
-        {assignmentWatchlist.length ? (
-          <div className="admin-assignments-watchlist">
-            {assignmentWatchlist.map((assignment) => (
-              <article className="admin-assignments-card" key={assignment.id}>
-                <div className="tag-row">
-                  <Badge tone={assignment.tone}>{assignment.laneLabel}</Badge>
-                  <Badge tone={assignment.kind === "quiz" ? "warning" : "accent"}>{assignment.kind}</Badge>
-                  <Badge tone={assignment.statusTone}>{assignment.statusLabel}</Badge>
-                </div>
-
-                <div className="admin-assignments-card-copy">
-                  <strong>{assignment.title}</strong>
-                  <p>{assignment.summary}</p>
-                </div>
-
-                <div className="admin-assignments-card-meta">
-                  <span>{assignment.targetLabel}</span>
-                  <span>{assignment.assetLabel}</span>
-                  <span>{assignment.dueRelativeLabel}</span>
-                </div>
-
-                <div className="admin-assignments-card-progress">
-                  <div>
-                    <strong>{assignment.completionRate}%</strong>
-                    <span>complétion</span>
-                  </div>
-                  <div>
-                    <strong>{assignment.completedCount}/{assignment.targetCount}</strong>
-                    <span>passés</span>
-                  </div>
-                  <div>
-                    <strong>{assignment.overdueTargetCount}</strong>
-                    <span>en retard</span>
-                  </div>
-                </div>
-
-                {assignment.href ? (
-                  <Link className="button button-secondary button-small" href={assignment.href}>
-                    {assignment.ctaLabel}
-                  </Link>
-                ) : null}
-                {assignment.messageHref ? (
-                  <Link className="button button-secondary button-small" href={assignment.messageHref}>
-                    Relancer
-                  </Link>
-                ) : null}
+            <div className="messaging-inline-stats">
+              <article>
+                <strong>{assignmentWatchlist.length}</strong>
+                <span>missions en watchlist</span>
               </article>
-            ))}
+              <article>
+                <strong>{laneBreakdown.find((lane) => lane.id === "critical")?.count ?? 0}</strong>
+                <span>critiques</span>
+              </article>
+              <article>
+                <strong>{laneBreakdown.find((lane) => lane.id === "watch")?.count ?? 0}</strong>
+                <span>à surveiller</span>
+              </article>
+              <article>
+                <strong>{laneBreakdown.find((lane) => lane.id === "aligned")?.count ?? 0}</strong>
+                <span>alignées</span>
+              </article>
+            </div>
           </div>
-        ) : (
-          <div className="empty-state empty-state-compact admin-assignments-empty-state">
-            <strong>Aucune mission dans la watchlist.</strong>
-            <p>La vue active n&apos;a pas encore assez de missions visibles, ou les filtres sont trop restrictifs.</p>
-          </div>
-        )}
+
+          {assignmentWatchlist.length ? (
+            <div className="admin-assignments-watchlist">
+              {assignmentWatchlist.map((assignment) => (
+                <article className="admin-assignments-card" key={assignment.id}>
+                  <div className="tag-row">
+                    <Badge tone={assignment.tone}>{assignment.laneLabel}</Badge>
+                    <Badge tone={assignment.kind === "quiz" ? "warning" : "accent"}>{assignment.kind}</Badge>
+                    <Badge tone={assignment.statusTone}>{assignment.statusLabel}</Badge>
+                  </div>
+
+                  <div className="admin-assignments-card-copy">
+                    <strong>{assignment.title}</strong>
+                    <p>{assignment.summary}</p>
+                  </div>
+
+                  <div className="admin-assignments-card-meta">
+                    <span>{assignment.targetLabel}</span>
+                    <span>{assignment.assetLabel}</span>
+                    <span>{assignment.dueRelativeLabel}</span>
+                  </div>
+
+                  <div className="admin-assignments-card-progress">
+                    <div>
+                      <strong>{assignment.completionRate}%</strong>
+                      <span>complétion</span>
+                    </div>
+                    <div>
+                      <strong>{assignment.completedCount}/{assignment.targetCount}</strong>
+                      <span>passés</span>
+                    </div>
+                    <div>
+                      <strong>{assignment.overdueTargetCount}</strong>
+                      <span>en retard</span>
+                    </div>
+                  </div>
+
+                  {assignment.href ? (
+                    <Link className="button button-secondary button-small" href={assignment.href}>
+                      {assignment.ctaLabel}
+                    </Link>
+                  ) : null}
+                  {assignment.messageHref ? (
+                    <Link className="button button-secondary button-small" href={assignment.messageHref}>
+                      Relancer
+                    </Link>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state empty-state-compact admin-assignments-empty-state">
+              <strong>Aucune mission dans la watchlist.</strong>
+              <p>La vue active n&apos;a pas encore assez de missions visibles, ou les filtres sont trop restrictifs.</p>
+            </div>
+          )}
+        </section>
       </section>
 
       <section className="content-grid">
