@@ -12580,3 +12580,269 @@ html[data-platform-sidebar-state="visible"] .platform-sidebar-rail {
     justify-self: flex-start;
   }
 }
+
+/* Admin studio rail collapse: keep guidance visible without creating empty scroll columns. */
+.admin-content-layout,
+.admin-quizzes-layout {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.admin-assignments-layout {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "filter"
+    "side"
+    "watch";
+  gap: 12px;
+}
+
+.admin-content-side-stack,
+.admin-quizzes-side-stack,
+.admin-assignments-side-stack {
+  position: static;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.7fr) minmax(0, 1.3fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.admin-content-copy,
+.admin-quizzes-copy,
+.admin-assignments-copy {
+  gap: 12px;
+}
+
+.admin-content-copy h3,
+.admin-quizzes-copy h3,
+.admin-assignments-copy h3 {
+  font-size: clamp(1.25rem, 1.8vw, 1.65rem);
+  line-height: 1.16;
+}
+
+.admin-content-side-stack > .panel,
+.admin-quizzes-side-stack > .panel,
+.admin-assignments-focus-panel,
+.admin-assignments-priority-panel {
+  padding: 16px;
+}
+
+.admin-content-side-stack .panel-header,
+.admin-quizzes-side-stack .panel-header,
+.admin-assignments-focus-panel .panel-header,
+.admin-assignments-priority-panel .panel-header {
+  margin-bottom: 10px;
+}
+
+.admin-content-side-stack .panel-header p,
+.admin-quizzes-side-stack .panel-header p,
+.admin-assignments-side-stack .panel-header p {
+  max-width: 58ch;
+}
+
+.admin-content-focus-metrics,
+.admin-quizzes-focus-metrics,
+.admin-assignments-focus-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-content-focus-metrics article,
+.admin-quizzes-focus-metrics article,
+.admin-assignments-focus-metrics article {
+  min-height: 62px;
+  padding: 10px 11px;
+  border-radius: 14px;
+}
+
+.admin-content-priority-list,
+.admin-quizzes-priority-list,
+.admin-assignments-priority-list {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.admin-content-priority-card,
+.admin-quizzes-priority-card,
+.admin-assignments-priority-card {
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  padding: 11px 12px;
+  border-radius: 15px;
+  box-shadow: none;
+}
+
+.admin-content-priority-card .tag-row,
+.admin-content-priority-card p,
+.admin-content-priority-card .button,
+.admin-quizzes-priority-card .tag-row,
+.admin-quizzes-priority-card p,
+.admin-quizzes-priority-card .button,
+.admin-assignments-priority-card .tag-row,
+.admin-assignments-priority-card p,
+.admin-assignments-priority-card .button {
+  grid-column: auto;
+  grid-row: auto;
+  justify-self: flex-start;
+}
+
+.admin-content-priority-card .button,
+.admin-quizzes-priority-card .button,
+.admin-assignments-priority-card .button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.admin-content-priority-card p,
+.admin-quizzes-priority-card p,
+.admin-assignments-priority-card p {
+  color: rgba(15, 23, 42, 0.74);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.admin-content-priority-card .badge,
+.admin-quizzes-priority-card .badge,
+.admin-assignments-priority-card .badge {
+  justify-content: flex-start;
+  min-height: 24px;
+  max-width: 100%;
+  padding-inline: 8px;
+  text-align: left;
+}
+
+.admin-content-summary,
+.admin-quizzes-summary,
+.admin-assignments-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-content-summary article,
+.admin-quizzes-summary article,
+.admin-assignments-summary article {
+  min-height: 68px;
+  padding: 10px 12px;
+}
+
+.admin-assignments-watch-panel {
+  padding: 16px;
+}
+
+.admin-assignments-watch-panel .panel-header-rich {
+  align-items: start;
+  margin-bottom: 10px;
+}
+
+.admin-assignments-watch-panel .messaging-inline-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(92px, 1fr));
+  width: min(100%, 560px);
+}
+
+.admin-assignments-watch-panel .messaging-inline-stats article {
+  min-width: 0;
+  min-height: 66px;
+  padding: 10px 11px;
+  border-radius: 14px;
+}
+
+@media (max-width: 1180px) {
+  .admin-content-side-stack,
+  .admin-quizzes-side-stack,
+  .admin-assignments-side-stack {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .admin-content-filter-form,
+  .admin-quizzes-filter-form,
+  .admin-assignments-filter-form,
+  .admin-content-summary,
+  .admin-quizzes-summary,
+  .admin-assignments-summary,
+  .admin-assignments-watch-panel .messaging-inline-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .admin-content-filter-form,
+  .admin-quizzes-filter-form,
+  .admin-assignments-filter-form,
+  .admin-content-summary,
+  .admin-quizzes-summary,
+  .admin-assignments-summary,
+  .admin-content-focus-metrics,
+  .admin-quizzes-focus-metrics,
+  .admin-assignments-focus-metrics,
+  .admin-content-priority-list,
+  .admin-quizzes-priority-list,
+  .admin-assignments-priority-list,
+  .admin-assignments-watch-panel .messaging-inline-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-content-side-stack > .panel,
+  .admin-quizzes-side-stack > .panel,
+  .admin-assignments-focus-panel,
+  .admin-assignments-priority-panel,
+  .admin-assignments-watch-panel {
+    padding: 14px;
+  }
+
+  .admin-content-hero,
+  .admin-quizzes-hero,
+  .admin-assignments-hero {
+    gap: 12px;
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .admin-content-copy,
+  .admin-quizzes-copy,
+  .admin-assignments-copy {
+    gap: 10px;
+  }
+
+  .admin-content-copy h3,
+  .admin-quizzes-copy h3,
+  .admin-assignments-copy h3 {
+    font-size: clamp(1.32rem, 6vw, 1.55rem);
+    line-height: 1.12;
+  }
+
+  .admin-content-lane-grid,
+  .admin-quizzes-lane-grid,
+  .admin-assignments-lane-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .admin-content-lane-card,
+  .admin-quizzes-lane-card,
+  .admin-assignments-lane-card {
+    min-height: 0;
+    padding: 13px 14px;
+    border-radius: 16px;
+  }
+
+  .admin-content-lane-card strong,
+  .admin-quizzes-lane-card strong,
+  .admin-assignments-lane-card strong {
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-content-lane-grid,
+  .admin-quizzes-lane-grid,
+  .admin-assignments-lane-grid {
+    grid-template-columns: 1fr;
+  }
+}
