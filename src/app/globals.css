@@ -12040,6 +12040,10 @@ html[data-platform-sidebar-state="pinned"] .platform-content {
   margin-inline: auto;
 }
 
+.metric-grid.metric-grid-compact {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
 .platform-sidebar {
   max-height: calc(100dvh - 28px);
   overflow-x: hidden;
